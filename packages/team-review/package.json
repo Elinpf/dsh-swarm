@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-review",
   "version": "0.0.1",
-  "private": true,
   "description": "验证闸 + 裁决数学：任务完成前经评审，二元一票否决 / 打分均值阈值",
   "type": "module",
   "main": "lib/index.js",

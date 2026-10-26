@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-compaction",
   "version": "0.0.1",
-  "private": true,
   "description": "团队上下文预算/配额策略；触发时委托 ctx.compaction 执行压缩（幂等）",
   "type": "module",
   "main": "lib/index.js",

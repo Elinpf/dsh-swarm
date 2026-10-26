@@ -8,3 +8,17 @@ nodeLinker: hoisted
 # 插件把 DSH 运行时包声明为 peerDependencies（见 docs/plugin-dev-guide.md §2.2）。
 # 开自动安装，保证本仓库独立开发时 peer 的类型定义也在位。
 autoInstallPeers: true
+
+# pnpm 10+ 默认阻止依赖执行安装/构建脚本。下列依赖经 autoInstallPeers 被间接带入、
+# 带 native/生命周期脚本，但本仓的 build/test/verify 并不需要它们（CI runner 也无对应工具链）：
+#   @deepseek-ai/dsh-subprocess-local, @google/genai, koffi, node-pty, protobufjs
+# 显式声明「忽略其构建脚本」，并关闭 strictDepBuilds，使「未批准的构建脚本」只告警、
+# 不令 `pnpm install` 以 ERR_PNPM_IGNORED_BUILDS 失败（CI 发布门禁要求 install 步骤必须过）。
+# 若将来确实需要其中某个的原生构建，把它加入 onlyBuiltDependencies 并补好工具链。
+ignoredBuiltDependencies:
+  - '@deepseek-ai/dsh-subprocess-local'
+  - '@google/genai'
+  - koffi
+  - node-pty
+  - protobufjs
+strictDepBuilds: false

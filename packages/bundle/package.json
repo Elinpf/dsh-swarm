@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-bundle",
   "version": "0.0.1",
-  "private": true,
   "description": "dsh-swarm 协作能力 bundle：在 dsh-base 之上层叠团队插件行（先 disabled 关 legacy，再 insert）",
   "type": "module",
   "main": "lib/index.js",

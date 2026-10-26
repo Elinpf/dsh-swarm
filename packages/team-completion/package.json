@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-completion",
   "version": "0.0.1",
-  "private": true,
   "description": "团队完成判定：任务全终态 + 全成员静止 + 无未读，上升沿发一次 swarm/team/completed",
   "type": "module",
   "main": "lib/index.js",

@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-core-contract",
   "version": "0.0.1",
-  "private": true,
   "description": "团队协作端口的唯一契约（类型 SSOT）：TeamCore 端口 + ctx.teamCore 类型增强；不含任何实现",
   "type": "module",
   "main": "lib/index.js",

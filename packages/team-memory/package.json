@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-memory",
   "version": "0.0.1",
-  "private": true,
   "description": "共享只读 TEAM_MEMORY + 成员私有记忆，经 ctx.systemPrompt.context 注入（cache-safe）",
   "type": "module",
   "main": "lib/index.js",

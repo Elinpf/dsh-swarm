@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-core",
   "version": "0.0.1",
-  "private": true,
   "description": "团队协作稳定端口 TeamCorePort：把原生 ctx.agentTeams（或未来自建后端）适配为 ctx.teamCore",
   "type": "module",
   "main": "lib/index.js",

@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-tool-swarm",
   "version": "0.0.1",
-  "private": true,
   "description": "把 bus/scheduler/review 的增量能力暴露为模型工具（原生 tool-agent-team 没有的部分）",
   "type": "module",
   "main": "lib/index.js",

@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-skills",
   "version": "0.0.1",
-  "private": true,
   "description": "按团队/成员声明技能可见子集（权限隔离不泄露）；缺失文档 = 无限制",
   "type": "module",
   "main": "lib/index.js",

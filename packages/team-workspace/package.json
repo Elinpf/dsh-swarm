@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-workspace",
   "version": "0.0.1",
-  "private": true,
   "description": "成员工作区隔离（复用 ctx.worktrees）+ 文件锁/写域守卫（挂 fs/*-intent waterfall）",
   "type": "module",
   "main": "lib/index.js",

@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-prompt",
   "version": "0.0.1",
-  "private": true,
   "description": "团队段落装配：策略/角色段进前缀，身份/roster 走 cache-safe context",
   "type": "module",
   "main": "lib/index.js",

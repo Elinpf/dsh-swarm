@@ -32,6 +32,8 @@
 | `@elinpf/dsh-swarm-bundle`       | 组合层，叠加在上游 bundle（如 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-experimental-agent-team-profile`）之上 |
 
 > 上游 DSH 包一律以 `@deepseek-ai/dsh-*` 命名（peer 依赖，不由本仓发布）。本仓的包名与上游**不混用同一 scope**：自建=`@elinpf/dsh-swarm-*`，上游=`@deepseek-ai/*`。
+>
+> `example-plugin` 是骨架阶段的 hello-world **演示包**，`package.json` 保留 `"private": true`，**不发布到 npm**（`pnpm -r publish` 会自动跳过它）。其余 14 个协作包可发布。
 
 ---
 
@@ -46,7 +48,7 @@ dsh-swarm/
 ├── .prettierrc.json        # 格式化配置
 ├── .gitignore              # 忽略 .runtime/ 与本地环境/凭证
 ├── packages/
-│   ├── example-plugin/          # hello-world 基线（P2 产出）
+│   ├── example-plugin/          # hello-world 基线（P2 产出）；演示包，不发布到 npm（private）
 │   ├── team-core-contract/      # 端口类型 SSOT（纯类型，无实现；ADR-0001）
 │   ├── team-bus/                # 广播 / 多播 / 主题扇出（Service）
 │   ├── team-prompt/             # 团队段落装配（函数式）

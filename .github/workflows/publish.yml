@@ -1,0 +1,117 @@
+# =============================================================================
+# publish.yml — dsh-swarm 的自动 npm 发布流水线（@elinpf scope）
+# -----------------------------------------------------------------------------
+# 触发方式：
+#   1) 推送形如 v0.0.2 的 tag      → 打 tag 即发布（推荐，发布可追溯到 tag）
+#   2) Actions 页手动 workflow_dispatch → 可选 dry_run（只打包不上传）
+#
+# 阶段：install（--frozen-lockfile） → 验证门禁（build + test + verify）
+#       → publish（pnpm -r publish，先过门禁，门禁不过不发）
+#
+# 凭证：从 GitHub Secret `NPM_TOKEN` 读取，绝不硬编码。secret 缺失时**显式失败**，
+#       不静默跳过。文档见 docs/publishing.md。
+#
+# 说明：仓库内的 .npmrc 只含 registry，不含任何凭证；CI 里通过 setup-node 生成的
+#       ~/.npmrc（`//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`）+ 环境变量注入 token。
+# =============================================================================
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '仅打包校验（pnpm publish --dry-run），不真正上传 npm'
+        type: boolean
+        default: false
+      provenance:
+        description: '开启 npm provenance 证明（公开仓库建议开；私有仓库/不支持时设为 false 降级）'
+        type: boolean
+        default: true
+
+# 同一时间只允许一个发布任务，避免并发覆盖
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # provenance 需要 OIDC token（仅在前述 provenance 开启且环境支持时使用）
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      # 全局暴露 token 供 pnpm/npm 读取 .npmrc 中的 ${NODE_AUTH_TOKEN} 占位符
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 在安装/发布前就显式校验 secret 是否存在，缺失直接失败并给出可操作提示。
+      - name: 校验 NPM_TOKEN secret 已配置
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error title=缺少 NPM_TOKEN::仓库未配置 Secrets → NPM_TOKEN，发布中止。"
+            echo "请在 GitHub: Settings → Secrets and variables → Actions → New repository secret"
+            echo "新建名为 NPM_TOKEN 的 secret，值为 npmjs.com 的 Automation token（见 docs/publishing.md）。"
+            exit 1
+          fi
+          echo "NPM_TOKEN 已配置（长度 ${#NODE_AUTH_TOKEN}，值不回显）。"
+
+      - name: 安装 pnpm（版本与 package.json 的 packageManager 一致）
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+          run_install: false
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      # 安全检查：确认仓库内的 .npmrc 没有混入任何凭证（防止误提交）。
+      - name: 预检 —— 仓库 .npmrc 不含凭证
+        run: |
+          if [ -f .npmrc ] && grep -nE '(_authToken|_auth|_password|npm_[A-Za-z]*[Tt]oken)' .npmrc; then
+            echo "::error::仓库 .npmrc 检测到疑似凭证，拒绝继续。凭证只能来自 Secret。"
+            exit 1
+          fi
+          echo "仓库 .npmrc 未发现凭证。"
+
+      - name: 安装依赖（--frozen-lockfile）
+        run: pnpm install --frozen-lockfile
+
+      # ---------- 验证门禁：任一步失败即中止，绝不会走到 publish ----------
+      - name: 门禁 · 构建
+        run: pnpm run build
+
+      - name: 门禁 · 测试
+        run: pnpm run test
+
+      - name: 门禁 · 加载验证（verify）
+        run: pnpm run verify
+
+      # ---------- 发布 ----------
+      - name: 发布前 dry-run（打包内容核对，始终执行）
+        run: pnpm -r publish --dry-run --no-git-checks --access public
+
+      - name: 发布到 npm
+        if: ${{ github.event_name == 'push' || inputs.dry_run != true }}
+        env:
+          NPM_CONFIG_PROVENANCE: ${{ (github.event_name == 'push' || inputs.provenance) && 'true' || 'false' }}
+        run: |
+          # --no-git-checks：tag 触发时处于 detached HEAD，pnpm 的默认 git 分支检查会误报失败。
+          # --access public：@elinpf scope 下公开发布（各包 publishConfig.access=public 已声明）。
+          # provenance 由上方 NPM_CONFIG_PROVENANCE 控制；不支持时（如私有仓）会失败，
+          # 可手动触发并把 provenance 输入设为 false 降级重发。
+          pnpm -r publish --no-git-checks --access public
+
+      - name: 跳过发布（dry_run）
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+        run: echo "dry_run=true：已完成 install + 验证门禁 + 打包预检，未真正上传 npm。"

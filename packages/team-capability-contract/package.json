@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-capability-contract",
   "version": "0.0.1",
-  "private": true,
   "description": "阶段 2 能力端口契约（SSOT）：teamWorkspace/teamSkills/teamMemory/teamCompaction 类型 + ctx 增强；纯类型无实现",
   "type": "module",
   "main": "lib/index.js",

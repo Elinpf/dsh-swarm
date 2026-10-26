@@ -1,7 +1,6 @@
 {
   "name": "@elinpf/dsh-swarm-team-bus",
   "version": "0.0.1",
-  "private": true,
   "description": "在 ctx.teamCore 的 DM 之上补广播 / 多播 / 主题扇出：内容落库 + 信号走总线",
   "type": "module",
   "main": "lib/index.js",
