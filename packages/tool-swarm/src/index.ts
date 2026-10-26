@@ -36,11 +36,20 @@ export interface SwarmToolConfig {
   enableBroadcast: boolean
   /** 是否暴露 review_submit/review_vote（需 teamReview + 已配评审池）。 */
   enableReview: boolean
+  /** 阶段2：是否暴露 workspace_lock/unlock/worktree（需 teamWorkspace）。 */
+  enableWorkspace: boolean
+  /** 阶段2：是否暴露 skills_visible（需 teamSkills）。 */
+  enableSkills: boolean
+  /** 阶段2：是否暴露 memory_recall（需 teamMemory）。 */
+  enableMemory: boolean
 }
 
 export const Config: z<SwarmToolConfig> = z.object({
   enableBroadcast: z.boolean().default(true),
   enableReview: z.boolean().default(false),
+  enableWorkspace: z.boolean().default(false),
+  enableSkills: z.boolean().default(false),
+  enableMemory: z.boolean().default(false),
 })
 
 /** 统一的文本输出契约（schema 的属性级 required，符合真实 value schema DSL）。 */
@@ -75,6 +84,19 @@ function installTools(ctx: Context, config: SwarmToolConfig): Array<() => void> 
     | undefined
   const core = ctx.get('teamCore') as
     | { listTasks: (...a: unknown[]) => unknown; listMembers: (...a: unknown[]) => unknown }
+    | undefined
+  const ws = ctx.get('teamWorkspace') as
+    | {
+        acquireLock: (...a: unknown[]) => Promise<{ id: string; mode: string; path: string }>
+        releaseLock: (...a: unknown[]) => Promise<void>
+        createWorktree: (...a: unknown[]) => Promise<{ path: string }>
+      }
+    | undefined
+  const skills = ctx.get('teamSkills') as
+    | { visibleTo: (...a: unknown[]) => string[] | 'unrestricted' }
+    | undefined
+  const mem = ctx.get('teamMemory') as
+    | { recall: (...a: unknown[]) => Array<{ text: string }> }
     | undefined
 
   if (config.enableBroadcast && bus) {
@@ -206,6 +228,96 @@ function installTools(ctx: Context, config: SwarmToolConfig): Array<() => void> 
               .map(([k, v]) => `${k}=${v}`)
               .join(',')
             return { text: `members=${members.length}; tasks=${tasks.length}${t ? ` (${t})` : ''}` }
+          },
+        }),
+      ),
+    )
+  }
+
+  if (config.enableWorkspace && ws) {
+    ds.push(
+      ctx.tools.register(
+        defineTool({
+          name: 'workspace_lock',
+          description: 'Acquire a write-scope lock on a path (exclusive|shared).',
+          parameters: {
+            path: { type: 'string', required: true, description: 'Path prefix to lock.' },
+            mode: { type: 'string', description: 'exclusive (default) | shared' },
+          },
+          output: textOutput,
+          async execute(args, exec) {
+            const caller = callerOf(ctx, exec)
+            const h = await ws.acquireLock(caller, {
+              path: String(args.path),
+              mode: String(args.mode) === 'shared' ? 'shared' : 'exclusive',
+            })
+            return { text: `locked ${h.id} (${h.mode}) ${h.path}` }
+          },
+        }),
+      ),
+    )
+    ds.push(
+      ctx.tools.register(
+        defineTool({
+          name: 'workspace_unlock',
+          description: 'Release a previously acquired write-scope lock.',
+          parameters: { lock_id: { type: 'string', required: true, description: 'Lock id.' } },
+          output: textOutput,
+          async execute(args, exec) {
+            const caller = callerOf(ctx, exec)
+            await ws.releaseLock(caller, { id: String(args.lock_id) })
+            return { text: `released ${String(args.lock_id)}` }
+          },
+        }),
+      ),
+    )
+    ds.push(
+      ctx.tools.register(
+        defineTool({
+          name: 'workspace_worktree',
+          description: 'Create/enter an isolated worktree for the calling member.',
+          parameters: {},
+          output: textOutput,
+          async execute(_args, exec) {
+            const caller = callerOf(ctx, exec)
+            const rec = await ws.createWorktree(caller)
+            return { text: `worktree at ${rec.path}` }
+          },
+        }),
+      ),
+    )
+  }
+
+  if (config.enableSkills && skills) {
+    ds.push(
+      ctx.tools.register(
+        defineTool({
+          name: 'skills_visible',
+          description: 'List skill names visible to the calling member.',
+          parameters: {},
+          output: textOutput,
+          async execute(_args, exec) {
+            const caller = callerOf(ctx, exec)
+            const v = skills.visibleTo(caller)
+            return { text: v === 'unrestricted' ? 'unrestricted' : v.join(', ') || '(none)' }
+          },
+        }),
+      ),
+    )
+  }
+
+  if (config.enableMemory && mem) {
+    ds.push(
+      ctx.tools.register(
+        defineTool({
+          name: 'memory_recall',
+          description: 'Recall shared team memory plus your own private notes.',
+          parameters: {},
+          output: textOutput,
+          async execute(_args, exec) {
+            const caller = callerOf(ctx, exec)
+            const recs = mem.recall(caller)
+            return { text: recs.map((r) => r.text).join('\n') || '(empty)' }
           },
         }),
       ),

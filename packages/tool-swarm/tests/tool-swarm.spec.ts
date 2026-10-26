@@ -102,4 +102,47 @@ describe('@elinpf/dsh-swarm-tool-swarm', () => {
     ctx._disposeAll()
     expect(ctx._tools).toHaveLength(0)
   })
+
+  it('阶段2：enableWorkspace/enableSkills/enableMemory 时注册对应工具', () => {
+    const ws = {
+      acquireLock: async () => ({ id: 'l1', mode: 'exclusive', path: 'src' }),
+      releaseLock: async () => {},
+      createWorktree: async () => ({ path: '/wt/a' }),
+    }
+    const skills = { visibleTo: () => ['arch-design'] }
+    const mem = { recall: () => [{ text: 'shared-note' }] }
+    const ctx = makeCtx({ teamWorkspace: ws, teamSkills: skills, teamMemory: mem })
+    plugin.apply(ctx, {
+      enableBroadcast: false,
+      enableReview: false,
+      enableWorkspace: true,
+      enableSkills: true,
+      enableMemory: true,
+    })
+    const names = ctx._tools.map((t: any) => t.name)
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'workspace_lock',
+        'workspace_unlock',
+        'workspace_worktree',
+        'skills_visible',
+        'memory_recall',
+      ]),
+    )
+  })
+
+  it('阶段2：依赖缺失时对应工具不注册', () => {
+    const ctx = makeCtx({})
+    plugin.apply(ctx, {
+      enableBroadcast: false,
+      enableReview: false,
+      enableWorkspace: true,
+      enableSkills: true,
+      enableMemory: true,
+    })
+    const names = ctx._tools.map((t: any) => t.name)
+    expect(names).not.toContain('workspace_lock')
+    expect(names).not.toContain('skills_visible')
+    expect(names).not.toContain('memory_recall')
+  })
 })
