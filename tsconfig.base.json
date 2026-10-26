@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+
+    // DSH 的声明文件用 `.ts` 扩展名互相引用（见 .runtime/deepseek-harness/tsconfig.base.json）。
+    // 不开这两项，消费方的 tsc 无法加载这些声明，`declare module '@deepseek-ai/cordis'`
+    // 的类型增强会被静默丢弃（症状：ctx.tools / ctx.systemPrompt 不存在）。
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  }
+}

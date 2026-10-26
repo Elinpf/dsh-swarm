@@ -1,0 +1,11 @@
+# example-plugin 的 bundle patch。
+#
+# 声明在 package.json 的 `dsh.bundle.patch` 里，由 DSH 的组合器按 profile→bundle 的
+# 顺序施加。`insert:` 往组合树里加一行；行序不承载加载语义，激活由服务可用性驱动
+# （见 docs/plugin-dev-guide.md §3.2）。
+- insert:
+    - id: example-plugin
+      name: '@dsh-swarm/example-plugin'
+      config:
+        greeting: hello
+        order: 120

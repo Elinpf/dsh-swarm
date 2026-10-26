@@ -1,0 +1,8 @@
+node_modules/
+lib/
+.runtime/
+*.tsbuildinfo
+pnpm-lock.yaml
+
+# 团队既有调研/环境文档由各自作者维护，本仓不做格式化改写
+docs/

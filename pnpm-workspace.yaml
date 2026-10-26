@@ -1,0 +1,10 @@
+packages:
+  - packages/*
+
+# 与 DSH profile 的链接器期望保持一致（对齐参考仓 dsh-ops-plugins 的写法）：
+# hoisted 让每个包能直接解析到提升后的依赖，避免 DSH 加载时的解析差异。
+nodeLinker: hoisted
+
+# 插件把 DSH 运行时包声明为 peerDependencies（见 docs/plugin-dev-guide.md §2.2）。
+# 开自动安装，保证本仓库独立开发时 peer 的类型定义也在位。
+autoInstallPeers: true

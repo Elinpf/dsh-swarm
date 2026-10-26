@@ -1,0 +1,24 @@
+# 依赖与构建产物
+# 注意：不写尾斜杠，否则匹配不到 node_modules 符号链接（本机因磁盘受限把它软链到 tmpfs）
+node_modules
+lib
+*.tsbuildinfo
+.pnpm-store/
+
+# 隔离开发环境：Node 发行版 / pnpm / DSH_HOME / 各类缓存 / 上游源码，全部落在本目录内，
+# 体积大且与机器强相关，绝不入库（见 docs/env-setup.md）
+.runtime/
+
+# 本地环境与凭证——绝不入库
+.env
+.env.*
+*.local
+*.pem
+*.key
+.git-credentials
+.npmrc.local
+
+# 编辑器与系统文件
+.DS_Store
+.idea/
+.vscode/
