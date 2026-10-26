@@ -1,0 +1,39 @@
+{
+  "name": "@dsh-swarm/team-scheduler",
+  "version": "0.0.1",
+  "private": true,
+  "description": "幂等调度扫描：派发 ready 任务 / 推进评审，内置卡住任务自催与升级（stale 自愈）",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/index.d.ts"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dsh-swarm/team-core-contract": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.2.1-rc.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
