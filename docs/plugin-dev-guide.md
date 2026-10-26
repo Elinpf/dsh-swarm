@@ -107,6 +107,20 @@
 > **【事实 V】** 关键点：无 `./invariant` 子导出（机制已移除，B1）；内部依赖用 `workspace:~`（B4）；`files` 含 `lib/types/**/*.js`（对照 `tool-todo/package.json:29-34`）。
 > **【事实-文档】** `peerDependencies` 上的 `@deepseek-ai/dsh-*` 必须与 runtime 版本匹配，否则 profile 会跳过该 bundle（`packages/boot/app-boot/README.md:52`）。
 
+**`tsconfig.json`（必开两选项）**——【事实 V，由 dsh-plugin-dev 真机实测回填并复核】
+
+```jsonc
+{
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,          // DSH 的 .d.ts 之间用 .ts 扩展名互引
+    "rewriteRelativeImportExtensions": true      // 缺这两项 → declare module 类型增强被静默丢弃
+  }
+}
+```
+
+> **【事实 V】** 对照 `tsconfig.base.json:9`（`moduleResolution: bundler`）、`:15-16`（`allowImportingTsExtensions` + `rewriteRelativeImportExtensions`）。**只写 `moduleResolution: bundler` 不够**：DSH 的 `.d.ts` 之间用 `.ts` 扩展名互相 import，缺这两项时 `declare module '@deepseek-ai/cordis'` 的 Context 类型增强会被**静默丢弃**，tsc 报 `Property 'tools' does not exist on type 'Context'`（由 dsh-plugin-dev 在真实 0.2.1-rc.3 上实测，见 `dsh-swarm/docs/verification.md §5`）。
+
 **`src/index.ts`**：
 
 ```ts
@@ -143,8 +157,14 @@ export function apply(ctx: Context, config: Config): void {
       who: { type: 'string', required: true, description: 'Name to greet.' },
     },
     // output is REQUIRED (schema + render) — see §2.4
+    // NOTE: `required: true` goes on each PROPERTY, never at the object level
+    //       (object level carries only `additionalProperties: false`).
     output: {
-      schema: { type: 'object', properties: { text: { type: 'string' } }, required: true },
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { text: { type: 'string', required: true } },
+      },
       render: (_args, value) => [{ type: 'text', text: (value as { text: string }).text }],
     },
     async execute(args) {
@@ -161,7 +181,7 @@ export function apply(ctx: Context, config: Config): void {
 ```
 
 > **【事实 V】** `ctx.systemPrompt.section(section): () => void` 定义在 `packages/core/system-prompt/src/index.ts:478`。
-> **【事实 V】** `defineTool` 定义在 `packages/core/tools/src/schema.ts:554`。**`output` 是必填字段**（`schema.ts:565` 无条件读 `options.output.render`；`:578` 读 `options.output.schema`；`:490-491` 声明 `readonly output`）——**不提供 `output` 无法编译/运行**。`tool-todo/src/index.ts:158`（output）、`:187`（render）为真实范例。
+> **【事实 V】** `defineTool` 定义在 `packages/core/tools/src/schema.ts:554`。**`output` 是必填字段**（`schema.ts:565` 无条件读 `options.output.render`；`:578` 读 `options.output.schema`；`:490-491` 声明 `readonly output`）——**不提供 `output` 无法编译/运行**。`tool-todo/src/index.ts:158`（output）、`:187`（render）为真实范例。**`output.schema` 的 `required: true` 必须逐属性写、对象层不能写**（`tool-todo/src/index.ts:158-188`：对象层仅 `additionalProperties: false`，`required: true` 在 `content`/`todos`/`counts` 等属性上）；对象层写 `required` 会在 `pnpm test` 抛 `JsonSchemaError: schema.required is not supported by the value schema DSL`（dsh-plugin-dev 真机实测）。
 
 ### 2.3 可直接拷贝的最小 Service 类插件（完整文件）
 
