@@ -52,8 +52,8 @@ DUMP="$PROBE/e2e-dump-config.yml"
 "$DSH" --profile "$PROFILE" --dump-config > "$DUMP" 2>"$PROBE/e2e-dump-config.err"
 # @elinpf/dsh-swarm-bundle 段落内的 9 行
 sec=$(awk '/^# == @elinpf\/dsh-swarm-bundle/{f=1} f&&/^# ==/&&!/@elinpf\/dsh-swarm-bundle/{if(f>1)exit} f{print} f&&/^# == @elinpf\/dsh-swarm-bundle/{f=2}' "$DUMP")
-rows=$(printf '%s\n' "$sec" | grep -cE "^- id: (team-core|team-prompt|team-bus|team-review|team-scheduler|team-completion|tool-swarm)$")
-ck $([ "$rows" -eq 7 ] && echo 1 || echo 0) "@elinpf/dsh-swarm-bundle 自身插入行数 = $rows (期望 7)"
+rows=$(printf '%s\n' "$sec" | grep -cE "^- id: (team-core|team-prompt|team-bus|team-review|team-scheduler|team-completion|tool-swarm|team-workspace|team-skills|team-memory|team-compaction)$")
+ck $([ "$rows" -eq 11 ] && echo 1 || echo 0) "@elinpf/dsh-swarm-bundle 自身插入行数 = $rows (期望 11)"
 # 原生团队域由 agent-team-profile 提供（bundle 不再重复插入）：确认它们在 dump 中确实存在
 nat=0
 grep -qE "^- id: agent-team$" "$DUMP" && nat=$((nat+1))

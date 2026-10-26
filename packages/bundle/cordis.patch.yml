@@ -62,3 +62,27 @@
       config:
         enableBroadcast: true
         enableReview: false
+
+    # —— 阶段 2：能力供给层 ——
+    - id: team-workspace
+      name: '@elinpf/dsh-swarm-team-workspace'
+      config:
+        defaultTtlMs: 900000
+        enforceWriteGuard: true
+        sweepIntervalMs: 30000
+
+    - id: team-skills
+      name: '@elinpf/dsh-swarm-team-skills'
+      config:
+        unrestrictedWhenUndeclared: true
+
+    - id: team-memory
+      name: '@elinpf/dsh-swarm-team-memory'
+      config:
+        sharedWriter: lead
+
+    - id: team-compaction
+      name: '@elinpf/dsh-swarm-team-compaction'
+      config:
+        enabled: false
+        maxTokens: 100000

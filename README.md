@@ -129,6 +129,18 @@ corepack pnpm format:check
 | `@elinpf/dsh-swarm-team-core`          | Service | `ctx.teamCore`       | **TeamCorePort** 落地：native 薄适配 + no-op 降级               |
 | `@elinpf/dsh-swarm-bundle`             | bundle  | —                    | 组合层：先 disabled 关 legacy，再 insert 团队行                 |
 
+### 阶段 2 能力供给包（能力供给补全）
+
+| 包                                           | 形态    | 服务键               | 职责                                                                    |
+| -------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------- |
+| `@elinpf/dsh-swarm-team-capability-contract` | 纯类型  | —                    | 4 个能力端口类型 SSOT（无实现）                                         |
+| `@elinpf/dsh-swarm-team-workspace`           | Service | `ctx.teamWorkspace`  | worktree 隔离（复用 `ctx.worktrees`）+ 文件锁/写域守卫（`fs/*-intent`） |
+| `@elinpf/dsh-swarm-team-skills`              | Service | `ctx.teamSkills`     | 技能可见性声明 + 权限隔离（缺失文档=无限制）                            |
+| `@elinpf/dsh-swarm-team-memory`              | Service | `ctx.teamMemory`     | 共享只读 + 成员私有记忆，`ctx.systemPrompt.context` 注入（cache-safe）  |
+| `@elinpf/dsh-swarm-team-compaction`          | Service | `ctx.teamCompaction` | 团队上下文预算，委托 `ctx.compaction`（幂等，默认关闭）                 |
+
+`tool-swarm` 增量暴露 `workspace_lock/unlock/worktree`、`skills_visible`、`memory_recall`（`Config` 里 `enableWorkspace/enableSkills/enableMemory`，默认 false）。
+
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）
@@ -187,10 +199,12 @@ corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 
 - [x] pnpm workspace 骨架（根 package.json / pnpm-workspace.yaml / tsconfig 基座 / lint+format / .gitignore）
 - [x] hello-world 插件包 + bundle 声明
-- [x] **阶段 1 协作插件 7 包**（team-core-contract / team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）
-- [x] **`team-core`（TeamCorePort，native 后端）+ `@elinpf/dsh-swarm-bundle` 组装** —— 阶段 0/1 全部 9 个包就位
+- [x] 阶段 0/1 协作插件 7 包（team-core-contract / team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）
+- [x] `team-core`（TeamCorePort，native 后端）+ `bundle` 组装 —— 阶段 0/1 全部 9 个包就位
+- [x] **阶段 2 能力供给 5 包**（team-capability-contract / team-workspace / team-skills / team-memory / team-compaction）—— 共 **14 个包**
 - [x] `pnpm build` / `pnpm test` / `pnpm verify` / `pnpm verify:e2e` / `pnpm lint` / `pnpm format:check` 全部实跑通过
-- [x] 真实 cordis 加载验证覆盖**全部 9 个包**（`scripts/verify-load.mjs`）；进程内集成冒烟跑通「成员 → 消息 → 任务 → 评审 → 完成」（`scripts/verify-e2e.mjs`）
+- [x] 真实 cordis 加载验证覆盖**全部 14 个包**（`scripts/verify-load.mjs`）；集成冒烟覆盖「成员 → 消息 → 任务 → 评审 → 完成」+ 阶段 2「锁互斥/技能隔离/记忆授权」（`scripts/verify-e2e.mjs`）
+- [x] 真实 profile 回归（`scripts/e2e-profile.sh --no-model`）：bundle 11 行 + 4 legacy disabled + 原生行来自 agent-team-profile，PASS=4
 - [ ] 整机 profile 级联调（完整 `dsh-base` + 实验包 + 可用模型端点）—— 见 `docs/verification.md` 边界说明
 - [ ] 阶段 2/3：worktree+文件锁 / 跨进程分布式 / 技能与记忆 / 人类成员席位 / Web UI
 

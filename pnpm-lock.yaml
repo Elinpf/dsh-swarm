@@ -47,12 +47,18 @@ importers:
       '@elinpf/dsh-swarm-team-bus':
         specifier: workspace:*
         version: link:../team-bus
+      '@elinpf/dsh-swarm-team-compaction':
+        specifier: workspace:*
+        version: link:../team-compaction
       '@elinpf/dsh-swarm-team-completion':
         specifier: workspace:*
         version: link:../team-completion
       '@elinpf/dsh-swarm-team-core':
         specifier: workspace:*
         version: link:../team-core
+      '@elinpf/dsh-swarm-team-memory':
+        specifier: workspace:*
+        version: link:../team-memory
       '@elinpf/dsh-swarm-team-prompt':
         specifier: workspace:*
         version: link:../team-prompt
@@ -62,6 +68,12 @@ importers:
       '@elinpf/dsh-swarm-team-scheduler':
         specifier: workspace:*
         version: link:../team-scheduler
+      '@elinpf/dsh-swarm-team-skills':
+        specifier: workspace:*
+        version: link:../team-skills
+      '@elinpf/dsh-swarm-team-workspace':
+        specifier: workspace:*
+        version: link:../team-workspace
       '@elinpf/dsh-swarm-tool-swarm':
         specifier: workspace:*
         version: link:../tool-swarm
@@ -135,6 +147,28 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
 
+  packages/team-compaction:
+    dependencies:
+      '@elinpf/dsh-swarm-team-capability-contract':
+        specifier: workspace:*
+        version: link:../team-capability-contract
+      '@elinpf/dsh-swarm-team-core-contract':
+        specifier: workspace:*
+        version: link:../team-core-contract
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@deepseek-ai/dsh-agent':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-session-projection@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))))(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-system-prompt@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-typert-protocol@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-util-values@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
+
   packages/team-completion:
     dependencies:
       '@elinpf/dsh-swarm-team-core-contract':
@@ -194,6 +228,31 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
 
+  packages/team-memory:
+    dependencies:
+      '@elinpf/dsh-swarm-team-capability-contract':
+        specifier: workspace:*
+        version: link:../team-capability-contract
+      '@elinpf/dsh-swarm-team-core-contract':
+        specifier: workspace:*
+        version: link:../team-core-contract
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@deepseek-ai/dsh-agent':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-session-projection@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))))(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-system-prompt@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-typert-protocol@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-util-values@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
+
   packages/team-prompt:
     dependencies:
       '@elinpf/dsh-swarm-team-core-contract':
@@ -234,6 +293,28 @@ importers:
 
   packages/team-scheduler:
     dependencies:
+      '@elinpf/dsh-swarm-team-core-contract':
+        specifier: workspace:*
+        version: link:../team-core-contract
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@deepseek-ai/dsh-agent':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-session-projection@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))))(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-system-prompt@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-typert-protocol@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-util-values@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
+
+  packages/team-skills:
+    dependencies:
+      '@elinpf/dsh-swarm-team-capability-contract':
+        specifier: workspace:*
+        version: link:../team-capability-contract
       '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract

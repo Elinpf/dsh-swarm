@@ -90,6 +90,7 @@ await rootCtx.plugin({
     ctx.provide('sessions', {})
     ctx.provide('agents', { list: () => [] })
     ctx.provide('subagents', {})
+    ctx.provide('skills', {})
     ctx.provide('agentTeams', seam)
   },
 })
@@ -177,6 +178,55 @@ const done = await rootCtx.teamCompletion.evaluate(lead)
 assert(done.completed === true, '完成判定 → completed=true')
 const done2 = await rootCtx.teamCompletion.evaluate(lead)
 assert(done2.completed === true, '重复评估仍 completed（上升沿只发一次事件）')
+
+// ── 阶段 2：锁守卫 / 技能可见性 / 记忆注入 ──────────────────────────────────
+console.log('\n== 阶段 2：workspace / skills / memory ==')
+const wsMod = await load('packages/team-workspace/lib/index.js')
+const skMod = await load('packages/team-skills/lib/index.js')
+const memMod = await load('packages/team-memory/lib/index.js')
+await rootCtx.plugin(wsMod.default, {
+  defaultTtlMs: 900000,
+  enforceWriteGuard: true,
+  sweepIntervalMs: 30000,
+})
+await rootCtx.plugin(skMod.default, { unrestrictedWhenUndeclared: true })
+await rootCtx.plugin(memMod.default, { sharedWriter: 'lead' })
+
+const bob = { id: 'bob', name: 'bob' }
+
+// 技能可见性隔离
+rootCtx.teamSkills.declare('t', { lead: ['arch-design'], bob: [] })
+assert(
+  JSON.stringify(rootCtx.teamSkills.visibleTo(lead)) === JSON.stringify(['arch-design']),
+  '技能可见性：lead 可见 arch-design',
+)
+assert(
+  JSON.stringify(rootCtx.teamSkills.visibleTo(bob)) === JSON.stringify([]),
+  '技能可见性：bob 为空（不泄露）',
+)
+
+// 记忆：lead 写共享、bob 只读
+await rootCtx.teamMemory.appendShared(lead, 'convention')
+assert(rootCtx.teamMemory.readShared(bob).length === 1, '共享记忆允许 bob 读')
+let memDenied = false
+try {
+  await rootCtx.teamMemory.appendShared(bob, 'x')
+} catch {
+  memDenied = true
+}
+assert(memDenied, '成员不可写共享记忆（授权拒绝）')
+
+// 锁互斥：lead 独占 src，bob 取竞合锁被拒
+const lk = await rootCtx.teamWorkspace.acquireLock(lead, { path: 'src', mode: 'exclusive' })
+let conflict = false
+try {
+  await rootCtx.teamWorkspace.acquireLock(bob, { path: 'src/x.ts', mode: 'exclusive' })
+} catch {
+  conflict = true
+}
+assert(conflict, '写域锁互斥：bob 与 lead 的独占锁冲突')
+await rootCtx.teamWorkspace.releaseLock(lead, lk)
+assert(rootCtx.teamWorkspace.listLocks().length === 0, '释放后无锁')
 
 if (failures === 0) {
   console.log('\n✅ 集成冒烟通过：成员 → 消息 → 任务 → 评审 → 完成 链路打通（端口 mock 后端）。')

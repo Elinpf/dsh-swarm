@@ -86,6 +86,7 @@ async function withContext(fn, skipServices = []) {
         },
       })
       ctx.provide('sessions', {})
+      ctx.provide('skills', {})
       ctx.provide('agents', { list: () => [] })
       ctx.provide('subagents', {})
       ctx.provide('teamCore', teamCore)
@@ -112,6 +113,35 @@ const PACKAGES = [
     name: '@elinpf/dsh-swarm-team-core-contract',
     file: 'packages/team-core-contract/lib/index.js',
     kind: 'types',
+  },
+  {
+    name: '@elinpf/dsh-swarm-team-capability-contract',
+    file: 'packages/team-capability-contract/lib/index.js',
+    kind: 'types',
+  },
+  {
+    name: '@elinpf/dsh-swarm-team-workspace',
+    file: 'packages/team-workspace/lib/index.js',
+    config: { defaultTtlMs: 900000, enforceWriteGuard: true, sweepIntervalMs: 30000 },
+    expectService: 'teamWorkspace',
+  },
+  {
+    name: '@elinpf/dsh-swarm-team-skills',
+    file: 'packages/team-skills/lib/index.js',
+    config: { unrestrictedWhenUndeclared: true },
+    expectService: 'teamSkills',
+  },
+  {
+    name: '@elinpf/dsh-swarm-team-memory',
+    file: 'packages/team-memory/lib/index.js',
+    config: { sharedWriter: 'lead' },
+    expectService: 'teamMemory',
+  },
+  {
+    name: '@elinpf/dsh-swarm-team-compaction',
+    file: 'packages/team-compaction/lib/index.js',
+    config: { enabled: false, maxTokens: 100000 },
+    expectService: 'teamCompaction',
   },
   {
     name: '@elinpf/dsh-swarm-example-plugin',

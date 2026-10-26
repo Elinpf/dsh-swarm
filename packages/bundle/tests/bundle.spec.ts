@@ -16,6 +16,10 @@ const SWARM_PLUGINS = [
   'team-scheduler',
   'team-completion',
   'tool-swarm',
+  'team-workspace',
+  'team-skills',
+  'team-memory',
+  'team-compaction',
 ]
 const LEGACY_ROWS = [
   'tool-subagent-control',

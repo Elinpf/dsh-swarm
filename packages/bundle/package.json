@@ -36,7 +36,11 @@
     "@elinpf/dsh-swarm-team-scheduler": "workspace:*",
     "@elinpf/dsh-swarm-team-review": "workspace:*",
     "@elinpf/dsh-swarm-team-completion": "workspace:*",
-    "@elinpf/dsh-swarm-tool-swarm": "workspace:*"
+    "@elinpf/dsh-swarm-tool-swarm": "workspace:*",
+    "@elinpf/dsh-swarm-team-workspace": "workspace:*",
+    "@elinpf/dsh-swarm-team-skills": "workspace:*",
+    "@elinpf/dsh-swarm-team-memory": "workspace:*",
+    "@elinpf/dsh-swarm-team-compaction": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-base": "^0.2.1-rc.3",

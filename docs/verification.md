@@ -300,3 +300,79 @@ $ corepack pnpm format:check# prettier：All matched
 2. **`followup_task` / `interrupt_agent` 未做真机探针**（spike 中两个未确认工具）：二者需要模型驱动才能触发，
    受 (1) 的模型端点限制未执行。`interrupt` 已在 `team-core` 适配（native `interrupt` → 端口 `interrupt`）并被单测覆盖；
    真实触发留待 profile 级联调。
+
+---
+
+# P7-impl-stage2：阶段 2 能力供给插件 + scope 迁移 + bundle 收敛
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-26
+> 范围：`team-capability-contract` + `team-workspace` + `team-skills` + `team-memory` + `team-compaction`（9 → 14 包）；`tool-swarm` 增量工具；bundle 追加 4 行并收敛重复插入；npm scope 迁移到 `@elinpf/dsh-swarm-*`。
+
+## A. 全量命令（实跑，14 包）
+
+```console
+$ corepack pnpm build       # tsc：14 个包全部 Done
+$ corepack pnpm test        # vitest：全部通过（14 个测试文件）
+$ corepack pnpm verify      # 真实 cordis 加载 14 包（见 B）
+$ corepack pnpm verify:e2e  # 集成冒烟（阶段1链路 + 阶段2链路，见 C）
+$ corepack pnpm lint        # 0 error
+$ corepack pnpm format:check# All matched
+```
+
+各包单测：team-capability-contract 2、team-workspace 7、team-skills 6、team-memory 5、team-compaction 7、tool-swarm 8；阶段 0/1 九包不变（共 **60+** 用例）。
+
+## B. 加载验证（`pnpm verify`，14 包）
+
+```console
+== @elinpf/dsh-swarm-team-capability-contract ==  [OK] 纯类型包：运行时零导出
+== @elinpf/dsh-swarm-team-workspace ==            [OK] 观察到服务 ctx.teamWorkspace；卸载后消失
+== @elinpf/dsh-swarm-team-skills ==               [OK] 观察到服务 ctx.teamSkills；卸载后消失
+== @elinpf/dsh-swarm-team-memory ==               [OK] 观察到服务 ctx.teamMemory；卸载后消失
+== @elinpf/dsh-swarm-team-compaction ==           [OK] 观察到服务 ctx.teamCompaction；卸载后消失
+…（阶段 0/1 九包同前）
+✅ 加载验证通过：全部插件可被真实 cordis 运行时加载并观察到预期行为。
+```
+
+## C. 集成冒烟（`pnpm verify:e2e`）
+
+阶段 1 链路 + 阶段 2 链路全通过：
+
+```console
+[OK] 成员 → 广播（自过滤）→ 任务 → 评审 pass → 完成判定（上升沿一次）
+[OK] 技能可见性：lead 可见 arch-design；bob 为空（不泄露）
+[OK] 共享记忆允许 bob 读；成员不可写共享记忆（授权拒绝）
+[OK] 写域锁互斥：bob 与 lead 的独占锁冲突；释放后无锁
+```
+
+## D. 真实 profile 回归（`scripts/e2e-profile.sh --no-model`）
+
+```console
+[PASS] @elinpf/dsh-swarm-bundle 自身插入行数 = 11 (期望 11)
+[PASS] 原生 agent-team / tool-agent-team 行存在（来自 agent-team-profile） = 2
+[PASS] legacy tool-subagent* 为 disabled 的行数 = 4 (期望 4)
+[PASS] dump-config 无禁用/不兼容告警
+结果：PASS=4 FAIL=0
+```
+
+**bundle 重复插入已收敛**：移除了此前重复插入的 `agent-team` / `tool-agent-team`（它们由 `agent-team-profile` 提供），bundle 只 disabled 4 个 legacy 行 + insert 11 个 dsh-swarm 自身行。
+
+## E. scope 迁移（`@dsh-swarm/*` → `@elinpf/dsh-swarm-*`）
+
+- 机械迁移覆盖：所有 `package.json` 的 `name`、源码/测试的 import 与 describe、`cordis.patch.yml` 的插件行、README/docs/ADR/规格里的包名、以及**隔离 profile** 的 bundle 引用（`dsh plugin remove` 旧 + `add` 新）。
+- 全链路（build/test/verify/verify:e2e/lint/format）+ `e2e-profile.sh` 迁移后重跑通过。
+- 各发布的包补 `publishConfig.access=public` 与 `files` 白名单（`lib` 进包、`src`/`tests`/`.runtime` 不进包）。
+- README 增加「与上游 `@deepseek-ai/dsh-*` 的命名对应关系」。
+
+## F. 规格 §9「待实现期核验」的实测结论
+
+1. **`fs/write-intent` 的拒绝语义**：实测**返回 `undefined` = 允许/无意图**（`tool-fs/src/write.ts` 用 `() => undefined` 兜底），**拒绝 = 监听里 throw**（`fs-observation-policy` 对 edit-intent 抛 `FS_NOT_OBSERVED`）；且决策槽**单占**，允许时必须 `next()` 让位。→ `team-workspace` 守卫据此实现（允许 `next()`，拒绝 `throw FS_WRITE_DENIED`，并 defer 为 Promise reject）。
+2. **`ctx.skills` 的 per-agent scope API**：`register()` 落在**调用 context 的 scope**，从全局 Service 无法安全地把技能注册进**成员各自 scope**。→ `team-skills` 先实现为**声明注册表 + `visibleTo` 事实源**（`tool-swarm.skills_visible` 消费）；真正落到 `ctx.skills` 成员 scope 的过滤**留待确认 scope API**（未做，如实登记）。
+3. **`ctx.worktrees` / `ctx.workingDirectory` 可用性**：`team-workspace` 用**本地结构化 seam** 探测 `ctx.worktrees`（不 import 实验包类型）；缺失时 `createWorktree` 抛 `TEAMWS_WORKTREE_UNAVAILABLE`，**文件锁守卫仍生效**。
+4. **`ctx.storage` forms**：`team-memory` 未强制依赖 storage（记忆存活于内存/会话事件），保持轻量；持久化 forms 留待阶段 3。
+
+## G. 边界（如实说明）
+
+- **`team-skills` 未真正写入 `ctx.skills` 的成员 scope**（§F.2），仅提供声明 + `visibleTo`；这是本阶段唯一未完全按规格落地的点。
+- `team-workspace` 的 `ctx.worktrees` / `ctx.fs` 以**可选 seam** 接入（未在真实 profile 内触发 worktree 创建）；锁守卫逻辑经单测与集成冒烟验证。
+- `team-compaction` 默认 `enabled:false`（不开启硬门控）；真实 token 计量依赖 `ctx.tokenMeter`（未挂载时 `usedTokens=0`）。
+- 整机 profile 的**真实模型**阶段 2 交互（如经模型取锁）未跑；`e2e-profile.sh` 默认 `--no-model` 通过，真实模型路径见 `docs/profile-e2e.md`。
