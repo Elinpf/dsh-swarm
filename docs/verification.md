@@ -129,7 +129,27 @@ All matched files use Prettier code style!
 
 ---
 
-## 6. 未覆盖 / 下一步
+## 6. Git 与远端推送
+
+- 仓库初始化：`git init -b main`，remote `origin = https://github.com/Elinpf/dsh-swarm`
+- 首次提交：`70dae04`（`refs/heads/main`）
+- 推送：直连 `github.com:443` 的前两次尝试分别 `Failed to connect ... after ~135s`；
+  经本地代理则 `gnutls_handshake() failed`。**重试后直连成功**：
+
+  ```console
+  To https://github.com/Elinpf/dsh-swarm
+   * [new branch]      main -> main
+  ```
+
+  远端确认：`git ls-remote origin` → `70dae04… HEAD` / `70dae04… refs/heads/main`。
+- 凭证：使用团队指定的助手 `git -c credential.helper=/root/repo/jiuwen/.proxy-config/git-cred-helper.sh`
+  （读取 `/root/.git-credentials`）。**注意**：该助手依赖真实 `$HOME`，因此**推送时不要 `source scripts/env.sh`**
+  （它会把 `HOME` 改到项目内隔离目录，导致助手找不到凭证）。
+- 仓库内**未写入任何凭证/token**。
+
+---
+
+## 7. 未覆盖 / 下一步
 
 - **未做**完整的 `dsh --profile <name> --dump-config` 组合验证：本机根盘 100% 满，
   `dsh plugin add` 会在 profile 内触发依赖安装而 `ENOSPC`；待磁盘充足或换机器时补做。
