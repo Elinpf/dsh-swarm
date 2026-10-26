@@ -117,7 +117,7 @@ git push origin v0.0.2
 
 ## 4. 发布前预检（本地实测）
 
-在隔离环境实测 `pnpm -r publish --dry-run`（移除 `private` 之后，`2026-10-26`）：
+在隔离环境实测（移除 `private` 之后，`2026-10-26`）。先跑门禁，实测 **`build` / `test` / `verify` 三者均 `rc=0`**；再跑发布预检 `pnpm -r publish --dry-run`：
 
 ```text
 📦 @elinpf/dsh-swarm-team-capability-contract@0.0.1 → https://registry.npmjs.org/
