@@ -60,7 +60,7 @@ const cfg = (over: any = {}) => ({
 })
 const text = [{ type: 'text', text: 'hi' }]
 
-describe('@dsh-swarm/team-core', () => {
+describe('@elinpf/dsh-swarm-team-core', () => {
   it('导出形态：Service（default export）+ inject', () => {
     expect(typeof TeamCoreService).toBe('function')
     expect(TeamCoreService.inject).toEqual(['agents', 'sessions', 'subagents'])

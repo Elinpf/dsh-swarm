@@ -11,14 +11,14 @@
  *
  * 只依赖契约包类型（ADR-0001）；不 import team-core 实现。
  *
- * @module @dsh-swarm/team-scheduler
+ * @module @elinpf/dsh-swarm-team-scheduler
  */
 
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { MemberView, TaskView } from '@dsh-swarm/team-core-contract'
+import type { MemberView, TaskView } from '@elinpf/dsh-swarm-team-core-contract'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

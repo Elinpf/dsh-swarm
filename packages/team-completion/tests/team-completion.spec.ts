@@ -50,7 +50,7 @@ const doneTask = {
 }
 const idleMember = { id: 'lead', name: 'lead', role: 'lead', phase: 'active', status: 'idle' }
 
-describe('@dsh-swarm/team-completion', () => {
+describe('@elinpf/dsh-swarm-team-completion', () => {
   it('导出形态：Service（default export）+ inject', () => {
     expect(typeof TeamCompletionService).toBe('function')
     expect(TeamCompletionService.inject).toEqual(['teamCore', 'teamBus', 'sessions'])

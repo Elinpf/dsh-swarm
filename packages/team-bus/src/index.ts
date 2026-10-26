@@ -6,10 +6,10 @@
  * - 多播是「一次事务写 N 个收件人」，整批失败即回滚，不产生部分投递。
  * - 防滥用：targets 恰为全体 → 拒绝并要求走 broadcast；含 `*`/`user` → 拒绝；正文超限 → 拒绝。
  *
- * 端口隔离：本包只依赖 `@dsh-swarm/team-core-contract` 的 `TeamCore` 类型，
- * 不 import 任何 `@dsh-swarm/team-core` 的内部实现（ADR-0001）。
+ * 端口隔离：本包只依赖 `@elinpf/dsh-swarm-team-core-contract` 的 `TeamCore` 类型，
+ * 不 import 任何 `@elinpf/dsh-swarm-team-core` 的内部实现（ADR-0001）。
  *
- * @module @dsh-swarm/team-bus
+ * @module @elinpf/dsh-swarm-team-bus
  */
 
 import { Service } from '@deepseek-ai/cordis'
@@ -18,7 +18,7 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强（type-only import 即可生效）。
-import type { TeamCore } from '@dsh-swarm/team-core-contract'
+import type { TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

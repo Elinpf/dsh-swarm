@@ -48,7 +48,7 @@ const reviewMock = {
 }
 const coreMock = { listTasks: () => [], listMembers: () => [] }
 
-describe('@dsh-swarm/tool-swarm', () => {
+describe('@elinpf/dsh-swarm-tool-swarm', () => {
   it('导出形态：函数式插件（命名导出、无 default export）', () => {
     expect(plugin.name).toBe('tool-swarm')
     expect(typeof plugin.apply).toBe('function')

@@ -64,7 +64,7 @@ function assembly() {
   }
 }
 
-describe('@dsh-swarm/team-prompt', () => {
+describe('@elinpf/dsh-swarm-team-prompt', () => {
   it('导出形态：函数式插件（命名导出、无 default export）', () => {
     expect(plugin.name).toBe('team-prompt')
     expect(plugin.inject).toEqual(['systemPrompt', 'teamCore', 'sessions'])

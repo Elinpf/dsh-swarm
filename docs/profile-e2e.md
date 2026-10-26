@@ -14,7 +14,7 @@
 | 项 | 结果 |
 |---|---|
 | 隔离环境（Node/pnpm/DSH_HOME） | ✅ 复用 P1 产出，`/root/.dsh` 零改动 |
-| 装齐 headless profile（npm 已发布包，未构建单仓） | ✅ `dsh-base + dsh-headless + agent-team-profile@0.2.1-rc.3 + @dsh-swarm/bundle` |
+| 装齐 headless profile（npm 已发布包，未构建单仓） | ✅ `dsh-base + dsh-headless + agent-team-profile@0.2.1-rc.3 + @elinpf/dsh-swarm-bundle` |
 | `--dump-config`：9 行团队插件 | ✅ **实测出现**（见 §3） |
 | `--dump-config`：4 行 legacy `tool-subagent*` disabled | ✅ **实测全部 disabled** |
 | 真实模型驱动（`llm-pi-ai` overlay） | ✅ `Reply with exactly: PONG` → `PONG`；固化为 `scripts/run-headless.sh` |
@@ -62,11 +62,11 @@ $DSH plugin --profile headless add ./packages/bundle
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-headless",
     "@deepseek-ai/dsh-experimental-agent-team-profile",
-    "@dsh-swarm/bundle"
+    "@elinpf/dsh-swarm-bundle"
   ] } },
   "dependencies": {
     "@deepseek-ai/dsh-experimental-agent-team-profile": "0.2.1-rc.3",
-    "@dsh-swarm/bundle": "link:/root/.../dsh-swarm/packages/bundle"
+    "@elinpf/dsh-swarm-bundle": "link:/root/.../dsh-swarm/packages/bundle"
   }
 }
 ```
@@ -83,19 +83,19 @@ $DSH plugin --profile headless add ./packages/bundle
 命令：`$DSH --profile headless --dump-config > .runtime/probe/e2e-dump-config.yml`
 （stderr 为空，无 `disabling`/`incompatible`/`did not activate` 告警）
 
-**`@dsh-swarm/bundle` 段落展开出的 9 行**（原文摘录）：
+**`@elinpf/dsh-swarm-bundle` 段落展开出的 9 行**（原文摘录）：
 
 ```yaml
-# == @dsh-swarm/bundle
+# == @elinpf/dsh-swarm-bundle
 - id: agent-team        # name: '@deepseek-ai/dsh-experimental-agent-team'
 - id: tool-agent-team   # name: '@deepseek-ai/dsh-experimental-tool-agent-team'
-- id: team-core         # name: '@dsh-swarm/team-core'         (backend: auto)
-- id: team-prompt       # name: '@dsh-swarm/team-prompt'       (locales: cn)
-- id: team-bus          # name: '@dsh-swarm/team-bus'          (maxFanout: 64)
-- id: team-review       # name: '@dsh-swarm/team-review'       (veto/challenger)
-- id: team-scheduler    # name: '@dsh-swarm/team-scheduler'    (mode: autonomous)
-- id: team-completion   # name: '@dsh-swarm/team-completion'   (blockOnUnread: true)
-- id: tool-swarm        # name: '@dsh-swarm/tool-swarm'        (enableBroadcast: true)
+- id: team-core         # name: '@elinpf/dsh-swarm-team-core'         (backend: auto)
+- id: team-prompt       # name: '@elinpf/dsh-swarm-team-prompt'       (locales: cn)
+- id: team-bus          # name: '@elinpf/dsh-swarm-team-bus'          (maxFanout: 64)
+- id: team-review       # name: '@elinpf/dsh-swarm-team-review'       (veto/challenger)
+- id: team-scheduler    # name: '@elinpf/dsh-swarm-team-scheduler'    (mode: autonomous)
+- id: team-completion   # name: '@elinpf/dsh-swarm-team-completion'   (blockOnUnread: true)
+- id: tool-swarm        # name: '@elinpf/dsh-swarm-tool-swarm'        (enableBroadcast: true)
 ```
 
 **4 行 legacy `tool-subagent*` 全部 `disabled: true`**（原文摘录）：
@@ -128,7 +128,7 @@ $DSH plugin --profile headless add ./packages/bundle
  "team_task_list","team_task_update","wait_agent","workflow"]
 ```
 
-其中 `broadcast`/`multicast`/`team_summary` 来自 `@dsh-swarm/tool-swarm`（`enableReview:false`，故无 `review_*`）。
+其中 `broadcast`/`multicast`/`team_summary` 来自 `@elinpf/dsh-swarm-tool-swarm`（`enableReview:false`，故无 `review_*`）。
 
 ---
 
@@ -300,7 +300,7 @@ bash scripts/run-headless.sh --json "1) spawn_teammate name='dave' description='
 | Web roster / task-board UI | 未测 | 本次仅 CLI/headless；需另装 `dsh-experimental-client-ui-agent-team` + `dsh web` |
 | 多成员并发高负载 / 压测 | 未测 | 单进程、无压测，列入后续 |
 | 跨进程分布式 / worktree+文件锁 | 未涉及 | 属阶段 2/3 能力，本任务只做 e2e 联调 |
-| 团队 bundle 重复插入 `agent-team`/`tool-agent-team` | ⚠️ 观察项 | `@dsh-swarm/bundle` 的 insert 里再次插入了这两个 id（与 agent-team-profile 重复）。`--dump-config` 与真实运行均未见冲突，但**建议 P2 复核**是否应改为「仅 disabled legacy + 插入 dsh-swarm 自身 7 行」以避免潜在重复 id 语义歧义 |
+| 团队 bundle 重复插入 `agent-team`/`tool-agent-team` | ⚠️ 观察项 | `@elinpf/dsh-swarm-bundle` 的 insert 里再次插入了这两个 id（与 agent-team-profile 重复）。`--dump-config` 与真实运行均未见冲突，但**建议 P2 复核**是否应改为「仅 disabled legacy + 插入 dsh-swarm 自身 7 行」以避免潜在重复 id 语义歧义 |
 
 > 纪律：以上「跑通」项均附真实命令与输出；`followup_task` 记为**不存在**而非「成功」，未编造。
 

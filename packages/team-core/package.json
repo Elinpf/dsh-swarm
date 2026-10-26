@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-swarm/team-core",
+  "name": "@elinpf/dsh-swarm-team-core",
   "version": "0.0.1",
   "private": true,
   "description": "团队协作稳定端口 TeamCorePort：把原生 ctx.agentTeams（或未来自建后端）适配为 ctx.teamCore",
@@ -14,8 +14,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/index.d.ts"
+    "lib"
   ],
   "license": "MIT",
   "scripts": {
@@ -24,7 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dsh-swarm/team-core-contract": "workspace:*"
+    "@elinpf/dsh-swarm-team-core-contract": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -37,5 +36,8 @@
     "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

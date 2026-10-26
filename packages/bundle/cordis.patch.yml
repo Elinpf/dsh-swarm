@@ -19,7 +19,7 @@
 - insert:
     # —— dsh-swarm：端口 + 协作内核补全（原生团队域由 agent-team-profile 提供，不在此重复）——
     - id: team-core
-      name: '@dsh-swarm/team-core'
+      name: '@elinpf/dsh-swarm-team-core'
       config:
         backend: auto
         maxMembers: 8
@@ -27,19 +27,19 @@
         maxMessageBytes: 65536
 
     - id: team-prompt
-      name: '@dsh-swarm/team-prompt'
+      name: '@elinpf/dsh-swarm-team-prompt'
       config:
         locales: cn
         leaderProgressiveDisclosure: true
 
     - id: team-bus
-      name: '@dsh-swarm/team-bus'
+      name: '@elinpf/dsh-swarm-team-bus'
       config:
         maxFanout: 64
         maxMessageBytes: 65536
 
     - id: team-review
-      name: '@dsh-swarm/team-review'
+      name: '@elinpf/dsh-swarm-team-review'
       config:
         pools:
           - { kind: binary, rule: veto, roles: [verifier, challenger] }
@@ -47,18 +47,18 @@
         stallTimeoutMs: 1800000
 
     - id: team-scheduler
-      name: '@dsh-swarm/team-scheduler'
+      name: '@elinpf/dsh-swarm-team-scheduler'
       config:
         mode: autonomous
         pollMs: 30000
 
     - id: team-completion
-      name: '@dsh-swarm/team-completion'
+      name: '@elinpf/dsh-swarm-team-completion'
       config:
         blockOnUnread: true
 
     - id: tool-swarm
-      name: '@dsh-swarm/tool-swarm'
+      name: '@elinpf/dsh-swarm-tool-swarm'
       config:
         enableBroadcast: true
         enableReview: false

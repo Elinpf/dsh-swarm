@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-swarm/example-plugin",
+  "name": "@elinpf/dsh-swarm-example-plugin",
   "version": "0.0.1",
   "private": true,
   "description": "Hello-world DSH 插件：注册一个模型可见工具 + 一个系统提示词 section，用于验证「构建→加载→观察」链路",
@@ -15,8 +15,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/index.d.ts",
+    "lib",
     "cordis.patch.yml"
   ],
   "license": "MIT",
@@ -44,5 +43,8 @@
     "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.3",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

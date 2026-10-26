@@ -3,7 +3,7 @@
 # e2e-profile.sh — 在【真实 DSH profile】上做端到端联调（可重复执行）
 # -----------------------------------------------------------------------------
 # 覆盖：
-#   1) 幂等装齐 headless profile + 接入 @dsh-swarm/bundle
+#   1) 幂等装齐 headless profile + 接入 @elinpf/dsh-swarm-bundle
 #   2) `--dump-config` 断言：9 行团队插件出现、4 行 legacy tool-subagent* 为 disabled
 #   3) 真实模型驱动的最小团队交互（spawn_teammate + send_message(DM) + team_task_*）
 #   4) interrupt_agent 真机探针
@@ -40,20 +40,20 @@ prof_pkg="$DSH_HOME/profiles/$PROFILE/package.json"
 need_agent_team=1; need_bundle=1
 if [ -f "$prof_pkg" ]; then
   grep -q "@deepseek-ai/dsh-experimental-agent-team-profile" "$prof_pkg" && need_agent_team=0
-  grep -q "@dsh-swarm/bundle" "$prof_pkg" && need_bundle=0
+  grep -q "@elinpf/dsh-swarm-bundle" "$prof_pkg" && need_bundle=0
 fi
 [ "$need_agent_team" = 1 ] && "$DSH" plugin --profile "$PROFILE" add "$AGENT_TEAM_PROFILE" >"$PROBE/e2e-plugin-agentteam.log" 2>&1
 [ "$need_bundle" = 1 ] && "$DSH" plugin --profile "$PROFILE" add "$REPO_ROOT/packages/bundle" >"$PROBE/e2e-plugin-bundle.log" 2>&1
 echo "  agent-team-profile in profile: $([ "$need_agent_team" = 0 ] && echo yes || echo added)"
-echo "  @dsh-swarm/bundle   in profile: $([ "$need_bundle" = 0 ] && echo yes || echo added)"
+echo "  @elinpf/dsh-swarm-bundle   in profile: $([ "$need_bundle" = 0 ] && echo yes || echo added)"
 
 echo ">>> [2/4] --dump-config 断言"
 DUMP="$PROBE/e2e-dump-config.yml"
 "$DSH" --profile "$PROFILE" --dump-config > "$DUMP" 2>"$PROBE/e2e-dump-config.err"
-# @dsh-swarm/bundle 段落内的 9 行
-sec=$(awk '/^# == @dsh-swarm\/bundle/{f=1} f&&/^# ==/&&!/@dsh-swarm\/bundle/{if(f>1)exit} f{print} f&&/^# == @dsh-swarm\/bundle/{f=2}' "$DUMP")
+# @elinpf/dsh-swarm-bundle 段落内的 9 行
+sec=$(awk '/^# == @elinpf\/dsh-swarm-bundle/{f=1} f&&/^# ==/&&!/@elinpf\/dsh-swarm-bundle/{if(f>1)exit} f{print} f&&/^# == @elinpf\/dsh-swarm-bundle/{f=2}' "$DUMP")
 rows=$(printf '%s\n' "$sec" | grep -cE "^- id: (team-core|team-prompt|team-bus|team-review|team-scheduler|team-completion|tool-swarm)$")
-ck $([ "$rows" -eq 7 ] && echo 1 || echo 0) "@dsh-swarm/bundle 自身插入行数 = $rows (期望 7)"
+ck $([ "$rows" -eq 7 ] && echo 1 || echo 0) "@elinpf/dsh-swarm-bundle 自身插入行数 = $rows (期望 7)"
 # 原生团队域由 agent-team-profile 提供（bundle 不再重复插入）：确认它们在 dump 中确实存在
 nat=0
 grep -qE "^- id: agent-team$" "$DUMP" && nat=$((nat+1))

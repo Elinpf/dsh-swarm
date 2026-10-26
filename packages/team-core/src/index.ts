@@ -4,12 +4,12 @@
  *
  * 端口隔离：**业务代码不经本包、更不直接碰实验性 API**；本包是唯一接触 `ctx.agentTeams` 的地方，
  * 且用一个**本地结构化的 seam 接口**描述它——不 import 实验包的实现/类型，避免版本脆弱性
- * （spike 已证 npm `latest` 与 0.2.1-rc.3 不兼容）。端口类型 SSOT 在 `@dsh-swarm/team-core-contract`。
+ * （spike 已证 npm `latest` 与 0.2.1-rc.3 不兼容）。端口类型 SSOT 在 `@elinpf/dsh-swarm-team-core-contract`。
  *
  * 降级：`ctx.agentTeams` 缺失时（`backend: auto`）进入 **no-op 模式**：`listMembers/listTasks` 返回空、
  * 其余方法抛 `TEAMCORE_UNAVAILABLE`——**不阻断单 agent 运行**，仅告警。`owned` 后端未实现（预留选择点）。
  *
- * @module @dsh-swarm/team-core
+ * @module @elinpf/dsh-swarm-team-core
  */
 
 import { Service } from '@deepseek-ai/cordis'
@@ -23,7 +23,7 @@ import type {
   TaskView,
   TeamCore,
   TeamMembership,
-} from '@dsh-swarm/team-core-contract'
+} from '@elinpf/dsh-swarm-team-core-contract'
 
 /**
  * 原生 `ctx.agentTeams`（`@deepseek-ai/dsh-experimental-agent-team`）的**结构化 seam**。

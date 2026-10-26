@@ -74,7 +74,7 @@ const cfg = (over: Partial<any> = {}) => ({
 
 afterEach(() => vi.useRealTimers())
 
-describe('@dsh-swarm/team-scheduler', () => {
+describe('@elinpf/dsh-swarm-team-scheduler', () => {
   it('导出形态：Service（default export）+ inject', () => {
     expect(typeof TeamSchedulerService).toBe('function')
     expect(TeamSchedulerService.inject).toEqual(['teamCore', 'teamBus', 'agents', 'systemPrompt'])

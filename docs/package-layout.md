@@ -10,29 +10,29 @@
 
 | 包名 | 路径 | cordis 插件名（row id） | 服务键 | 形态 | 阶段 |
 |---|---|---|---|---|---|
-| `@dsh-swarm/example-plugin` | `packages/example-plugin/` | `example-plugin` | — | 函数式 | 已有（基线） |
-| `@dsh-swarm/team-core-contract` | `packages/team-core-contract/` | （纯类型，无 row） | — | 纯类型 | 0 |
-| `@dsh-swarm/team-core` | `packages/team-core/` | `team-core` | `ctx.teamCore` | Service | 0 |
-| `@dsh-swarm/bundle` | `packages/bundle/` | （bundle，无 row） | — | bundle patch | 0 |
-| `@dsh-swarm/team-bus` | `packages/team-bus/` | `team-bus` | `ctx.teamBus` | Service | 1 |
-| `@dsh-swarm/team-scheduler` | `packages/team-scheduler/` | `team-scheduler` | `ctx.teamScheduler` | Service | 1 |
-| `@dsh-swarm/team-review` | `packages/team-review/` | `team-review` | `ctx.teamReview` | Service | 1 |
-| `@dsh-swarm/team-completion` | `packages/team-completion/` | `team-completion` | `ctx.teamCompletion` | Service | 1 |
-| `@dsh-swarm/team-prompt` | `packages/team-prompt/` | `team-prompt` | （用 `ctx.systemPrompt`） | 函数式 | 1 |
-| `@dsh-swarm/tool-swarm` | `packages/tool-swarm/` | `tool-swarm` | （用 `ctx.tools`） | 函数式 | 1 |
-| **`@dsh-swarm/team-capability-contract`** | `packages/team-capability-contract/` | （纯类型，无 row） | — | 纯类型 | **2** |
-| **`@dsh-swarm/team-workspace`** | `packages/team-workspace/` | `team-workspace` | `ctx.teamWorkspace` | Service | **2** |
-| **`@dsh-swarm/team-skills`** | `packages/team-skills/` | `team-skills` | `ctx.teamSkills` | Service | **2** |
-| **`@dsh-swarm/team-memory`** | `packages/team-memory/` | `team-memory` | `ctx.teamMemory` | Service | **2** |
-| **`@dsh-swarm/team-compaction`** | `packages/team-compaction/` | `team-compaction` | `ctx.teamCompaction` | Service | **2** |
+| `@elinpf/dsh-swarm-example-plugin` | `packages/example-plugin/` | `example-plugin` | — | 函数式 | 已有（基线） |
+| `@elinpf/dsh-swarm-team-core-contract` | `packages/team-core-contract/` | （纯类型，无 row） | — | 纯类型 | 0 |
+| `@elinpf/dsh-swarm-team-core` | `packages/team-core/` | `team-core` | `ctx.teamCore` | Service | 0 |
+| `@elinpf/dsh-swarm-bundle` | `packages/bundle/` | （bundle，无 row） | — | bundle patch | 0 |
+| `@elinpf/dsh-swarm-team-bus` | `packages/team-bus/` | `team-bus` | `ctx.teamBus` | Service | 1 |
+| `@elinpf/dsh-swarm-team-scheduler` | `packages/team-scheduler/` | `team-scheduler` | `ctx.teamScheduler` | Service | 1 |
+| `@elinpf/dsh-swarm-team-review` | `packages/team-review/` | `team-review` | `ctx.teamReview` | Service | 1 |
+| `@elinpf/dsh-swarm-team-completion` | `packages/team-completion/` | `team-completion` | `ctx.teamCompletion` | Service | 1 |
+| `@elinpf/dsh-swarm-team-prompt` | `packages/team-prompt/` | `team-prompt` | （用 `ctx.systemPrompt`） | 函数式 | 1 |
+| `@elinpf/dsh-swarm-tool-swarm` | `packages/tool-swarm/` | `tool-swarm` | （用 `ctx.tools`） | 函数式 | 1 |
+| **`@elinpf/dsh-swarm-team-capability-contract`** | `packages/team-capability-contract/` | （纯类型，无 row） | — | 纯类型 | **2** |
+| **`@elinpf/dsh-swarm-team-workspace`** | `packages/team-workspace/` | `team-workspace` | `ctx.teamWorkspace` | Service | **2** |
+| **`@elinpf/dsh-swarm-team-skills`** | `packages/team-skills/` | `team-skills` | `ctx.teamSkills` | Service | **2** |
+| **`@elinpf/dsh-swarm-team-memory`** | `packages/team-memory/` | `team-memory` | `ctx.teamMemory` | Service | **2** |
+| **`@elinpf/dsh-swarm-team-compaction`** | `packages/team-compaction/` | `team-compaction` | `ctx.teamCompaction` | Service | **2** |
 
 > **包数：9（阶段 0/1）→ 14（阶段 2 后）**。`team-core-contract` 与 `team-capability-contract` 均为**纯类型 SSOT 包**（零运行时实现）。
 > **【事实·ADR-0001】** `team-core-contract` 是 `ctx.teamCore` 的唯一类型 SSOT；`team-bus`/`team-prompt`/`team-scheduler`/`team-review`/`team-completion`/`tool-swarm`/`team-core` **禁止** import 实现包，只从契约包取类型。
 > **【设计主张·P6-spec-stage2 §1.1】** 阶段 2 新增独立契约包 `team-capability-contract`（承载 `ctx.teamWorkspace/teamSkills/teamMemory/teamCompaction` 四端口），**不塞进 `team-core-contract`**：二者是不同 cohort（协作内核层 vs 能力供给层）、不同冻结时点；独立成包同样满足 ADR-0001 的编译期边界，且 `team-core-contract` 保持冻结。
 
-**【设计主张】命名规则**：项目名 `dsh-swarm`（用户明确要求，非 team）；scope 一律 `@dsh-swarm/*`；bundle 固定 `@dsh-swarm/bundle`。插件名与 row id 同名（对齐 example-plugin）。
+**【设计主张】命名规则**：项目名 `dsh-swarm`（用户明确要求，非 team）；scope 一律 `@elinpf/dsh-swarm-*`；bundle 固定 `@elinpf/dsh-swarm-bundle`。插件名与 row id 同名（对齐 example-plugin）。
 
-**阶段 3+（登记，不在当前布局实现）**：`@dsh-swarm/transport-*`、`channels`、`host-bridge`、Web UI。
+**阶段 3+（登记，不在当前布局实现）**：`@elinpf/dsh-swarm-transport-*`、`channels`、`host-bridge`、Web UI。
 
 ---
 
@@ -55,8 +55,8 @@ flowchart TB
     CMP[ctx.compaction]
   end
   subgraph CONTRACTS["契约包（纯类型 SSOT）"]
-    CC1["@dsh-swarm/team-core-contract<br/>ctx.teamCore 类型"]
-    CC2["@dsh-swarm/team-capability-contract<br/>ctx.teamWorkspace/teamSkills/teamMemory/teamCompaction 类型"]
+    CC1["@elinpf/dsh-swarm-team-core-contract<br/>ctx.teamCore 类型"]
+    CC2["@elinpf/dsh-swarm-team-capability-contract<br/>ctx.teamWorkspace/teamSkills/teamMemory/teamCompaction 类型"]
   end
   subgraph NATIVE["DSH 原生实验包（复用）"]
     NAT_TEAM["agent-team（=ctx.agentTeams）"]
@@ -73,7 +73,7 @@ flowchart TB
   SKL["team-skills"]
   MEM["team-memory"]
   CMPC["team-compaction"]
-  BUNDLE["@dsh-swarm/bundle<br/>（cordis.patch.yml）"]
+  BUNDLE["@elinpf/dsh-swarm-bundle<br/>（cordis.patch.yml）"]
 
   NAT_TEAM --> ATS
   CORE --> ATS
@@ -178,7 +178,7 @@ dsh-swarm/
 **每包标准结构（对齐 example-plugin，【事实】）**：
 ```
 packages/<pkg>/
-├── src/index.ts          # 唯一入口（模块头 @module @dsh-swarm/<pkg>）
+├── src/index.ts          # 唯一入口（模块头 @module @elinpf/dsh-swarm-<pkg>）
 ├── tests/<pkg>.spec.ts   # vitest（假 ctx）
 ├── tsconfig.json         # extends ../../tsconfig.base.json；rootDir src / outDir lib
 └── package.json          # main lib/index.js · types lib/index.d.ts · scripts build/typecheck/test
@@ -192,10 +192,10 @@ packages/<pkg>/
 
 | 检查项 | 规则 |
 |---|---|
-| package name | `@dsh-swarm/<pkg>` |
+| package name | `@elinpf/dsh-swarm-<pkg>` |
 | `export const name`（函数式） / `super(ctx,'<key>')`（Service） | 与 row id 同名 |
 | `cordis.patch.yml` 的 row `id` | 与上同名 |
-| `cordis.patch.yml` 的 row `name` | 等于 package name（`@dsh-swarm/<pkg>`） |
+| `cordis.patch.yml` 的 row `name` | 等于 package name（`@elinpf/dsh-swarm-<pkg>`） |
 | 服务键（阶段 0/1） | `ctx.teamCore` / `ctx.teamBus` / `ctx.teamScheduler` / `ctx.teamReview` / `ctx.teamCompletion` |
 | 服务键（阶段 2） | `ctx.teamWorkspace` / `ctx.teamSkills` / `ctx.teamMemory` / `ctx.teamCompaction` |
 | 契约包 | 只含类型；运行时零导出；`ctx.team*` 类型增强放对应契约包 |

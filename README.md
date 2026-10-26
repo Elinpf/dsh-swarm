@@ -22,6 +22,17 @@
 | pnpm                  | `11.28.5`                | 锁在根 `package.json` 的 `packageManager`     |
 | `@deepseek-ai/cordis` | `^4.0.1`（本机装 4.0.5） | DSH 的插件内核                                |
 
+### 命名（npm scope）
+
+本项目自有包统一发布在 **`@elinpf`** scope 下，命名规则 `@elinpf/dsh-swarm-<能力>`：
+
+| 本项目包                         | 对应上游（DSH）                                                                                                 |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `@elinpf/dsh-swarm-team-core` 等 | 编排/协作能力由本仓自建，**不**对应单个上游包                                                                   |
+| `@elinpf/dsh-swarm-bundle`       | 组合层，叠加在上游 bundle（如 `@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-experimental-agent-team-profile`）之上 |
+
+> 上游 DSH 包一律以 `@deepseek-ai/dsh-*` 命名（peer 依赖，不由本仓发布）。本仓的包名与上游**不混用同一 scope**：自建=`@elinpf/dsh-swarm-*`，上游=`@deepseek-ai/*`。
+
 ---
 
 ## 目录结构
@@ -106,19 +117,19 @@ corepack pnpm format:check
 
 在 `example-plugin` 之外，新增 7 个协作能力包（一个能力一个包，包间**只经端口通信**）：
 
-| 包                              | 形态    | 服务键               | 职责                                                            |
-| ------------------------------- | ------- | -------------------- | --------------------------------------------------------------- |
-| `@dsh-swarm/team-core-contract` | 纯类型  | —                    | 端口类型 **SSOT** + `ctx.teamCore` 类型增强（无实现，ADR-0001） |
-| `@dsh-swarm/team-bus`           | Service | `ctx.teamBus`        | 广播 / 多播 / 主题扇出（自过滤、原子多播、防滥用）              |
-| `@dsh-swarm/team-prompt`        | 函数式  | —                    | 稳定段 + cache-safe context + 渐进披露                          |
-| `@dsh-swarm/team-scheduler`     | Service | `ctx.teamScheduler`  | 幂等扫描调度 + stale 自催/升级 + 降级                           |
-| `@dsh-swarm/team-review`        | Service | `ctx.teamReview`     | 验证闸 + 裁决数学（一票否决 / 打分阈值 / 自投拒绝）             |
-| `@dsh-swarm/team-completion`    | Service | `ctx.teamCompletion` | 完成判定三条件 + 上升沿去重                                     |
-| `@dsh-swarm/tool-swarm`         | 函数式  | —                    | 暴露 broadcast/multicast/review\_\*/team_summary 模型工具       |
-| `@dsh-swarm/team-core`          | Service | `ctx.teamCore`       | **TeamCorePort** 落地：native 薄适配 + no-op 降级               |
-| `@dsh-swarm/bundle`             | bundle  | —                    | 组合层：先 disabled 关 legacy，再 insert 团队行                 |
+| 包                                     | 形态    | 服务键               | 职责                                                            |
+| -------------------------------------- | ------- | -------------------- | --------------------------------------------------------------- |
+| `@elinpf/dsh-swarm-team-core-contract` | 纯类型  | —                    | 端口类型 **SSOT** + `ctx.teamCore` 类型增强（无实现，ADR-0001） |
+| `@elinpf/dsh-swarm-team-bus`           | Service | `ctx.teamBus`        | 广播 / 多播 / 主题扇出（自过滤、原子多播、防滥用）              |
+| `@elinpf/dsh-swarm-team-prompt`        | 函数式  | —                    | 稳定段 + cache-safe context + 渐进披露                          |
+| `@elinpf/dsh-swarm-team-scheduler`     | Service | `ctx.teamScheduler`  | 幂等扫描调度 + stale 自催/升级 + 降级                           |
+| `@elinpf/dsh-swarm-team-review`        | Service | `ctx.teamReview`     | 验证闸 + 裁决数学（一票否决 / 打分阈值 / 自投拒绝）             |
+| `@elinpf/dsh-swarm-team-completion`    | Service | `ctx.teamCompletion` | 完成判定三条件 + 上升沿去重                                     |
+| `@elinpf/dsh-swarm-tool-swarm`         | 函数式  | —                    | 暴露 broadcast/multicast/review\_\*/team_summary 模型工具       |
+| `@elinpf/dsh-swarm-team-core`          | Service | `ctx.teamCore`       | **TeamCorePort** 落地：native 薄适配 + no-op 降级               |
+| `@elinpf/dsh-swarm-bundle`             | bundle  | —                    | 组合层：先 disabled 关 legacy，再 insert 团队行                 |
 
-**端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@dsh-swarm/team-core-contract` 取类型**，不得 import `@dsh-swarm/team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
+**端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）
 
@@ -134,7 +145,7 @@ DSH=.runtime/dsh-cli-npm/node_modules/.bin/dsh
 $DSH plugin --profile headless add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.1-rc.3
 $DSH plugin --profile headless add ./packages/bundle
 $DSH --profile headless --dump-config | grep -E "team-core|team-bus|tool-swarm"
-$DSH --profile headless remove @dsh-swarm/bundle    # 关闭即回退（零残留）
+$DSH --profile headless remove @elinpf/dsh-swarm-bundle    # 关闭即回退（零残留）
 ```
 
 ---
@@ -177,7 +188,7 @@ corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 - [x] pnpm workspace 骨架（根 package.json / pnpm-workspace.yaml / tsconfig 基座 / lint+format / .gitignore）
 - [x] hello-world 插件包 + bundle 声明
 - [x] **阶段 1 协作插件 7 包**（team-core-contract / team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）
-- [x] **`team-core`（TeamCorePort，native 后端）+ `@dsh-swarm/bundle` 组装** —— 阶段 0/1 全部 9 个包就位
+- [x] **`team-core`（TeamCorePort，native 后端）+ `@elinpf/dsh-swarm-bundle` 组装** —— 阶段 0/1 全部 9 个包就位
 - [x] `pnpm build` / `pnpm test` / `pnpm verify` / `pnpm verify:e2e` / `pnpm lint` / `pnpm format:check` 全部实跑通过
 - [x] 真实 cordis 加载验证覆盖**全部 9 个包**（`scripts/verify-load.mjs`）；进程内集成冒烟跑通「成员 → 消息 → 任务 → 评审 → 完成」（`scripts/verify-e2e.mjs`）
 - [ ] 整机 profile 级联调（完整 `dsh-base` + 实验包 + 可用模型端点）—— 见 `docs/verification.md` 边界说明

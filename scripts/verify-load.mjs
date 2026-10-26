@@ -109,12 +109,12 @@ async function withContext(fn, skipServices = []) {
 
 const PACKAGES = [
   {
-    name: '@dsh-swarm/team-core-contract',
+    name: '@elinpf/dsh-swarm-team-core-contract',
     file: 'packages/team-core-contract/lib/index.js',
     kind: 'types',
   },
   {
-    name: '@dsh-swarm/example-plugin',
+    name: '@elinpf/dsh-swarm-example-plugin',
     file: 'packages/example-plugin/lib/index.js',
     config: { greeting: 'hello', order: 120 },
     expectTools: ['greet'],
@@ -124,20 +124,20 @@ const PACKAGES = [
     expectRollback: false,
   },
   {
-    name: '@dsh-swarm/team-bus',
+    name: '@elinpf/dsh-swarm-team-bus',
     file: 'packages/team-bus/lib/index.js',
     config: { maxFanout: 64, maxMessageBytes: 65536 },
     expectService: 'teamBus',
     provides: ['teamBus'],
   },
   {
-    name: '@dsh-swarm/team-prompt',
+    name: '@elinpf/dsh-swarm-team-prompt',
     file: 'packages/team-prompt/lib/index.js',
     config: { locales: 'cn', leaderProgressiveDisclosure: true, sections: [] },
     expectSections: ['team:role', 'team:inbound'],
   },
   {
-    name: '@dsh-swarm/team-scheduler',
+    name: '@elinpf/dsh-swarm-team-scheduler',
     file: 'packages/team-scheduler/lib/index.js',
     config: {
       mode: 'autonomous',
@@ -149,25 +149,25 @@ const PACKAGES = [
     expectService: 'teamScheduler',
   },
   {
-    name: '@dsh-swarm/team-review',
+    name: '@elinpf/dsh-swarm-team-review',
     file: 'packages/team-review/lib/index.js',
     config: { pools: [], maxRounds: 3, stallTimeoutMs: 1800000 },
     expectService: 'teamReview',
     provides: ['teamReview'],
   },
   {
-    name: '@dsh-swarm/team-completion',
+    name: '@elinpf/dsh-swarm-team-completion',
     file: 'packages/team-completion/lib/index.js',
     config: { blockOnUnread: true },
     expectService: 'teamCompletion',
   },
   {
-    name: '@dsh-swarm/tool-swarm',
+    name: '@elinpf/dsh-swarm-tool-swarm',
     file: 'packages/tool-swarm/lib/index.js',
     config: { enableBroadcast: true, enableReview: true },
     expectTools: ['broadcast', 'multicast', 'review_submit', 'review_vote', 'team_summary'],
   },
-  { name: '@dsh-swarm/bundle', file: 'packages/bundle/lib/index.js', kind: 'bundle' },
+  { name: '@elinpf/dsh-swarm-bundle', file: 'packages/bundle/lib/index.js', kind: 'bundle' },
 ]
 
 for (const p of PACKAGES) {
@@ -187,7 +187,7 @@ for (const p of PACKAGES) {
     const yml = readFileSync(resolve(root, 'packages/bundle/cordis.patch.yml'), 'utf8')
     assert((yml.match(/disabled:\s*true/g) ?? []).length === 4, '先 disabled 关掉 4 个 legacy 行')
     assert(
-      yml.includes('- insert:') && yml.includes("name: '@dsh-swarm/team-core'"),
+      yml.includes('- insert:') && yml.includes("name: '@elinpf/dsh-swarm-team-core'"),
       'insert 了团队插件行',
     )
     continue

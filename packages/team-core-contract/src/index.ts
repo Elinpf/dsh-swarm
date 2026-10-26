@@ -2,13 +2,13 @@
  * 团队协作端口的**唯一契约**（类型 SSOT）。
  *
  * 为什么单独成包（ADR-0001，方案 C）：端口类型若与 `team-core` 的实现同处一个包，
- * 消费方在物理上就能 `import '@dsh-swarm/team-core/src/internal'`。把契约抽成独立包后，
+ * 消费方在物理上就能 `import '@elinpf/dsh-swarm-team-core/src/internal'`。把契约抽成独立包后，
  * 「包间只经端口通信、禁止直连实现」这条约束在**编译期**即成立——消费包只能看到这里的类型。
  *
  * 本包**只有类型**：没有 Service、没有后端、没有运行时逻辑；编译产物是空模块。
- * 运行时实现（`native`/`owned` 后端）由 `@dsh-swarm/team-core` 提供，类型一律复用本包。
+ * 运行时实现（`native`/`owned` 后端）由 `@elinpf/dsh-swarm-team-core` 提供，类型一律复用本包。
  *
- * @module @dsh-swarm/team-core-contract
+ * @module @elinpf/dsh-swarm-team-core-contract
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'

@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-swarm/bundle",
+  "name": "@elinpf/dsh-swarm-bundle",
   "version": "0.0.1",
   "private": true,
   "description": "dsh-swarm 协作能力 bundle：在 dsh-base 之上层叠团队插件行（先 disabled 关 legacy，再 insert）",
@@ -15,8 +15,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/index.d.ts",
+    "lib",
     "cordis.patch.yml"
   ],
   "license": "MIT",
@@ -31,13 +30,13 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dsh-swarm/team-core": "workspace:*",
-    "@dsh-swarm/team-bus": "workspace:*",
-    "@dsh-swarm/team-prompt": "workspace:*",
-    "@dsh-swarm/team-scheduler": "workspace:*",
-    "@dsh-swarm/team-review": "workspace:*",
-    "@dsh-swarm/team-completion": "workspace:*",
-    "@dsh-swarm/tool-swarm": "workspace:*"
+    "@elinpf/dsh-swarm-team-core": "workspace:*",
+    "@elinpf/dsh-swarm-team-bus": "workspace:*",
+    "@elinpf/dsh-swarm-team-prompt": "workspace:*",
+    "@elinpf/dsh-swarm-team-scheduler": "workspace:*",
+    "@elinpf/dsh-swarm-team-review": "workspace:*",
+    "@elinpf/dsh-swarm-team-completion": "workspace:*",
+    "@elinpf/dsh-swarm-tool-swarm": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-base": "^0.2.1-rc.3",
@@ -62,5 +61,8 @@
   "devDependencies": {
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

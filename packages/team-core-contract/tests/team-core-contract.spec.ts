@@ -7,7 +7,7 @@ import * as contract from '../src/index.ts'
  * 这里既断言「运行时空」，也用 expectTypeOf 把 §4.1 的关键形状冻结住，
  * 防止后续有人在契约包里悄悄加实现或改语义（ADR-0001）。
  */
-describe('@dsh-swarm/team-core-contract', () => {
+describe('@elinpf/dsh-swarm-team-core-contract', () => {
   it('运行时零导出（纯类型包，无任何实现）', () => {
     expect(Object.keys(contract)).toHaveLength(0)
   })

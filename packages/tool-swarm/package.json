@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-swarm/tool-swarm",
+  "name": "@elinpf/dsh-swarm-tool-swarm",
   "version": "0.0.1",
   "private": true,
   "description": "把 bus/scheduler/review 的增量能力暴露为模型工具（原生 tool-agent-team 没有的部分）",
@@ -14,8 +14,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/index.d.ts"
+    "lib"
   ],
   "license": "MIT",
   "scripts": {
@@ -24,7 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dsh-swarm/team-core-contract": "workspace:*"
+    "@elinpf/dsh-swarm-team-core-contract": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -35,5 +34,8 @@
     "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

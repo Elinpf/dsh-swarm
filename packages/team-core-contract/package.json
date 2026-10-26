@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-swarm/team-core-contract",
+  "name": "@elinpf/dsh-swarm-team-core-contract",
   "version": "0.0.1",
   "private": true,
   "description": "团队协作端口的唯一契约（类型 SSOT）：TeamCore 端口 + ctx.teamCore 类型增强；不含任何实现",
@@ -14,8 +14,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/index.d.ts"
+    "lib"
   ],
   "license": "MIT",
   "scripts": {
@@ -34,5 +33,8 @@
     "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

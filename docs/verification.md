@@ -25,7 +25,7 @@ $ corepack pnpm -v
 $ corepack pnpm build
 $ pnpm -r run build
 
-> @dsh-swarm/example-plugin@0.0.1 build .../packages/example-plugin
+> @elinpf/dsh-swarm-example-plugin@0.0.1 build .../packages/example-plugin
 > tsc -p tsconfig.json
 ```
 
@@ -46,7 +46,7 @@ packages/example-plugin/lib/index.d.ts.map
 $ corepack pnpm test
 $ pnpm -r run test
 
-> @dsh-swarm/example-plugin@0.0.1 test .../packages/example-plugin
+> @elinpf/dsh-swarm-example-plugin@0.0.1 test .../packages/example-plugin
 > vitest run
 
  RUN  v4.1.11 .../packages/example-plugin
@@ -208,14 +208,14 @@ $ corepack pnpm format:check     # prettier：All matched
 ## B. 加载验证输出（`pnpm verify`）
 
 ```console
-== @dsh-swarm/team-core-contract ==   [OK] 纯类型包：运行时零导出（无实现）
-== @dsh-swarm/example-plugin ==       [OK] 观察到工具 greet / section example-plugin:guide / fiber DISPOSED
-== @dsh-swarm/team-bus ==             [OK] 观察到服务 ctx.teamBus；卸载后消失
-== @dsh-swarm/team-prompt ==          [OK] 观察到 section team:role/team:inbound；卸载后归零
-== @dsh-swarm/team-scheduler ==       [OK] 观察到服务 ctx.teamScheduler；卸载后消失
-== @dsh-swarm/team-review ==          [OK] 观察到服务 ctx.teamReview；卸载后消失
-== @dsh-swarm/team-completion ==      [OK] 观察到服务 ctx.teamCompletion；卸载后消失
-== @dsh-swarm/tool-swarm ==           [OK] 观察到 broadcast/multicast/review_submit/review_vote/team_summary；卸载后归零
+== @elinpf/dsh-swarm-team-core-contract ==   [OK] 纯类型包：运行时零导出（无实现）
+== @elinpf/dsh-swarm-example-plugin ==       [OK] 观察到工具 greet / section example-plugin:guide / fiber DISPOSED
+== @elinpf/dsh-swarm-team-bus ==             [OK] 观察到服务 ctx.teamBus；卸载后消失
+== @elinpf/dsh-swarm-team-prompt ==          [OK] 观察到 section team:role/team:inbound；卸载后归零
+== @elinpf/dsh-swarm-team-scheduler ==       [OK] 观察到服务 ctx.teamScheduler；卸载后消失
+== @elinpf/dsh-swarm-team-review ==          [OK] 观察到服务 ctx.teamReview；卸载后消失
+== @elinpf/dsh-swarm-team-completion ==      [OK] 观察到服务 ctx.teamCompletion；卸载后消失
+== @elinpf/dsh-swarm-tool-swarm ==           [OK] 观察到 broadcast/multicast/review_submit/review_vote/team_summary；卸载后归零
 
 ✅ 加载验证通过：全部插件可被真实 cordis 运行时加载并观察到预期行为。
 ```
@@ -230,7 +230,7 @@ $ corepack pnpm format:check     # prettier：All matched
 # P4-impl-core：team-core + bundle + 集成验收
 
 > 执行人：dsh-plugin-dev ｜ 时间：2026-10-26
-> 范围：`@dsh-swarm/team-core`（TeamCorePort）、`@dsh-swarm/bundle`（组装）、9 包全量验收。
+> 范围：`@elinpf/dsh-swarm-team-core`（TeamCorePort）、`@elinpf/dsh-swarm-bundle`（组装）、9 包全量验收。
 
 ## A. 后端选择（与 agent-team-spike.md 一致）
 
@@ -260,16 +260,16 @@ $ corepack pnpm format:check# prettier：All matched
 ## C. 加载验证（`pnpm verify`，覆盖 9 包）
 
 ```console
-== @dsh-swarm/team-core-contract ==  [OK] 纯类型包：运行时零导出
-== @dsh-swarm/team-core ==           [OK] 观察到服务 ctx.teamCore；卸载后消失
-== @dsh-swarm/example-plugin ==      [OK] 工具 greet / section；fiber DISPOSED
-== @dsh-swarm/team-bus ==            [OK] 服务 ctx.teamBus；卸载后消失
-== @dsh-swarm/team-prompt ==         [OK] section team:role/team:inbound；卸载后归零
-== @dsh-swarm/team-scheduler ==      [OK] 服务 ctx.teamScheduler；卸载后消失
-== @dsh-swarm/team-review ==         [OK] 服务 ctx.teamReview；卸载后消失
-== @dsh-swarm/team-completion ==     [OK] 服务 ctx.teamCompletion；卸载后消失
-== @dsh-swarm/tool-swarm ==          [OK] 5 工具；卸载后归零
-== @dsh-swarm/bundle ==              [OK] 纯 patch（运行时零代码）；dsh.bundle.patch；4 个 legacy 行 disabled；insert 团队行
+== @elinpf/dsh-swarm-team-core-contract ==  [OK] 纯类型包：运行时零导出
+== @elinpf/dsh-swarm-team-core ==           [OK] 观察到服务 ctx.teamCore；卸载后消失
+== @elinpf/dsh-swarm-example-plugin ==      [OK] 工具 greet / section；fiber DISPOSED
+== @elinpf/dsh-swarm-team-bus ==            [OK] 服务 ctx.teamBus；卸载后消失
+== @elinpf/dsh-swarm-team-prompt ==         [OK] section team:role/team:inbound；卸载后归零
+== @elinpf/dsh-swarm-team-scheduler ==      [OK] 服务 ctx.teamScheduler；卸载后消失
+== @elinpf/dsh-swarm-team-review ==         [OK] 服务 ctx.teamReview；卸载后消失
+== @elinpf/dsh-swarm-team-completion ==     [OK] 服务 ctx.teamCompletion；卸载后消失
+== @elinpf/dsh-swarm-tool-swarm ==          [OK] 5 工具；卸载后归零
+== @elinpf/dsh-swarm-bundle ==              [OK] 纯 patch（运行时零代码）；dsh.bundle.patch；4 个 legacy 行 disabled；insert 团队行
 ✅ 加载验证通过
 ```
 

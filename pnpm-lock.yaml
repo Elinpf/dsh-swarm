@@ -44,25 +44,25 @@ importers:
       '@deepseek-ai/dsh-experimental-tool-agent-team':
         specifier: 0.2.1-rc.3
         version: 0.2.1-rc.3(f48f6bb971d0d5b30173b285a9fc71a1)
-      '@dsh-swarm/team-bus':
+      '@elinpf/dsh-swarm-team-bus':
         specifier: workspace:*
         version: link:../team-bus
-      '@dsh-swarm/team-completion':
+      '@elinpf/dsh-swarm-team-completion':
         specifier: workspace:*
         version: link:../team-completion
-      '@dsh-swarm/team-core':
+      '@elinpf/dsh-swarm-team-core':
         specifier: workspace:*
         version: link:../team-core
-      '@dsh-swarm/team-prompt':
+      '@elinpf/dsh-swarm-team-prompt':
         specifier: workspace:*
         version: link:../team-prompt
-      '@dsh-swarm/team-review':
+      '@elinpf/dsh-swarm-team-review':
         specifier: workspace:*
         version: link:../team-review
-      '@dsh-swarm/team-scheduler':
+      '@elinpf/dsh-swarm-team-scheduler':
         specifier: workspace:*
         version: link:../team-scheduler
-      '@dsh-swarm/tool-swarm':
+      '@elinpf/dsh-swarm-tool-swarm':
         specifier: workspace:*
         version: link:../tool-swarm
     devDependencies:
@@ -97,7 +97,7 @@ importers:
 
   packages/team-bus:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:
@@ -117,9 +117,27 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
 
+  packages/team-capability-contract:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.6)
+      '@deepseek-ai/dsh-agent':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-session-projection@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))))(@deepseek-ai/dsh-session@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-system-prompt@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)))(@deepseek-ai/dsh-typert-protocol@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-util-values@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      '@deepseek-ai/dsh-llm':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17)(yaml@2.9.1))
+
   packages/team-completion:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:
@@ -138,7 +156,7 @@ importers:
 
   packages/team-core:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:
@@ -178,7 +196,7 @@ importers:
 
   packages/team-prompt:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:
@@ -197,7 +215,7 @@ importers:
 
   packages/team-review:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:
@@ -216,7 +234,7 @@ importers:
 
   packages/team-scheduler:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:
@@ -235,7 +253,7 @@ importers:
 
   packages/tool-swarm:
     dependencies:
-      '@dsh-swarm/team-core-contract':
+      '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
     devDependencies:

@@ -61,7 +61,7 @@ const binaryPools = [
 ]
 const asCaller = (id: string) => ({ id } as never)
 
-describe('@dsh-swarm/team-review', () => {
+describe('@elinpf/dsh-swarm-team-review', () => {
   it('导出形态：Service（default export）+ inject', () => {
     expect(typeof TeamReviewService).toBe('function')
     expect(TeamReviewService.inject).toEqual([

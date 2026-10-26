@@ -40,7 +40,7 @@ function makeCtx() {
 const caller = { id: 'lead', name: 'lead' } as never
 const text = (t: string) => [{ type: 'text', text: t }]
 
-describe('@dsh-swarm/team-bus', () => {
+describe('@elinpf/dsh-swarm-team-bus', () => {
   it('导出形态：Service 形态（default export）', () => {
     expect(typeof TeamBusService).toBe('function')
     expect(TeamBusService.inject).toEqual(['teamCore', 'sessions', 'tools'])

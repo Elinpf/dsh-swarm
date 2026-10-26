@@ -5,7 +5,7 @@
 # （见 docs/plugin-dev-guide.md §3.2）。
 - insert:
     - id: example-plugin
-      name: '@dsh-swarm/example-plugin'
+      name: '@elinpf/dsh-swarm-example-plugin'
       config:
         greeting: hello
         order: 120

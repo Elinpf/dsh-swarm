@@ -8,7 +8,7 @@
  * 命名导出 `name` / `inject` / `Config` / `apply`，且**没有 default export**
  * ——default export 会让 loader 的 unwrapExports 丢掉 inject，运行时静默失败。
  *
- * @module @dsh-swarm/example-plugin
+ * @module @elinpf/dsh-swarm-example-plugin
  */
 
 import type { Context } from '@deepseek-ai/cordis'

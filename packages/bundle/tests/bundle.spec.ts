@@ -24,7 +24,7 @@ const LEGACY_ROWS = [
   'tool-subagent-fork',
 ]
 
-describe('@dsh-swarm/bundle', () => {
+describe('@elinpf/dsh-swarm-bundle', () => {
   it('bundle 身份：dsh.bundle.patch + 导出 ./cordis.patch.yml', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
@@ -42,7 +42,7 @@ describe('@dsh-swarm/bundle', () => {
     expect(patch).toContain('- insert:')
     for (const id of SWARM_PLUGINS) {
       expect(patch).toMatch(new RegExp(`- id:\\s*${id}\\b`))
-      expect(patch).toContain(`name: '@dsh-swarm/${id}'`)
+      expect(patch).toContain(`name: '@elinpf/dsh-swarm-${id}'`)
     }
     // 原生团队域由 agent-team-profile 提供，本 bundle 不得重复插入（P6 实测发现的瑕疵）
     expect(patch).not.toMatch(/- id:\s*agent-team\b/)

@@ -16,7 +16,7 @@
 
 - 远端 `main` = `2b63e6e`；**9 包已在真实 cordis 上加载验证通过、可装卸零残留**：
   `team-core-contract`（纯类型 SSOT）、`team-core`（`ctx.teamCore`，native 后端）、`team-bus`（`ctx.teamBus`）、`team-prompt`、`team-scheduler`（`ctx.teamScheduler`）、`team-review`（`ctx.teamReview`）、`team-completion`（`ctx.teamCompletion`）、`tool-swarm`、`bundle`。
-- **契约分离已成惯例**（ADR-0001）：跨包类型只进 `@dsh-swarm/team-core-contract`，业务包**禁止** import 实现包。
+- **契约分离已成惯例**（ADR-0001）：跨包类型只进 `@elinpf/dsh-swarm-team-core-contract`，业务包**禁止** import 实现包。
 - 后端选择：**native**（`ctx.agentTeams`），`owned` 未实现（spike 判定原生可用）。
 - **已知边界**【事实·verification.md §E】：未做整机 profile 级联调；端到端以「进程内冒烟 + 端口 mock」为准；`followup_task` / `interrupt_agent` 真机未探针。
 
@@ -48,21 +48,21 @@
 
 ## 1. 命名规范与包清单（阶段 2）
 
-**【设计主张】** 沿用阶段 0/1 命名：项目 `dsh-swarm`，scope `@dsh-swarm/*`。阶段 2 新增 **4 个能力包 + 1 个契约包**，总包数 **9 → 14**。
+**【设计主张】** 沿用阶段 0/1 命名：项目 `dsh-swarm`，scope `@elinpf/dsh-swarm-*`。阶段 2 新增 **4 个能力包 + 1 个契约包**，总包数 **9 → 14**。
 
 | 包名 | 路径 | cordis 插件名 / row id | 服务键 | 形态 | 阶段 |
 |---|---|---|---|---|---|
-| `@dsh-swarm/team-capability-contract` | `packages/team-capability-contract/` | —（纯类型，无 row） | — | 纯类型（无实现） | 2 |
-| `@dsh-swarm/team-workspace` | `packages/team-workspace/` | `team-workspace` | `ctx.teamWorkspace` | Service | 2 |
-| `@dsh-swarm/team-skills` | `packages/team-skills/` | `team-skills` | `ctx.teamSkills` | Service | 2 |
-| `@dsh-swarm/team-memory` | `packages/team-memory/` | `team-memory` | `ctx.teamMemory` | Service | 2 |
-| `@dsh-swarm/team-compaction` | `packages/team-compaction/` | `team-compaction` | `ctx.teamCompaction` | Service | 2 |
+| `@elinpf/dsh-swarm-team-capability-contract` | `packages/team-capability-contract/` | —（纯类型，无 row） | — | 纯类型（无实现） | 2 |
+| `@elinpf/dsh-swarm-team-workspace` | `packages/team-workspace/` | `team-workspace` | `ctx.teamWorkspace` | Service | 2 |
+| `@elinpf/dsh-swarm-team-skills` | `packages/team-skills/` | `team-skills` | `ctx.teamSkills` | Service | 2 |
+| `@elinpf/dsh-swarm-team-memory` | `packages/team-memory/` | `team-memory` | `ctx.teamMemory` | Service | 2 |
+| `@elinpf/dsh-swarm-team-compaction` | `packages/team-compaction/` | `team-compaction` | `ctx.teamCompaction` | Service | 2 |
 
 阶段 0/1 的 9 包不变。`tool-swarm` 允许**增量**加阶段 2 工具（见 §4.6，非新包）。
 
 ### 1.1 契约包的处置（继承 ADR-0001）★必读
 
-**【设计主张】方案：新增一个独立契约包 `@dsh-swarm/team-capability-contract`，承载阶段 2 全部四个 `ctx.team*` 端口类型与其类型增强；不把这些类型塞进 `team-core-contract`。** 理由：
+**【设计主张】方案：新增一个独立契约包 `@elinpf/dsh-swarm-team-capability-contract`，承载阶段 2 全部四个 `ctx.team*` 端口类型与其类型增强；不把这些类型塞进 `team-core-contract`。** 理由：
 
 1. **同一 cohort + 同一消费者**：四个阶段 2 端口同属「能力供给层」（对应迁移设计的三组插件中的能力供给部分），其跨包消费者是同一小集合（`team-prompt`、`tool-swarm`）。集中一个契约包即可覆盖，无需 4 个 `-contract` 包。
 2. **`team-core-contract` 已冻结**：ADR-0001 定它是 `ctx.teamCore` 唯一 SSOT（「SSOT 唯一」）。把无关域类型塞入会稀释其语义并动摇已通过验证的包。
@@ -106,14 +106,14 @@
 - **生命周期**：一切注册经 `ctx.effect(() => disposer, '<label>')` / `ctx.on(...)`；Service 构造挂 `ctx.effect(() => () => this.dispose(), '<key>.lifecycle()')`。
 - **失败降级**：不得阻断 DSH 主循环；依赖缺失进 no-op 并告警；工具错误返回 `isError` 结果。
 - **事件命名空间**：dsh-swarm 自有 durable 事件用 **`swarm/*`** 前缀，`declare module '@deepseek-ai/dsh-session/types'` 增强 `SessionEventMap`；**不改**原生 `team/*` 的 `version`（现为 2）。
-- **契约**：业务包只从 `@dsh-swarm/team-core-contract` 与 `@dsh-swarm/team-capability-contract` 取类型；**禁止** import 任何实现包。
+- **契约**：业务包只从 `@elinpf/dsh-swarm-team-core-contract` 与 `@elinpf/dsh-swarm-team-capability-contract` 取类型；**禁止** import 任何实现包。
 - **package.json peer**：外部 DSH 包用 semver 区间（`^0.2.1-rc.3`），对齐 `example-plugin`。
 
 ---
 
 ## 4. 逐包实现规格
 
-### 4.1 `@dsh-swarm/team-capability-contract`（阶段 2 端口契约 SSOT）★先做
+### 4.1 `@elinpf/dsh-swarm-team-capability-contract`（阶段 2 端口契约 SSOT）★先做
 
 **职责一句话**：阶段 2 四个能力端口的**唯一类型 SSOT** + 对应的 `ctx.team*` 类型增强；纯类型、零运行时导出。
 
@@ -186,7 +186,7 @@ export interface TeamCompaction {
 
 ---
 
-### 4.2 `@dsh-swarm/team-workspace`（worktree 隔离 + 文件锁）★阶段 2
+### 4.2 `@elinpf/dsh-swarm-team-workspace`（worktree 隔离 + 文件锁）★阶段 2
 
 **职责一句话**：为成员提供隔离工作区（**复用** `ctx.worktrees`），并在 `ctx.fs` 写入路径上提供**文件锁/写域守卫**（新建）。
 
@@ -227,7 +227,7 @@ static inject = ['fs', 'workingDirectory', 'teamCore', 'agents', 'sessions'] as 
 
 ---
 
-### 4.3 `@dsh-swarm/team-skills`（技能可见性/授权）★阶段 2
+### 4.3 `@elinpf/dsh-swarm-team-skills`（技能可见性/授权）★阶段 2
 
 **职责一句话**：按团队/成员声明技能可见子集，落到 `ctx.skills` 的**成员 scope 层**，实现「成员只见授权技能」。
 
@@ -263,7 +263,7 @@ static inject = ['skills', 'agents', 'teamCore'] as const
 
 ---
 
-### 4.4 `@dsh-swarm/team-memory`（共享 + 成员记忆）★阶段 2
+### 4.4 `@elinpf/dsh-swarm-team-memory`（共享 + 成员记忆）★阶段 2
 
 **职责一句话**：维护一份**全体只读**的共享 `TEAM_MEMORY` 与 per-member 私有记忆，经 `ctx.systemPrompt.context`（cache-safe，不进前缀）注入。
 
@@ -297,7 +297,7 @@ static inject = ['systemPrompt', 'storage', 'teamCore', 'sessions'] as const
 
 ---
 
-### 4.5 `@dsh-swarm/team-compaction`（团队上下文预算）★阶段 2
+### 4.5 `@elinpf/dsh-swarm-team-compaction`（团队上下文预算）★阶段 2
 
 **职责一句话**：为团队设定上下文预算/配额（成员数、轮次、消息频率门控），在触发时**委托** `ctx.compaction` 执行压缩。
 
@@ -331,7 +331,7 @@ static inject = ['compaction', 'systemPrompt', 'teamCore'] as const
 
 ---
 
-### 4.6 `@dsh-swarm/tool-swarm` 增量（非新包）
+### 4.6 `@elinpf/dsh-swarm-tool-swarm` 增量（非新包）
 
 **【设计主张】** 阶段 2 为 `tool-swarm` 追加可选工具（缺依赖不注册，沿用其现有模式）：
 - `workspace_lock` `{ path, mode }` → 调 `ctx.teamWorkspace.acquireLock`；
@@ -344,27 +344,27 @@ static inject = ['compaction', 'systemPrompt', 'teamCore'] as const
 
 ---
 
-## 5. bundle 组装更新（`@dsh-swarm/bundle`）
+## 5. bundle 组装更新（`@elinpf/dsh-swarm-bundle`）
 
 **【设计主张】** 阶段 2 在既有 bundle 的 `cordis.patch.yml` 追加 4 行（**不改**阶段 0/1 的 disabled/insert 结构；行序不承载加载语义）：
 
 ```yaml
 # —— 阶段 2：能力供给层（追加到既有 insert 列表）——
     - id: team-workspace
-      name: '@dsh-swarm/team-workspace'
+      name: '@elinpf/dsh-swarm-team-workspace'
       config:
         defaultTtlMs: 900000          # 锁默认 TTL 15min
         enforceWriteGuard: true
     - id: team-skills
-      name: '@dsh-swarm/team-skills'
+      name: '@elinpf/dsh-swarm-team-skills'
       config:
         unrestrictedWhenUndeclared: true
     - id: team-memory
-      name: '@dsh-swarm/team-memory'
+      name: '@elinpf/dsh-swarm-team-memory'
       config:
         sharedWriter: lead
     - id: team-compaction
-      name: '@dsh-swarm/team-compaction'
+      name: '@elinpf/dsh-swarm-team-compaction'
       config:
         enabled: false                # 预算门控默认关闭
 ```
@@ -416,7 +416,7 @@ packages/
 
 | 迁移设计元素 | 阶段 2 落地 | 说明 |
 |---|---|---|
-| `team-skills` / `team-memory` / `team-compaction` / `team-workspace` | 同名 `@dsh-swarm/*` 四包 | 覆盖迁移设计阶段 2 能力供给补全 |
+| `team-skills` / `team-memory` / `team-compaction` / `team-workspace` | 同名 `@elinpf/dsh-swarm-*` 四包 | 覆盖迁移设计阶段 2 能力供给补全 |
 | 原设想「worktree 自建」 | **改为复用 `ctx.worktrees`（实验）+ 自建文件锁** | 【设计主张】DSH 已提供 worktree seam，重造无收益；锁仍需自建 |
 | 原设想「上下文压缩自建」 | **改为复用 `ctx.compaction` + 自建预算策略** | 同上 |
 | 跨包类型入 `team-core-contract` | **改为新增 `team-capability-contract`** | 继承 ADR-0001 的「契约独立成包」精神；理由见 §1.1 |

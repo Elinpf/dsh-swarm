@@ -8,14 +8,14 @@
  *
  * 形态：函数式插件（只注册贡献，无新服务）。只从契约包取类型（ADR-0001）。
  *
- * @module @dsh-swarm/team-prompt
+ * @module @elinpf/dsh-swarm-team-prompt
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强（type-only import 即可生效）。
-import type { TeamCore as _TeamCore } from '@dsh-swarm/team-core-contract'
+import type { TeamCore as _TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
 
 /** cordis 插件名（= cordis.patch.yml 的 row id）。 */
 export const name = 'team-prompt'

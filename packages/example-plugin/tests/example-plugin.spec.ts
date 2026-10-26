@@ -39,7 +39,7 @@ function makeCtx() {
   return { ctx, tools, sections, disposeAll: () => disposers.forEach((d) => d()) }
 }
 
-describe('@dsh-swarm/example-plugin', () => {
+describe('@elinpf/dsh-swarm-example-plugin', () => {
   it('导出形态符合函数式插件契约（命名导出、无 default export）', () => {
     expect(plugin.name).toBe('example-plugin')
     expect(plugin.inject).toEqual(['tools', 'systemPrompt'])

@@ -41,22 +41,22 @@
 
 ## 1. 命名规范与包清单
 
-**【设计主张】命名规则**：项目名 `dsh-swarm`（用户明确要求，**不是** team）。原设计的 `@dsh-team/*` 一律把 scope 替换为 **`@dsh-swarm/*`**；bundle 为 **`@dsh-swarm/bundle`**。包内 cordis 插件名（`export const name`）与 `cordis.patch.yml` 的 row id 保持一致（对齐 example-plugin：`name='example-plugin'` ↔ row id `example-plugin`）。
+**【设计主张】命名规则**：项目名 `dsh-swarm`（用户明确要求，**不是** team）。原设计的 `@dsh-team/*` 一律把 scope 替换为 **`@elinpf/dsh-swarm-*`**；bundle 为 **`@elinpf/dsh-swarm-bundle`**。包内 cordis 插件名（`export const name`）与 `cordis.patch.yml` 的 row id 保持一致（对齐 example-plugin：`name='example-plugin'` ↔ row id `example-plugin`）。
 
 ### 1.1 完整包名清单
 
 | 包名 | cordis 插件名 / row id | 服务键 | 阶段 | 一句话 |
 |---|---|---|---|---|
-| `@dsh-swarm/team-core` | `team-core` | `ctx.teamCore` | 0 | 团队协作稳定端口（TeamCorePort）+ 两种后端 |
-| `@dsh-swarm/bundle` | —（bundle） | — | 0 | 组合层：关 legacy 行、插团队能力行 |
-| `@dsh-swarm/team-bus` | `team-bus` | `ctx.teamBus` | 1 | 广播 / 多播 / topic 群聊 |
-| `@dsh-swarm/team-scheduler` | `team-scheduler` | `ctx.teamScheduler` | 1 | 幂等调度扫描（含 stale 自愈模块） |
-| `@dsh-swarm/team-review` | `team-review` | `ctx.teamReview` | 1 | 验证闸 + 裁决数学 |
-| `@dsh-swarm/team-completion` | `team-completion` | `ctx.teamCompletion` | 1 | 团队完成判定 |
-| `@dsh-swarm/team-prompt` | `team-prompt` | （用 `ctx.systemPrompt`） | 1 | 团队段落装配 |
-| `@dsh-swarm/tool-swarm` | `tool-swarm` | （用 `ctx.tools`） | 1 | 暴露 bus/scheduler/review 的模型工具 |
+| `@elinpf/dsh-swarm-team-core` | `team-core` | `ctx.teamCore` | 0 | 团队协作稳定端口（TeamCorePort）+ 两种后端 |
+| `@elinpf/dsh-swarm-bundle` | —（bundle） | — | 0 | 组合层：关 legacy 行、插团队能力行 |
+| `@elinpf/dsh-swarm-team-bus` | `team-bus` | `ctx.teamBus` | 1 | 广播 / 多播 / topic 群聊 |
+| `@elinpf/dsh-swarm-team-scheduler` | `team-scheduler` | `ctx.teamScheduler` | 1 | 幂等调度扫描（含 stale 自愈模块） |
+| `@elinpf/dsh-swarm-team-review` | `team-review` | `ctx.teamReview` | 1 | 验证闸 + 裁决数学 |
+| `@elinpf/dsh-swarm-team-completion` | `team-completion` | `ctx.teamCompletion` | 1 | 团队完成判定 |
+| `@elinpf/dsh-swarm-team-prompt` | `team-prompt` | （用 `ctx.systemPrompt`） | 1 | 团队段落装配 |
+| `@elinpf/dsh-swarm-tool-swarm` | `tool-swarm` | （用 `ctx.tools`） | 1 | 暴露 bus/scheduler/review 的模型工具 |
 
-> 阶段 2+（本规格**不实现**，仅登记）：`team-skills`、`team-memory`、`team-compaction`、`team-workspace`、`transport-*`、`channels`、`host-bridge`、Web UI。命名沿用 `@dsh-swarm/<能力>`。
+> 阶段 2+（本规格**不实现**，仅登记）：`team-skills`、`team-memory`、`team-compaction`、`team-workspace`、`transport-*`、`channels`、`host-bridge`、Web UI。命名沿用 `@elinpf/dsh-swarm-<能力>`。
 
 ### 1.2 与 DSH 原生包的关系
 
@@ -69,7 +69,7 @@
 
 ### 2.1 做（本规格覆盖）
 
-- **阶段 0（MVP，复用原生跑通最小协作）**：`@dsh-swarm/team-core` + `@dsh-swarm/bundle`（挂原生 `agent-team` + `tool-agent-team`）。产出一个可加载、可验证的团队协作最小闭环（Lead + teammate + DM + 共享任务 DAG）。
+- **阶段 0（MVP，复用原生跑通最小协作）**：`@elinpf/dsh-swarm-team-core` + `@elinpf/dsh-swarm-bundle`（挂原生 `agent-team` + `tool-agent-team`）。产出一个可加载、可验证的团队协作最小闭环（Lead + teammate + DM + 共享任务 DAG）。
 - **阶段 1（协作内核补全）**：`team-bus`、`team-scheduler`、`team-review`、`team-completion`、`team-prompt`、`tool-swarm`。补齐 DSH 原生**完全缺失**的四项（广播群聊、自动派发、验证闸、完成判定）。
 
 ### 2.2 不做（明确排除，避免范围膨胀）
@@ -106,7 +106,7 @@ packages/<pkg>/
 
 ```jsonc
 {
-  "name": "@dsh-swarm/team-bus",
+  "name": "@elinpf/dsh-swarm-team-bus",
   "version": "0.0.1",
   "private": true,                                  // 阶段 0/1 未发布前保留
   "description": "One-line purpose",
@@ -205,7 +205,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 > 每包给出：职责 / 依赖 / 接口（TS 签名）/ 生命周期钩子 / 失败降级 / 订阅·发射事件 / 验收标准。
 > 公共类型引用：`Agent`（`@deepseek-ai/dsh-agent`）、`ContentBlock`（`@deepseek-ai/dsh-llm`）、`SessionId`（`@deepseek-ai/dsh-session`）。
 
-### 4.1 `@dsh-swarm/team-core`（TeamCorePort）★阶段 0
+### 4.1 `@elinpf/dsh-swarm-team-core`（TeamCorePort）★阶段 0
 
 **职责一句话**：把「团队协作记录」（花名册/信箱/任务）暴露为一个**稳定的 `ctx.teamCore` 端口**，内部可切换 DSH 原生 `ctx.agentTeams` 或自建后端。
 
@@ -323,7 +323,7 @@ export interface Config {
 
 ---
 
-### 4.2 `@dsh-swarm/team-bus`（广播 / 多播 / topic 群聊）★阶段 1
+### 4.2 `@elinpf/dsh-swarm-team-bus`（广播 / 多播 / topic 群聊）★阶段 1
 
 **职责一句话**：在 `ctx.teamCore` 的 DM 之上补**广播 / 多播 / 主题扇出**，并保证「内容落库 + 信号走总线」。
 
@@ -377,7 +377,7 @@ export interface Config {
 
 ---
 
-### 4.3 `@dsh-swarm/team-scheduler`（幂等调度 + stale 自愈）★阶段 1
+### 4.3 `@elinpf/dsh-swarm-team-scheduler`（幂等调度 + stale 自愈）★阶段 1
 
 **职责一句话**：任何唤醒（团队事件 / 周期 tick）触发**同一对幂等扫描**——派发 ready 任务 + 推进评审；并内置「卡住任务自催→升级」。
 
@@ -437,7 +437,7 @@ export interface Config {
 
 ---
 
-### 4.4 `@dsh-swarm/team-review`（验证闸 + 裁决数学）★阶段 1
+### 4.4 `@elinpf/dsh-swarm-team-review`（验证闸 + 裁决数学）★阶段 1
 
 **职责一句话**：任务完成时若配 reviewer，则**不直接完成**，进入评审；收集投票、按池聚合（二元一票否决 / 打分均值阈值）、settle 后 pass→完成+解锁 / fail→返工。
 
@@ -500,7 +500,7 @@ export interface ReviewConfig {
 
 ---
 
-### 4.5 `@dsh-swarm/team-completion`（团队完成判定）★阶段 1
+### 4.5 `@elinpf/dsh-swarm-team-completion`（团队完成判定）★阶段 1
 
 **职责一句话**：三条件合取（≥1 任务且全终态 + 全成员静止 + 无未读消息）时，**上升沿**发一次 `swarm/team/completed`。
 
@@ -540,7 +540,7 @@ export interface Config {
 
 ---
 
-### 4.6 `@dsh-swarm/team-prompt`（团队段落装配）★阶段 1
+### 4.6 `@elinpf/dsh-swarm-team-prompt`（团队段落装配）★阶段 1
 
 **职责一句话**：把团队策略/角色/下发/入站标签注册为**稳定 section**（进系统提示词前缀），把身份/roster/团队信息注册为 **cache-safe context**（不进前缀）。
 
@@ -581,7 +581,7 @@ export function apply(ctx: Context, config: Config): void
 
 ---
 
-### 4.7 `@dsh-swarm/tool-swarm`（模型工具）★阶段 1
+### 4.7 `@elinpf/dsh-swarm-tool-swarm`（模型工具）★阶段 1
 
 **职责一句话**：把 `team-bus` / `team-scheduler` / `team-review` 的**增量能力**暴露为模型工具（原生 `tool-agent-team` 没有的部分）。
 
@@ -620,7 +620,7 @@ export interface SwarmToolConfig {
 
 ---
 
-## 5. bundle 组装（`@dsh-swarm/bundle`）★阶段 0 起
+## 5. bundle 组装（`@elinpf/dsh-swarm-bundle`）★阶段 0 起
 
 **职责**：一个 bundle 包，按 `agent-team-profile` 范式把上述插件行组装进 DSH 组合树。
 
@@ -628,7 +628,7 @@ export interface SwarmToolConfig {
 
 ```jsonc
 {
-  "name": "@dsh-swarm/bundle",
+  "name": "@elinpf/dsh-swarm-bundle",
   "version": "0.0.1",
   "private": true,
   "description": "dsh-swarm 协作能力 bundle：在 dsh-base 之上层叠团队插件行",
@@ -644,13 +644,13 @@ export interface SwarmToolConfig {
   "license": "MIT",
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
-    "@dsh-swarm/team-core": "workspace:~",
-    "@dsh-swarm/team-bus": "workspace:~",
-    "@dsh-swarm/team-scheduler": "workspace:~",
-    "@dsh-swarm/team-review": "workspace:~",
-    "@dsh-swarm/team-completion": "workspace:~",
-    "@dsh-swarm/team-prompt": "workspace:~",
-    "@dsh-swarm/tool-swarm": "workspace:~",
+    "@elinpf/dsh-swarm-team-core": "workspace:~",
+    "@elinpf/dsh-swarm-team-bus": "workspace:~",
+    "@elinpf/dsh-swarm-team-scheduler": "workspace:~",
+    "@elinpf/dsh-swarm-team-review": "workspace:~",
+    "@elinpf/dsh-swarm-team-completion": "workspace:~",
+    "@elinpf/dsh-swarm-team-prompt": "workspace:~",
+    "@elinpf/dsh-swarm-tool-swarm": "workspace:~",
     "@deepseek-ai/dsh-experimental-agent-team": "^0.2.1-rc.3",
     "@deepseek-ai/dsh-experimental-tool-agent-team": "^0.2.1-rc.3"
   },
@@ -699,7 +699,7 @@ export interface SwarmToolConfig {
         forkProvider: fork
 
     - id: team-core
-      name: '@dsh-swarm/team-core'
+      name: '@elinpf/dsh-swarm-team-core'
       config:
         backend: auto
         maxMembers: 8
@@ -708,19 +708,19 @@ export interface SwarmToolConfig {
 
 # —— 阶段 1：追加协作内核补全插件（依赖可用性驱动激活）——
     - id: team-prompt
-      name: '@dsh-swarm/team-prompt'
+      name: '@elinpf/dsh-swarm-team-prompt'
       config:
         locales: cn
         leaderProgressiveDisclosure: true
 
     - id: team-bus
-      name: '@dsh-swarm/team-bus'
+      name: '@elinpf/dsh-swarm-team-bus'
       config:
         maxFanout: 64
         maxMessageBytes: 65536
 
     - id: team-review
-      name: '@dsh-swarm/team-review'
+      name: '@elinpf/dsh-swarm-team-review'
       config:
         pools:
           - { kind: binary, rule: veto, roles: [verifier, challenger] }
@@ -728,18 +728,18 @@ export interface SwarmToolConfig {
         stallTimeoutMs: 1800000
 
     - id: team-scheduler
-      name: '@dsh-swarm/team-scheduler'
+      name: '@elinpf/dsh-swarm-team-scheduler'
       config:
         mode: autonomous
         pollMs: 30000
 
     - id: team-completion
-      name: '@dsh-swarm/team-completion'
+      name: '@elinpf/dsh-swarm-team-completion'
       config:
         blockOnUnread: true
 
     - id: tool-swarm
-      name: '@dsh-swarm/tool-swarm'
+      name: '@elinpf/dsh-swarm-tool-swarm'
       config:
         enableBroadcast: true
         enableReview: false
@@ -792,7 +792,7 @@ dsh-swarm/
 
 | 文件 | 约定 |
 |---|---|
-| `src/index.ts` | 唯一入口；模块头 `@module @dsh-swarm/<pkg>`；命名导出或 Service default（见 §3.3） |
+| `src/index.ts` | 唯一入口；模块头 `@module @elinpf/dsh-swarm-<pkg>`；命名导出或 Service default（见 §3.3） |
 | `tests/<pkg>.spec.ts` | vitest；用**假 ctx** 断言 apply 行为（对齐 example-plugin.spec.ts 的 `makeCtx`） |
 | `tsconfig.json` | `{"extends":"../../tsconfig.base.json","compilerOptions":{"rootDir":"src","outDir":"lib"},"include":["src"]}` |
 | `cordis.patch.yml` | 仅 bundle 或自带行的包需要；`insert:` 自己的 row |
@@ -826,7 +826,7 @@ dsh-swarm/
 ### 7.3 集成 DoD（阶段级）
 
 - **阶段 0 完成**：`bundle` 的 patch 能被组合器接受；`team-core` + 原生 `agent-team`/`tool-agent-team` 三者共存；一个 smoke 用例跑通「spawn teammate → DM → 建任务 → 认领 → 完成」。
-- **阶段 1 完成**：四个新增能力（broadcast / scheduled 派发 / review 闸 / completion）各自 DoD 达标，且**关掉 `@dsh-swarm/bundle` 后回到纯 DSH 行为（零残留）**。
+- **阶段 1 完成**：四个新增能力（broadcast / scheduled 派发 / review 闸 / completion）各自 DoD 达标，且**关掉 `@elinpf/dsh-swarm-bundle` 后回到纯 DSH 行为（零残留）**。
 
 ---
 
@@ -834,12 +834,12 @@ dsh-swarm/
 
 | 迁移设计元素 | 本规格落地 | 说明 |
 |---|---|---|
-| `@dsh-team/*` 命名 | `@dsh-swarm/*` | 用户要求替换 scope（§1） |
-| `team-core`（TeamCorePort） | `@dsh-swarm/team-core`，`backend: native\|owned\|auto` | 覆盖「原生可用/不可用」两情形（§4.1） |
-| `team-bus` / `team-scheduler` / `team-review` / `team-completion` / `team-prompt` | 同名 `@dsh-swarm/*` | 阶段 1 |
+| `@dsh-team/*` 命名 | `@elinpf/dsh-swarm-*` | 用户要求替换 scope（§1） |
+| `team-core`（TeamCorePort） | `@elinpf/dsh-swarm-team-core`，`backend: native\|owned\|auto` | 覆盖「原生可用/不可用」两情形（§4.1） |
+| `team-bus` / `team-scheduler` / `team-review` / `team-completion` / `team-prompt` | 同名 `@elinpf/dsh-swarm-*` | 阶段 1 |
 | `team-stale` 独立包 | **并入 `team-scheduler` 内部模块** | 【设计主张】减包数；stale 与 scan 同 tick 天然耦合，可日后拆出 |
 | 三组插件（消息/编排/提示词） | 阶段 0/1 落到「core+原生 / 编排四件套 / prompt」 | 提示词层阶段 1 只做 prompt；skills/memory/compaction 阶段 2 |
-| `@dsh-team/bundle` | `@dsh-swarm/bundle` | 单 bundle；B7 允许以后拆多 patch |
+| `@dsh-team/bundle` | `@elinpf/dsh-swarm-bundle` | 单 bundle；B7 允许以后拆多 patch |
 | 跨进程/技能/记忆/worktree/Web | **本规格排除** | §2.2 |
 
 **与手册的显式差异（均按手册/真实代码为准）**：

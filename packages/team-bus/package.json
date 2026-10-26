@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-swarm/team-bus",
+  "name": "@elinpf/dsh-swarm-team-bus",
   "version": "0.0.1",
   "private": true,
   "description": "在 ctx.teamCore 的 DM 之上补广播 / 多播 / 主题扇出：内容落库 + 信号走总线",
@@ -14,8 +14,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/index.d.ts"
+    "lib"
   ],
   "license": "MIT",
   "scripts": {
@@ -24,7 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dsh-swarm/team-core-contract": "workspace:*"
+    "@elinpf/dsh-swarm-team-core-contract": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -37,5 +36,8 @@
     "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

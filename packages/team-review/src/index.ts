@@ -11,14 +11,14 @@
  *
  * 只依赖契约包类型（ADR-0001）。
  *
- * @module @dsh-swarm/team-review
+ * @module @elinpf/dsh-swarm-team-review
  */
 
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { TaskView } from '@dsh-swarm/team-core-contract'
+import type { TaskView } from '@elinpf/dsh-swarm-team-core-contract'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

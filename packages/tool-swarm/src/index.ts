@@ -8,7 +8,7 @@
  *
  * 只依赖契约包类型（ADR-0001）。
  *
- * @module @dsh-swarm/tool-swarm
+ * @module @elinpf/dsh-swarm-tool-swarm
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -17,7 +17,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强。
-import type { TeamCore as _TeamCore, TaskView } from '@dsh-swarm/team-core-contract'
+import type { TeamCore as _TeamCore, TaskView } from '@elinpf/dsh-swarm-team-core-contract'
 
 /** cordis 插件名（= cordis.patch.yml 的 row id）。 */
 export const name = 'tool-swarm'
