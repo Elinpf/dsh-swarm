@@ -16,6 +16,16 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
   {
+    // 约定：下划线前缀表示「有意未使用」（占位参数、仅为类型增强的 import）
+    files: ['**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
     // Node 环境脚本（.mjs / scripts/）需要 console、process 等全局
     files: ['**/*.mjs', 'scripts/**/*.{js,mjs,ts}'],
     languageOptions: {

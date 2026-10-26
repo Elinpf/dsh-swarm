@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强（type-only import 即可生效）。
-import type { TeamCore } from '@dsh-swarm/team-core-contract'
+import type { TeamCore as _TeamCore } from '@dsh-swarm/team-core-contract'
 
 /** cordis 插件名（= cordis.patch.yml 的 row id）。 */
 export const name = 'team-prompt'

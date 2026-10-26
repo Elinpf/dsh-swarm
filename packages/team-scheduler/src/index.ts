@@ -18,7 +18,7 @@ import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { TaskView, TeamCore } from '@dsh-swarm/team-core-contract'
+import type { MemberView, TaskView } from '@dsh-swarm/team-core-contract'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -162,7 +162,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
 
   private async onePass(
     agent: Agent,
-    members: ReturnType<TeamCore['listMembers']>,
+    members: MemberView[],
     tasks: TaskView[],
     report: ScanReport,
   ): Promise<boolean> {
@@ -207,7 +207,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
 
   private async staleSweep(
     agent: Agent,
-    members: ReturnType<TeamCore['listMembers']>,
+    members: MemberView[],
     tasks: TaskView[],
     report: ScanReport,
   ): Promise<void> {
