@@ -92,6 +92,25 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17))
 
+  packages/team-prompt:
+    dependencies:
+      '@dsh-swarm/team-core-contract':
+        specifier: workspace:*
+        version: link:../team-core-contract
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.5)(@deepseek-ai/dsh-llm@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))(@deepseek-ai/dsh-scope@0.2.1-rc.3(@deepseek-ai/cordis@4.0.5))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17))
+
 packages:
 
   '@deepseek-ai/cordis@4.0.5':
