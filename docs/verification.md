@@ -224,3 +224,79 @@ $ corepack pnpm format:check     # prettier：All matched
 
 1. **`defineTool` 的 value schema：可选参必须「省略」`required`**，写 `required: false` 会抛 `parameterSchemaSpecToJsonSchema` 错误（`required` 只接受 `true`）；可选即不写。这与「对象层不接受 `required`」是同一 DSL 约束的两面。
 2. **Service 形态插件经 `ctx.plugin()` 加载时要传 `mod.default`**：功能式插件（命名 `apply`）可直接传 ESM namespace，但 Service 的入口在 `default` 导出上，传 namespace 会报 `invalid plugin ... received object`。
+
+---
+
+# P4-impl-core：team-core + bundle + 集成验收
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-26
+> 范围：`@dsh-swarm/team-core`（TeamCorePort）、`@dsh-swarm/bundle`（组装）、9 包全量验收。
+
+## A. 后端选择（与 agent-team-spike.md 一致）
+
+**后端 = `native`**。理由：`docs/agent-team-spike.md` 实测 DSH 原生 `ctx.agentTeams` 在 `0.2.1-rc.3`
+上可用（`spawn_teammate` / DM / `team_task_*` 等 8/10 工具跑通、durable 事件落盘、`--session-id` 重启可复原）。
+故阶段 0/1 **不实现 `owned` 自建后端**；`team-core` 保留 `backend: 'native'|'owned'|'auto'` 选择点：
+- `auto`（默认）：有 `ctx.agentTeams` → native；无 → no-op。
+- `owned`：显式抛 `TEAMCORE_BACKEND_UNAVAILABLE`（未实现）。
+- no-op 模式：`listMembers/listTasks` 返回空、其余写操作抛 `TEAMCORE_UNAVAILABLE`，**不阻断单 agent**。
+
+端口隔离：`team-core` 是**唯一**接触实验性 API 的包，且用**本地结构化 seam 接口**描述 `ctx.agentTeams`
+（不 import 实验包类型），避免 spike 揭示的版本脆弱性（npm latest 与 0.2.1-rc.3 不兼容）。端口类型 SSOT 仍在 `team-core-contract`。
+
+## B. 全量命令（实跑）
+
+```console
+$ corepack pnpm build       # tsc：11 个 workspace 项目（9 包 + 根 + …）全部 Done
+$ corepack pnpm test        # vitest：10 个测试文件 / 60 用例全通过
+$ corepack pnpm verify      # 真实 cordis 加载全部 9 包（见 C）
+$ corepack pnpm verify:e2e  # 进程内集成冒烟（见 D）
+$ corepack pnpm lint        # eslint：0 error
+$ corepack pnpm format:check# prettier：All matched
+```
+
+各包单测：team-core-contract 2、example-plugin 5、team-core 7、team-bus 9、team-prompt 5、team-scheduler 6、team-review 10、team-completion 5、tool-swarm 6、bundle 5 = **60**。
+
+## C. 加载验证（`pnpm verify`，覆盖 9 包）
+
+```console
+== @dsh-swarm/team-core-contract ==  [OK] 纯类型包：运行时零导出
+== @dsh-swarm/team-core ==           [OK] 观察到服务 ctx.teamCore；卸载后消失
+== @dsh-swarm/example-plugin ==      [OK] 工具 greet / section；fiber DISPOSED
+== @dsh-swarm/team-bus ==            [OK] 服务 ctx.teamBus；卸载后消失
+== @dsh-swarm/team-prompt ==         [OK] section team:role/team:inbound；卸载后归零
+== @dsh-swarm/team-scheduler ==      [OK] 服务 ctx.teamScheduler；卸载后消失
+== @dsh-swarm/team-review ==         [OK] 服务 ctx.teamReview；卸载后消失
+== @dsh-swarm/team-completion ==     [OK] 服务 ctx.teamCompletion；卸载后消失
+== @dsh-swarm/tool-swarm ==          [OK] 5 工具；卸载后归零
+== @dsh-swarm/bundle ==              [OK] 纯 patch（运行时零代码）；dsh.bundle.patch；4 个 legacy 行 disabled；insert 团队行
+✅ 加载验证通过
+```
+
+**bundle「可装卸、零残留」证据**：① bundle 运行时代码为空（`export {}`），运行时内容只有 `cordis.patch.yml`；
+② 9 个插件在真实 cordis 上加载后卸载，服务/工具/section **全部归零**（上面每行「卸载后消失/归零」）；
+③ bundle 测试断言 patch 结构（禁用 4 个 legacy 行 + insert 9 行）与实验包 peer 钉死 `0.2.1-rc.3`。
+
+## D. 进程内集成冒烟（`pnpm verify:e2e`）
+
+真实 cordis + **端口 mock**（模拟 `ctx.agentTeams` 结构），串起 team-core/bus/review/completion/tool-swarm：
+
+```console
+[OK] team-core 激活（native 端口）
+[OK] 创建成员 alice（id=m1）
+[OK] 花名册含 lead + alice
+[OK] 广播扇出 1 条到 alice（自过滤 lead）
+[OK] 任务创建且 ready / 认领 → in_progress
+[OK] 进入评审 round=1 → 二元池全 pass → 评审裁决 pass → 任务 completed
+[OK] 完成判定 → completed=true（重复评估仍 true，上升沿只发一次）
+✅ 集成冒烟通过：成员 → 消息 → 任务 → 评审 → 完成 链路打通（端口 mock 后端）。
+```
+
+## E. 边界（未做 / 受限，如实说明）
+
+1. **未做整机 profile 级联调**（`dsh plugin add ./packages/bundle` + `--dump-config`）：需要先安装完整 `dsh-base`
+   与实验包（数百包、重），且**本环境内置 `dsh-llm-deepseek` 对 OpenAI 兼容端点返回 401**，真实模型驱动需
+   spike 报告里的 `llm-pi-ai` + `openai-completions` overlay。故本阶段的端到端以 **D 的进程内冒烟**为准。
+2. **`followup_task` / `interrupt_agent` 未做真机探针**（spike 中两个未确认工具）：二者需要模型驱动才能触发，
+   受 (1) 的模型端点限制未执行。`interrupt` 已在 `team-core` 适配（native `interrupt` → 端口 `interrupt`）并被单测覆盖；
+   真实触发留待 profile 级联调。

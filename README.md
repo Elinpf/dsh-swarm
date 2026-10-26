@@ -115,9 +115,27 @@ corepack pnpm format:check
 | `@dsh-swarm/team-review`        | Service | `ctx.teamReview`     | 验证闸 + 裁决数学（一票否决 / 打分阈值 / 自投拒绝）             |
 | `@dsh-swarm/team-completion`    | Service | `ctx.teamCompletion` | 完成判定三条件 + 上升沿去重                                     |
 | `@dsh-swarm/tool-swarm`         | 函数式  | —                    | 暴露 broadcast/multicast/review\_\*/team_summary 模型工具       |
+| `@dsh-swarm/team-core`          | Service | `ctx.teamCore`       | **TeamCorePort** 落地：native 薄适配 + no-op 降级               |
+| `@dsh-swarm/bundle`             | bundle  | —                    | 组合层：先 disabled 关 legacy，再 insert 团队行                 |
 
-**端口隔离（ADR-0001，方案 C）**：这 7 个包**只从 `@dsh-swarm/team-core-contract` 取类型**，不得 import `@dsh-swarm/team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。
-`@dsh-swarm/team-core`（Service + `native` 后端）与 `@dsh-swarm/bundle` 的组装属于 **P4-impl-core**，不在本阶段。
+**端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@dsh-swarm/team-core-contract` 取类型**，不得 import `@dsh-swarm/team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
+
+### 后端选择（`team-core`）
+
+**后端 = `native`**：P3-spike 实测 DSH 原生 `ctx.agentTeams` 在 `0.2.1-rc.3` 上可用（8/10 工具跑通、durable 事件落盘、`--session-id` 重启可复原）。阶段 0/1 **不实现 `owned` 自建后端**，但端口保留 `backend` 选择点：`backend: 'owned'` 显式抛 `TEAMCORE_BACKEND_UNAVAILABLE`；`ctx.agentTeams` 缺失时进入 **no-op 模式**（读返回空、写抛 `TEAMCORE_UNAVAILABLE`），**不阻断单 agent**。
+
+### 如何启用团队 bundle
+
+> ⚠️ 实验包**必须钉 `0.2.1-rc.3`**（npm `latest` 是 `0.1.5-alpha.2`，不兼容会被版本门禁禁用）。
+
+```sh
+source scripts/env.sh
+DSH=.runtime/dsh-cli-npm/node_modules/.bin/dsh
+$DSH plugin --profile headless add @deepseek-ai/dsh-experimental-agent-team-profile@0.2.1-rc.3
+$DSH plugin --profile headless add ./packages/bundle
+$DSH --profile headless --dump-config | grep -E "team-core|team-bus|tool-swarm"
+$DSH --profile headless remove @dsh-swarm/bundle    # 关闭即回退（零残留）
+```
 
 ---
 
@@ -159,9 +177,10 @@ corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 - [x] pnpm workspace 骨架（根 package.json / pnpm-workspace.yaml / tsconfig 基座 / lint+format / .gitignore）
 - [x] hello-world 插件包 + bundle 声明
 - [x] **阶段 1 协作插件 7 包**（team-core-contract / team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）
-- [x] `pnpm build` / `pnpm test` / `pnpm verify` / `pnpm lint` / `pnpm format:check` 全部实跑通过
-- [x] 真实 cordis 加载验证覆盖**全部 8 个包**（`scripts/verify-load.mjs`）
-- [ ] `@dsh-swarm/team-core`（Service + `native` 后端）与 `@dsh-swarm/bundle` 组装 —— **P4-impl-core**
+- [x] **`team-core`（TeamCorePort，native 后端）+ `@dsh-swarm/bundle` 组装** —— 阶段 0/1 全部 9 个包就位
+- [x] `pnpm build` / `pnpm test` / `pnpm verify` / `pnpm verify:e2e` / `pnpm lint` / `pnpm format:check` 全部实跑通过
+- [x] 真实 cordis 加载验证覆盖**全部 9 个包**（`scripts/verify-load.mjs`）；进程内集成冒烟跑通「成员 → 消息 → 任务 → 评审 → 完成」（`scripts/verify-e2e.mjs`）
+- [ ] 整机 profile 级联调（完整 `dsh-base` + 实验包 + 可用模型端点）—— 见 `docs/verification.md` 边界说明
 - [ ] 阶段 2/3：worktree+文件锁 / 跨进程分布式 / 技能与记忆 / 人类成员席位 / Web UI
 
 ### 依赖版本陷阱（重要）

@@ -5,6 +5,7 @@
 > 定位：新建项目 `dsh-swarm` 的**唯一插件开发契约**，供 dsh-plugin-dev 实现协作插件时照抄。
 > **核定基准**：`dsh-v0.2.1-rc.3` 真源码，位于 `/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/deepseek-harness/`（版本 `0.2.1-rc.3`，commit `1f81c047`，无 `.git`）。
 > 约定：**【事实 V】**=在 0.2.1-rc.3 源码实测读到（附 `文件:行号`）；**【事实-文档】**=引自 0.2.1-rc.3 自带文档；【推断】=方向判断；**无【未验证】的裸断言**——确无法核实的会写明原因与已尝试路径。
+> **使用约定（硬规则）**：实现期若发现**本手册与实际不符，以实际为准**，并**立即回写本手册**（附真实报错信息与证据）；下一棒以更新后的手册为准。本手册是团队唯一契约，契约不准则后来人必错。
 
 ---
 
@@ -182,6 +183,9 @@ export function apply(ctx: Context, config: Config): void {
 
 > **【事实 V】** `ctx.systemPrompt.section(section): () => void` 定义在 `packages/core/system-prompt/src/index.ts:478`。
 > **【事实 V】** `defineTool` 定义在 `packages/core/tools/src/schema.ts:554`。**`output` 是必填字段**（`schema.ts:565` 无条件读 `options.output.render`；`:578` 读 `options.output.schema`；`:490-491` 声明 `readonly output`）——**不提供 `output` 无法编译/运行**。`tool-todo/src/index.ts:158`（output）、`:187`（render）为真实范例。**`output.schema` 的 `required: true` 必须逐属性写、对象层不能写**（`tool-todo/src/index.ts:158-188`：对象层仅 `additionalProperties: false`，`required: true` 在 `content`/`todos`/`counts` 等属性上）；对象层写 `required` 会在 `pnpm test` 抛 `JsonSchemaError: schema.required is not supported by the value schema DSL`（dsh-plugin-dev 真机实测）。
+> **【事实 V】value/parameter schema DSL 的两条铁律**（本手册实测复现，源码 `packages/core/tools/src/schema.ts:292-293`、`:177,195`）：
+> 1. **可选参数必须「省略」`required`，不能写 `required: false`**——`required` 只接受 `true`。实测报错：`JsonSchemaError: unsupported JSON schema: parameters.who.required must be true when present`（`schema.ts:292`：`required !== true` 即 `authorError`）。正确写法：可选参数**根本不写** `required` 键（实测 `{ type: 'string' }` 通过）。
+> 2. **schema 节点只认白名单键**：`description`/`title`/`default`/`examples`（+ 结构键如 `type`/`properties`/`items`/`enum`/`required`），其余一律报错。实测写 `minLength` → `JsonSchemaError: unsupported JSON schema: parameters.who.minLength is not supported by the value schema DSL`（`schema.ts:195`）。
 
 ### 2.3 可直接拷贝的最小 Service 类插件（完整文件）
 
@@ -219,6 +223,8 @@ export default MyService                                     // Service 形态�
 ```
 
 > **【事实 V】** 形状对照 `packages/plan/plan-mode/src/index.ts:176,189,477`（Service 子类 default export）与 `packages/experimental/agent-team/src/index.ts`（`super(ctx,'agentTeams')` + `ctx.effect`）。**声明合并块是让 `ctx.myService` 有类型的关键**。
+> **【事实 V】用 `ctx.plugin()` 直接加载 Service 形态插件时，必须传 `mod.default`**：cordis 的 `resolve()` 只认「函数」或「带 `apply` 方法的对象」（`vendor/cordis/src/registry.ts:222-228`：`typeof plugin === 'function'` 或 `isApplicable` 即 `object.apply`）。Service 包的 ESM namespace 是 `{ default: <class> }`（class 在 `default` 上），传 namespace 会命中 `registry.ts:319` 的 `!callback` 分支。实测报错：`Error: invalid plugin, expect function or object with an "apply" method, received object`；改传 `ctx.plugin(mod.default)` 即通过（实测）。
+> **【事实 V】** 注意两处判定不同：**经 Loader 装配时**由 `unwrapExports` 归一（`vendor/loader/src/index.ts:201-208`：`exports = exports.default ?? exports`），故 Service 的 `default` 会被自动取出；**函数式插件绝不能有 default export**，否则 same 逻辑会把命名 `apply`/`inject` 丢掉（见 `docs/postmortem/0001-acp-default-export-drops-inject.md`）——这正是「函数式命名导出 / Service default 导出」互斥的机制根源。
 
 ### 2.4 依赖注入 / 暴露服务 / 订阅事件
 
@@ -391,7 +397,40 @@ dsh plugin --profile <name> add ./packages/bundle/my-team     # 本地链接安�
 
 ---
 
-## 7. 待实现阶段确认的问题
+## 7. 常见报错与对应原因速查表
+
+> 出处标注：**[实测复现]**=本手册在 `dsh-swarm` 隔离环境用真实 `@deepseek-ai/cordis@4.0.5` + `@deepseek-ai/dsh-tools@0.2.1-rc.3` 跑出的原文；**[同伴实测]**=dsh-plugin-dev 在真机记录（`dsh-swarm/docs/verification.md`）。每条都给出「报错 → 根因 → 正确写法」。
+
+### 7.1 工具 schema（`defineTool` 的 `parameters` / `output.schema`）
+
+| 报错信息（原文） | 根因 | 正确写法 |
+|---|---|---|
+| `JsonSchemaError: unsupported JSON schema: parameters.<name>.required must be true when present` **[实测复现]** | 可选参数写了 `required: false`；DSL 里 `required` 只接受 `true`（`schema.ts:292`） | **省略** `required` 键：`{ type: 'string' }` |
+| `JsonSchemaError: unsupported JSON schema: schema.required is not supported by the value schema DSL` **[同伴实测]** | `output.schema` 在**对象层**写了 `required`（value schema DSL 不认对象级 required） | `required: true` 写到**每个属性**上；对象层只写 `additionalProperties: false` |
+| `JsonSchemaError: unsupported JSON schema: parameters.<name>.minLength is not supported by the value schema DSL` **[实测复现]** | 用了 schema 白名单外的键（如 `minLength`/`maxLength`/`pattern` 等） | 只用白名单键：`type`/`properties`/`required`/`items`/`enum`/`oneOf` + `description`/`title`/`default`/`examples`（`schema.ts:177,195`） |
+| TS 编译报 `Property '...' is missing ... output` / 运行期读 `options.output` 崩溃 | `defineTool` 的 `output` 是**必填**（`schema.ts:565,578`） | 总是提供 `output: { schema, render }` |
+
+### 7.2 插件加载 / 导出形态
+
+| 报错信息（原文） | 根因 | 正确写法 |
+|---|---|---|
+| `Error: invalid plugin, expect function or object with an "apply" method, received object` **[实测复现 + 同伴实测]** | `ctx.plugin()` 传了 **Service 包的 ESM namespace**（class 在 `default` 上） | 传 **`ctx.plugin(mod.default)`**；或经 Loader 装配（`unwrapExports` 会自动取 `default`） |
+| 插件加载了但 `inject` 不生效 / 依赖永不就绪 | **函数式插件带了 default export**：Loader 的 `unwrapExports`（`loader/src/index.ts:203`）取走 `default`，丢掉命名 `inject`/`apply` | 函数式插件**只命名导出、无 default**（见 `docs/postmortem/0001-...`） |
+| `TypeError: Invalid effect` **[实测复现]** | `ctx.effect(execute)` 的 `execute` 返回了非法形状 | `execute` 必须返回 disposer 函数（或其 Promise / 生成器 / 可迭代 disposer 序列） |
+| tsc 报 `Property 'tools' does not exist on type 'Context'` **[同伴实测]** | 消费 DSH 声明缺 tsconfig 选项，`.d.ts` 间 `.ts` 扩展名互引导致 `declare module` 增强被丢弃 | tsconfig 加 `allowImportingTsExtensions: true` + `rewriteRelativeImportExtensions: true`（对照 `tsconfig.base.json:15-16`） |
+
+### 7.3 运行 / 环境（安装与模型路由）
+
+| 报错信息（原文） | 根因 | 正确写法 |
+|---|---|---|
+| `dsh: disabling profile plugin row "...": Plugin ... is incompatible with dsh 0.2.1-rc.3 ...` | 装了 **npm `latest`** 的 agent-team（`0.1.5-alpha.2`），与 0.2.1-rc.3 不匹配 | 显式装 `@deepseek-ai/dsh-experimental-agent-team-profile@0.2.1-rc.3`（dist-tag `next`） |
+| `AUTH: DeepSeek Messages request failed (401)` | 内置 `dsh-llm-deepseek` 走 DeepSeek 原生协议，对本环境 OpenAI 兼容端点不适用 | 用 `llm-pi-ai` 手写 `openai-completions` 路由（见 `agent-team-spike.md` §1.3） |
+
+> **使用约定**：撞到本表未收录的报错，按开头「使用约定」——**以实际为准，回写本表**（附报错原文 + 最小复现 + 正确写法）。
+
+---
+
+## 8. 待实现阶段确认的问题
 
 1. **preset 平面路由（B2/B3 直接后果）**：dsh-swarm 的**模型工具**（团队协作工具）要落 Host 平面还是 preset 平面？0.2.1 的 preset 是"插件行"（`@deepseek-ai/dsh-agent-preset` 的 `plugins` 列表），需确认我们的工具是编进 bundle 的 host 树，还是编成 preset 行供 session 选择。
 2. **bundle 拆分粒度**：是把团队能力做成**一个 bundle**（学 `agent-team-profile`）还是**域插件 + 工具 + UI 分包**再各挂一行？B7 允许 bundle 的 patch 为有序多文件，需定拆分策略。

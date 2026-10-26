@@ -12,6 +12,7 @@
  * 这是「插件能被 DSH 加载 / 能观察到预期行为」的最小证据。
  */
 import { Context } from '@deepseek-ai/cordis'
+import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -166,6 +167,7 @@ const PACKAGES = [
     config: { enableBroadcast: true, enableReview: true },
     expectTools: ['broadcast', 'multicast', 'review_submit', 'review_vote', 'team_summary'],
   },
+  { name: '@dsh-swarm/bundle', file: 'packages/bundle/lib/index.js', kind: 'bundle' },
 ]
 
 for (const p of PACKAGES) {
@@ -174,6 +176,20 @@ for (const p of PACKAGES) {
   if (p.kind === 'types') {
     const mod = await import(pathToFileURL(resolve(root, p.file)).href)
     assert(Object.keys(mod).length === 0, '纯类型包：运行时零导出（无实现）')
+    continue
+  }
+
+  if (p.kind === 'bundle') {
+    const mod = await import(pathToFileURL(resolve(root, p.file)).href)
+    assert(Object.keys(mod).length === 0, 'bundle 运行时零代码（纯 patch）')
+    const manifest = JSON.parse(readFileSync(resolve(root, 'packages/bundle/package.json'), 'utf8'))
+    assert(manifest.dsh?.bundle?.patch === './cordis.patch.yml', 'dsh.bundle.patch 声明存在')
+    const yml = readFileSync(resolve(root, 'packages/bundle/cordis.patch.yml'), 'utf8')
+    assert((yml.match(/disabled:\s*true/g) ?? []).length === 4, '先 disabled 关掉 4 个 legacy 行')
+    assert(
+      yml.includes('- insert:') && yml.includes("name: '@dsh-swarm/team-core'"),
+      'insert 了团队插件行',
+    )
     continue
   }
 
