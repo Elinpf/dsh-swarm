@@ -473,3 +473,59 @@ $ corepack pnpm lint && corepack pnpm format:check   # 本包（packages/team-sk
 - 边界 1：正例注册的虚拟技能**正文为占位体**——`team-skills` 只拥有可见性、不拥有技能正文；正文应由团队技能包/提供方承载。
 - 边界 2：实时触发依赖契约方法（`visibleTo`/`grant`/`declare`）被消费方调用（`tool-swarm.skills_visible` 等）；整机 profile 级「每步自动 reconcile」联调留待阶段 3。
 - 边界 3：`reconcile` 是 `TeamSkillsService` 的增量方法，**未进 `TeamSkills` 契约**（避免契约变更）。
+
+---
+
+# Y. P14：按实验证据优化并复测
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-26 ｜ 输入：`docs/experiments-stage1.md §6` 候选清单。
+> 逐条优化的前/后数据与结论见 `docs/optimization-log.md`。**本轮真实模型消耗 = 0 token**（全桩模式）。
+
+## Y.1 基线复现（桩，零成本）
+
+```console
+$ bash scripts/bench/run.sh --no-model --scenario S1,S2,S3,S4,S5 --repeat 3 --out .runtime/bench/repro-baseline
+# 与 docs/benchmark.md §4 一致：S1 投递1/direct唤醒1；S2 投递3/广播1/fanout唤醒3/空转唤醒3；S5 投递6/重试2/stale自催2
+```
+✅ 基线复现成功（关键结构量逐一对上）。
+
+## Y.2 O1：广播「信号+拉取」扇出（opt-in，默认不变）
+
+- 证据：报告 §2 AB1（broadcast = 1 落库 + N DM，与 N DM 投递零差异）、§1 C1（JSFW=O(1) 写）、§4 A（DM 唤醒 inactive +1 轮）。
+- 改动（`packages/team-bus`：`broadcast` 增 `fanout?:'dm'|'record-only'`（默认 `dm`）+ `history()` 拉取；`tool-swarm` 的 `broadcast` 工具暴露 `fanout`；均**默认不变**）。
+- 复测（同基准，桩 S2，`--repeat 7`）：
+
+| 指标 | 前 `dm` | 后 `record-only` |
+|---|---|---|
+| messageDeliveries | 3 | **0** |
+| wakeupsFanout | 3 | **0** |
+| spinWakeups | 3 | **0** |
+| broadcasts | 1 | 1（仍落库） |
+| e2eMs(mean,n=7) | 10.0 [4..40] | 9.57 [3..38]（噪声内） |
+
+- 结论：**有效（结构性）**——启用后广播 O(N) 投递/唤醒降为 O(1) 写+拉取；默认路径不变故守恒不变量不受影响。
+  诚实边界：报告 §4「空转省 LLM 轮」**未证实**，本轮不据此下强结论。
+
+## Y.3 守恒不变量复验（O1 后）
+
+```console
+$ corepack pnpm build        # 全包 Done
+$ corepack pnpm test         # 全包通过（team-bus 11 例 / tool-swarm 8 例）
+$ corepack pnpm verify       # 真实 cordis 加载全部包，通过
+$ corepack pnpm verify:e2e   # 集成冒烟通过
+$ bash scripts/e2e-profile.sh --no-model
+  [PASS] bundle 自身插入行 = 11 (期望 11)
+  [PASS] 原生 agent-team / tool-agent-team 行 = 2 (期望 2)
+  [PASS] legacy tool-subagent* disabled 行 = 4 (期望 4)
+  [PASS] dump-config 无禁用/不兼容告警
+  结果：PASS=4 FAIL=0
+$ corepack pnpm lint && corepack pnpm format:check  # 本包（team-bus/tool-swarm）0 error / All matched
+```
+✅ 守恒不变量全绿。
+
+## Y.4 诚实边界与未决项
+
+- O1 为 **opt-in**：不启用时行为与改动前逐位一致；启用才产生结构性收益。
+- 复测用**桩模式**（零模型成本）。O1 的结构性收益不需真实模型即可判定；而报告 §4 的「轮次」收益在 headless 单根轮截断下**本就不可证实**，故本轮**不为它烧 token**（真实模型消耗 = 0）。
+- 候选 #3（`in_review`）、#4（默认 scheduled）、#2b（默认改 record-only）均属**可观测行为变更**，已 `send_message` 请示 Leader，未授权前不动。
+- 实测用的 A/B 开关（`--broadcast-fanout`，对 `scripts/bench/` 的**追加式**改动）因 `scripts/bench/` 当前是**他人在研的未跟踪目录**，为避免把别人 WIP 裹进本次提交，暂未随本提交入库；其 diff 已记入 `docs/optimization-log.md §2.2`，可照此复现。

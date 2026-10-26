@@ -41,19 +41,37 @@ export interface BroadcastSnapshot {
   targetId?: string
 }
 
+/**
+ * 广播扇出模式：
+ * - `dm`（默认，当前语义）：1 次落库 + **逐人 DM 扇出**（每个非发送者各收 1 条，按 `delivery` 决定是否唤醒）。
+ * - `record-only`：1 次落库 + **不逐人 DM**；仅通知本进程主题订阅者，成员按需经 {@link TeamBus.history} **拉取**。
+ *   —— 用于「公告/信号」类广播，避免对无关成员造成投递与唤醒放大（实验证据见 docs/experiments-stage1.md §2 AB1 / §1 C1）。
+ */
+export type BroadcastFanout = 'dm' | 'record-only'
+
 export interface TeamBus {
   /** 主题订阅；返回 disposer。 */
   subscribe(agent: Agent, topic: TeamTopic, handler: (ev: BroadcastSnapshot) => void): () => void
-  /** 广播：1 次持久化 + 全员扇出；唤醒每个非发送者。 */
+  /** 广播：1 次持久化 + 全员扇出（`fanout` 决定逐人 DM / 仅落库可拉取）。 */
   broadcast(
     caller: Agent,
-    req: { topic?: TeamTopic; content: ContentBlock[]; delivery: 'quiet' | 'wakeup' },
+    req: {
+      topic?: TeamTopic
+      content: ContentBlock[]
+      delivery: 'quiet' | 'wakeup'
+      fanout?: BroadcastFanout
+    },
   ): Promise<{ messageId: string }>
   /** 多播：一次事务写入 N 个收件人；targets 恰为全体时拒绝，强制走 broadcast。 */
   multicast(
     caller: Agent,
     req: { targets: string[]; content: ContentBlock[]; delivery: 'quiet' | 'wakeup' },
   ): Promise<{ messageId: string }>
+  /**
+   * 拉取对调用者可见的已落库快照（不回投自己发的），可选按 topic 与 `sinceId` 增量过滤。
+   * 与 `fanout:'record-only'` 配套：成员按需拉取，而非被动接收逐人 DM。
+   */
+  history(caller: Agent, opts?: { topic?: TeamTopic; sinceId?: string }): BroadcastSnapshot[]
 }
 
 export interface Config {
@@ -119,7 +137,12 @@ export class TeamBusService extends Service implements TeamBus {
 
   async broadcast(
     caller: Agent,
-    req: { topic?: TeamTopic; content: ContentBlock[]; delivery: 'quiet' | 'wakeup' },
+    req: {
+      topic?: TeamTopic
+      content: ContentBlock[]
+      delivery: 'quiet' | 'wakeup'
+      fanout?: BroadcastFanout
+    },
   ): Promise<{ messageId: string }> {
     this.assertSize(req.content)
     const sender = this.senderOf(caller)
@@ -140,11 +163,13 @@ export class TeamBusService extends Service implements TeamBus {
       delivery: req.delivery,
     }
     this.durable.push(snap)
-    await this.fanout(
-      caller,
-      targets.map((m) => m.id),
-      snap,
-    )
+    const targetIds = targets.map((m) => m.id)
+    if ((req.fanout ?? 'dm') === 'record-only') {
+      // 仅落库 + 通知本进程订阅者；不逐人 DM（成员按需 history 拉取）。
+      this.notifySubscribers(targetIds, snap)
+    } else {
+      await this.fanout(caller, targetIds, snap)
+    }
     return { messageId: snap.id }
   }
 
@@ -212,6 +237,13 @@ export class TeamBusService extends Service implements TeamBus {
       // 1) 信号走总线：以 DM 送达（内容已落库）
       await this.deliver(caller, id, snap)
       // 2) 通知本进程内的主题订阅者
+      this.notifySubscribers([id], snap)
+    }
+  }
+
+  /** 通知本进程内的主题订阅者（`record-only` 模式不经 DM，仅走这里）。 */
+  private notifySubscribers(targetIds: string[], snap: BroadcastSnapshot): void {
+    for (const id of targetIds) {
       const set = this.subs.get(id)
       if (!set) continue
       for (const sub of set) {
@@ -224,6 +256,22 @@ export class TeamBusService extends Service implements TeamBus {
         }
       }
     }
+  }
+
+  history(caller: Agent, opts: { topic?: TeamTopic; sinceId?: string } = {}): BroadcastSnapshot[] {
+    const me = this.senderOf(caller)
+    const sinceIndex =
+      opts.sinceId === undefined ? -1 : this.durable.findIndex((s) => s.id === opts.sinceId)
+    const out: BroadcastSnapshot[] = []
+    for (let i = 0; i < this.durable.length; i++) {
+      const s = this.durable[i]
+      if (s === undefined) continue
+      if (opts.topic !== undefined && s.topic !== opts.topic) continue
+      if (sinceIndex >= 0 && i <= sinceIndex) continue
+      if (s.senderId === me.id) continue // 不回投自己发的
+      out.push({ ...s, content: [...s.content] })
+    }
+    return out
   }
 
   private async deliver(caller: Agent, targetId: string, snap: BroadcastSnapshot): Promise<void> {

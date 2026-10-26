@@ -129,4 +129,37 @@ describe('@elinpf/dsh-swarm-team-bus', () => {
     expect(err.code).toBe('TEAMBUS_X')
     expect(err.message).toContain('TEAMBUS_X')
   })
+
+  it("broadcast fanout:'record-only'：零逐人 DM、仅落库 + 通知订阅者（信号+拉取）", async () => {
+    const { ctx, sent } = makeCtx()
+    const bus = new TeamBusService(ctx, { maxFanout: 64, maxMessageBytes: 65536 })
+    const aGot: unknown[] = []
+    bus.subscribe({ id: 'a' } as never, 'announce', (ev) => aGot.push(ev))
+
+    await bus.broadcast(caller, {
+      topic: 'announce',
+      content: text('FYI'),
+      delivery: 'wakeup',
+      fanout: 'record-only',
+    })
+
+    expect(sent).toHaveLength(0) // 不逐人 DM
+    expect(bus.durableCount).toBe(1) // 仍落库
+    expect(aGot).toHaveLength(1) // 本进程订阅者仍被通知
+  })
+
+  it('history：不回投自己发的、可按 topic/since 增量拉取', async () => {
+    const { ctx } = makeCtx()
+    const bus = new TeamBusService(ctx, { maxFanout: 64, maxMessageBytes: 65536 })
+    await bus.broadcast(caller, { topic: 'announce', content: text('one'), delivery: 'quiet' })
+    await bus.broadcast(caller, { topic: 'task', content: text('two'), delivery: 'quiet' })
+
+    const asMember = { id: 'a', name: 'a' } as never
+    expect(bus.history(asMember).map((s) => s.topic)).toEqual(['announce', 'task'])
+    expect(bus.history(asMember, { topic: 'task' }).map((s) => s.topic)).toEqual(['task'])
+    const first = bus.history(asMember)[0]!
+    expect(bus.history(asMember, { sinceId: first.id }).map((s) => s.topic)).toEqual(['task'])
+    // 发送者自己拉取 → 不回投自己发的
+    expect(bus.history(caller)).toHaveLength(0)
+  })
 })

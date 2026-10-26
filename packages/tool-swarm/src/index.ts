@@ -109,6 +109,11 @@ function installTools(ctx: Context, config: SwarmToolConfig): Array<() => void> 
             content: { type: 'string', required: true, description: 'Message text.' },
             topic: { type: 'string', description: 'team | task | message | announce' },
             delivery: { type: 'string', description: 'quiet | wakeup (default wakeup)' },
+            fanout: {
+              type: 'string',
+              description:
+                "dm | record-only (default dm). 'record-only' = 仅落库、不逐人唤醒，成员按需拉取（公告类）。",
+            },
           },
           output: textOutput,
           async execute(args, exec) {
@@ -117,6 +122,7 @@ function installTools(ctx: Context, config: SwarmToolConfig): Array<() => void> 
               topic: (args.topic as string | undefined) ?? 'team',
               content: [{ type: 'text', text: String(args.content) }],
               delivery: (args.delivery as 'quiet' | 'wakeup' | undefined) ?? 'wakeup',
+              fanout: (args.fanout as 'dm' | 'record-only' | undefined) ?? 'dm',
             })) as { messageId: string }
             return { text: `broadcast sent: ${res.messageId}` }
           },
