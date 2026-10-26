@@ -168,6 +168,25 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17))
 
+  packages/tool-swarm:
+    dependencies:
+      '@dsh-swarm/team-core-contract':
+        specifier: workspace:*
+        version: link:../team-core-contract
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.5
+        version: 4.0.5
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.2.1-rc.3
+        version: 0.2.1-rc.3(1f5d0a9b849aaa1244bc4f2e453f609a)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@types/node@22.19.17)(vite@8.3.5(@types/node@22.19.17))
+
 packages:
 
   '@deepseek-ai/cordis@4.0.5':
