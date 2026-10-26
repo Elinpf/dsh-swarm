@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import TeamSkillsService from '../src/index.ts'
 
+/**
+ * 声明层语义单测（不依赖真实技能注册表）。
+ * **成员级落层的真实行为**由 `team-skills-scope.spec.ts` 用真实 cordis + 真实 SkillRegistry 覆盖。
+ */
 function makeCtx() {
   const members = [
     { id: 'a', name: 'alice' },
@@ -11,12 +15,18 @@ function makeCtx() {
     agents: {},
     teamCore: { tryMembership: (ag: { id?: string }) => members.find((m) => m.id === ag?.id) },
   }
+  const cleanups: Array<() => void> = []
   const ctx: any = {
     get: (n: string) => services[n],
-    effect: (fn: () => unknown) => fn(),
+    effect: (fn: () => unknown) => {
+      const off = fn() as (() => void) | undefined
+      if (typeof off === 'function') cleanups.push(off)
+      return off
+    },
     logger: { warn() {}, debug() {} },
     reflect: { provide() {} },
   }
+  ctx._cleanup = () => cleanups.splice(0).forEach((f) => f())
   return ctx
 }
 
@@ -24,7 +34,7 @@ const cfg = { unrestrictedWhenUndeclared: true }
 const A = { id: 'a' } as never
 const B = { id: 'b' } as never
 
-describe('@elinpf/dsh-swarm-team-skills', () => {
+describe('@elinpf/dsh-swarm-team-skills（声明层）', () => {
   it('导出形态：Service（default export）+ inject', () => {
     expect(typeof TeamSkillsService).toBe('function')
     expect(TeamSkillsService.inject).toEqual(['skills', 'agents', 'teamCore'])
@@ -60,7 +70,6 @@ describe('@elinpf/dsh-swarm-team-skills', () => {
   it('malformed 文档条目被跳过（不抛）', () => {
     const s = new TeamSkillsService(makeCtx(), cfg)
     s.declare('t1', { a: [123] as never })
-    // 条目 malformed → 跳过 → 视为无文档
     expect(s.visibleTo(A)).toBe('unrestricted')
   })
 
@@ -69,6 +78,22 @@ describe('@elinpf/dsh-swarm-team-skills', () => {
     const off = s.declare('t1', { a: ['x'] })
     expect(s.visibleTo(A)).toEqual(['x'])
     off()
+    expect(s.visibleTo(A)).toBe('unrestricted')
+  })
+
+  it('无 agent.ctx 时不抛（降级为仅声明）', () => {
+    const s = new TeamSkillsService(makeCtx(), cfg)
+    s.declare('t1', { a: ['x'] })
+    expect(() => s.visibleTo(A)).not.toThrow()
+    expect(s.visibleTo(A)).toEqual(['x'])
+  })
+
+  it('dispose（effect 回滚）后清空内部注册表', () => {
+    const ctx = makeCtx()
+    const s = new TeamSkillsService(ctx, cfg)
+    s.declare('t1', { a: ['arch-design'] })
+    expect(s.visibleTo(A)).toEqual(['arch-design'])
+    ctx._cleanup()
     expect(s.visibleTo(A)).toBe('unrestricted')
   })
 })

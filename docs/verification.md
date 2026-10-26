@@ -376,3 +376,100 @@ $ corepack pnpm format:check# All matched
 - `team-workspace` 的 `ctx.worktrees` / `ctx.fs` 以**可选 seam** 接入（未在真实 profile 内触发 worktree 创建）；锁守卫逻辑经单测与集成冒烟验证。
 - `team-compaction` 默认 `enabled:false`（不开启硬门控）；真实 token 计量依赖 `ctx.tokenMeter`（未挂载时 `usedTokens=0`）。
 - 整机 profile 的**真实模型**阶段 2 交互（如经模型取锁）未跑；`e2e-profile.sh` 默认 `--no-model` 通过，真实模型路径见 `docs/profile-e2e.md`。
+
+---
+
+# P7b：team-skills 成员级技能隔离（**落地**，覆盖 §F.2 / §G 的旧结论）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-26
+> 结论：**上游可达**——成员级技能隔离已在真实 `ctx.skills` scope 层生效（非仅声明）。§F.2 / §G 里
+> 「从全局 Service 无法把技能注册进成员各自 scope」的旧判断**被证伪并作废**；根因是当时只试了
+> **属性访问 `agent.ctx.skills`**，而未试 `agent.ctx.get('skills')`（`get()` 走 root store，不受
+> fiber 祖先链限制）。
+
+## H.1 源码依据（0.2.1-rc.3，读源码非推断）
+
+| 事实 | 位置 |
+|---|---|
+| Agent 自带 scope，**agent 自身即 scope key** | `core/agent-loop/src/agent.ts:130-131`：`this.scope = createScope(loopCtx, this); this.ctx = this.scope.ctx` |
+| `createScope` 把 key 写成 `ctx` 上的 `kScope` 标签 | `core/scope/src/index.ts:137-147`（`:140` `fiber.ctx.extend({ [kScope]: key })`）、`scopeOf` `:154-156` |
+| 注册落进**调用 ctx 的 scope 层** | `skill/skill/src/index.ts:439-460`（`:441` `scopeOf(this.ctx)`、`:452` `this.layers.effect(this.ctx, …)`） |
+| 读取合并 global + 查看 scope 链、**最近层同名优先** | `skill/skill/src/index.ts:551-565`（`:556` `[this.layers.global, ...chainLayers(options.scope)]`） |
+| 模型侧读取用 `scope: agent` | `skill/tool-skill/src/index.ts:135`（skill 工具 execute）、`:188`（用户显式调用）、`:224`（目录装配） |
+| `ctx.get()` 走 **root store**，不受 fiber 祖先链限制 | `cordis/src/reflect.ts:233-244`（`get(name)` → `this.store[key]`，与属性 getter 的 fiber 上溯 `:145-163` 不同） |
+| scoped runtime 条目会**影子化**同名全局条目（含 provider 承载） | `skill/skill/src/index.ts:556` 合并语义；上游自测 `skill/skill/tests/skill.spec.ts:1146-1168,1219-1246` |
+
+**因此**：把可见性落到 `agent.ctx`（其 `scopeOf === agent`）后，`list({scope:agent})` 只对该成员生效。
+
+## H.2 实测探针（真实 cordis + 真实 `@deepseek-ai/dsh-skill` + 真实 `dsh-scope`）
+
+`.runtime/probe/scope-probe*.mjs`（临时探针，不入库）实测输出摘要：
+
+```console
+# scope-probe4：skills 服务与 agent 是「兄弟 fiber」时两条路
+sibling 下 property access FAILED: cannot get property "skills" without inject
+sibling 下 get(): OK
+A sees: [ 'p-get' ]
+
+# scope-probe3：抑制「provider 承载」的全局技能
+before: A sees [ [ 'prov-skill', 'fs' ] ]
+after suppress: A catalog []            # A 被压制
+after suppress: B catalog [ 'prov-skill' ]  # B 不受影响
+
+# scope-probe2：正例/抑制/隔离
+A sees [ 'g-skill', 'p1', 'p2', 'p3' ] ; B sees [ 'g-skill' ]
+A catalog: [ 'p1', 'p2', 'p3' ]          # g-skill 被抑制，不进模型目录
+B catalog: [ 'g-skill' ]
+```
+
+关键：**属性访问 `agent.ctx.skills` 在真实拓扑下会抛 `without inject`**，必须用 `agent.ctx.get('skills')`。
+
+## H.3 落地方案（`packages/team-skills/src/index.ts`）
+
+- `reconcile(agent)`（新增公开方法，**不改契约 `TeamSkills`**）：把该成员可见集落到 `agent.ctx` 的 scope 层，幂等、按 member 串行化：
+  - 授权但**非全局**的技能名 → 落**正例**（成员私有 / 团队虚拟技能）。
+  - 全局但**未授权**的技能名 → 落**抑制影子**（`invocation.modelInvocable=false`）→ 不进模型目录、不可被 skill 工具加载，且影子掉同名全局技能。
+  - 无文档（`unrestricted`）→ 撤销该成员全部落层，回到全局目录。
+- `visibleTo` / `grant` / `declare` 内部以即发即忘触发 `reconcile`（保留 `visibleTo` 的同步返回值语义，契约不变）。
+- 失败降级：`agent.ctx` 缺失或 `ctx.skills` 不可用 → 仅声明 + 日志告警，不抛、不阻断。
+
+## H.4 行为级单测（真实注册表，非 mock）
+
+`packages/team-skills/tests/team-skills-scope.spec.ts`（真实 `Context` + 真实 `SkillRegistry` + 真实 `createScope`）：
+
+```console
+$ corepack pnpm --filter @elinpf/dsh-swarm-team-skills test
+ ✓ tests/team-skills.spec.ts (8 tests)
+ ✓ tests/team-skills-scope.spec.ts (6 tests)
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+```
+
+覆盖不变量：**B 私有技能只落 B 的 scope（A 看不到、加载不到）** / **未授权技能不进模型目录（连同名全局技能也压制）** / **grant 后立即可见、撤销后不可见** / **无文档=全局目录** / **scope 释放（HMR）后落层归零** / **reconcile 幂等**。
+
+## H.5 全链路复验
+
+```console
+$ corepack pnpm build       # 全部包 Done
+$ corepack pnpm test        # 全包通过（team-skills 14 用例）
+$ corepack pnpm verify      # 真实 cordis 加载全部包，通过
+$ corepack pnpm verify:e2e  # 集成冒烟通过（含「技能可见性：lead 可见 arch-design；bob 为空」）
+$ bash scripts/e2e-profile.sh --no-model
+  [PASS] bundle 自身插入行 = 11 (期望 11)
+  [PASS] 原生 agent-team / tool-agent-team 行 = 2 (期望 2)
+  [PASS] legacy tool-subagent* 为 disabled 的行数 = 4 (期望 4)
+  [PASS] dump-config 无禁用/不兼容告警
+  结果：PASS=4 FAIL=0
+$ corepack pnpm lint && corepack pnpm format:check   # 本包（packages/team-skills）0 error / All matched
+```
+
+> 说明：全仓 `lint`/`format:check` 期间，**其他成员并行开发中的未提交文件**（`scripts/bench/*`、
+> `scripts/check-publish-workflow.mjs` 等）存在告警；**与本次改动无关**，`packages/team-skills/**`
+> 单包 lint/format 全绿。该问题应在各自任务合并前由其作者修复。
+
+## H.6 结论与剩余边界
+
+- **结论**：成员级技能隔离**真实生效**（写入 `ctx.skills` 成员 scope 层），非声明层。
+- 边界 1：正例注册的虚拟技能**正文为占位体**——`team-skills` 只拥有可见性、不拥有技能正文；正文应由团队技能包/提供方承载。
+- 边界 2：实时触发依赖契约方法（`visibleTo`/`grant`/`declare`）被消费方调用（`tool-swarm.skills_visible` 等）；整机 profile 级「每步自动 reconcile」联调留待阶段 3。
+- 边界 3：`reconcile` 是 `TeamSkillsService` 的增量方法，**未进 `TeamSkills` 契约**（避免契约变更）。

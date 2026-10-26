@@ -137,11 +137,13 @@ corepack pnpm format:check
 | -------------------------------------------- | ------- | -------------------- | ----------------------------------------------------------------------- |
 | `@elinpf/dsh-swarm-team-capability-contract` | 纯类型  | —                    | 4 个能力端口类型 SSOT（无实现）                                         |
 | `@elinpf/dsh-swarm-team-workspace`           | Service | `ctx.teamWorkspace`  | worktree 隔离（复用 `ctx.worktrees`）+ 文件锁/写域守卫（`fs/*-intent`） |
-| `@elinpf/dsh-swarm-team-skills`              | Service | `ctx.teamSkills`     | 技能可见性声明 + 权限隔离（缺失文档=无限制）                            |
+| `@elinpf/dsh-swarm-team-skills`              | Service | `ctx.teamSkills`     | 技能可见性，**落到成员 `ctx.skills` scope 层**（缺失文档=无限制）       |
 | `@elinpf/dsh-swarm-team-memory`              | Service | `ctx.teamMemory`     | 共享只读 + 成员私有记忆，`ctx.systemPrompt.context` 注入（cache-safe）  |
 | `@elinpf/dsh-swarm-team-compaction`          | Service | `ctx.teamCompaction` | 团队上下文预算，委托 `ctx.compaction`（幂等，默认关闭）                 |
 
 `tool-swarm` 增量暴露 `workspace_lock/unlock/worktree`、`skills_visible`、`memory_recall`（`Config` 里 `enableWorkspace/enableSkills/enableMemory`，默认 false）。
+
+**`team-skills` 能力边界**：成员级技能可见性已**真实生效**——可见集被落到每个成员的 `ctx.skills` scope 层（注册经 `agent.ctx.get('skills')`），因此 A 成员看不到 B 成员的私有技能、未授权技能不出现在模型能力目录与 `skill` 工具中；`reconcile()` 幂等、随成员 scope 释放自动回滚。边界：`team-skills` 只拥有**可见性**、不拥有技能正文（虚拟技能为正例占位体，正文由团队技能包承载）；实时落层依赖 `visibleTo`/`grant`/`declare` 被消费方调用。细节与源码依据见 `docs/verification.md` §H。
 
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
