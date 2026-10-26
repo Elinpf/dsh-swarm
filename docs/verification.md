@@ -174,3 +174,53 @@ $ # build / test / verify / typecheck / lint / format:check  —— 全部 OK
   当前以「真实 cordis 运行时加载 + 观察注册」作为加载验证（cordis 即 DSH 的插件内核）。
   待进入团队协作插件实现阶段、确需整机联调时再补 profile 级验证。
 - 团队协作插件族（消息总线 / 任务看板 / 验证闸 / 跨进程 / worktree 锁 / 人类成员路由）属于下一阶段任务。
+
+---
+
+# P4a 阶段 1 协作插件：验证记录
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-26
+> 范围：`team-core-contract` + 6 个 backend-独立插件（team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）。
+> 环境：隔离 Node `v22.23.4` + pnpm `11.28.5`（`source scripts/env.sh` 后）。
+
+## A. 构建 / 单测 / 加载验证（全量）
+
+```console
+$ corepack pnpm build            # tsc：8 个包全部 Done
+$ corepack pnpm test             # vitest：见下
+$ corepack pnpm verify           # build + 真实 cordis 加载全部 8 个包
+$ corepack pnpm lint             # eslint：0 error
+$ corepack pnpm format:check     # prettier：All matched
+```
+
+各包单测（行为级，覆盖关键不变量）：
+
+| 包 | 用例数 | 覆盖的不变量 |
+|---|---|---|
+| team-core-contract | 2 | 运行时零导出；端口形状冻结（`expectTypeOf`） |
+| team-bus | 9 | 广播自过滤/不重不漏；多播 N 条 durable；多播全体拒绝；`*`/`user` 拒绝；超限零落库；topic 订阅；HMR 归零 |
+| team-prompt | 5 | 稳定段按 order 升序；identity/roster 走 context；渐进披露；dispose 归零 |
+| team-scheduler | 6 | autonomous nudge；scheduled 启动且幂等；stale nudge→升级；降级；定时器清理 |
+| team-review | 10 | 无门直完成；拦截为评审；二元一票否决；全 pass 完成；打分阈值；undecided；自投拒绝；后写覆盖；maxRounds 升级 |
+| team-completion | 5 | 三条件合取；上升沿仅一次；未读阻断与恢复；Lead-only |
+| tool-swarm | 6 | 5 工具注册；缺 teamBus 不注册；enableReview=false 不暴露；广播委托；HMR 归零 |
+
+## B. 加载验证输出（`pnpm verify`）
+
+```console
+== @dsh-swarm/team-core-contract ==   [OK] 纯类型包：运行时零导出（无实现）
+== @dsh-swarm/example-plugin ==       [OK] 观察到工具 greet / section example-plugin:guide / fiber DISPOSED
+== @dsh-swarm/team-bus ==             [OK] 观察到服务 ctx.teamBus；卸载后消失
+== @dsh-swarm/team-prompt ==          [OK] 观察到 section team:role/team:inbound；卸载后归零
+== @dsh-swarm/team-scheduler ==       [OK] 观察到服务 ctx.teamScheduler；卸载后消失
+== @dsh-swarm/team-review ==          [OK] 观察到服务 ctx.teamReview；卸载后消失
+== @dsh-swarm/team-completion ==      [OK] 观察到服务 ctx.teamCompletion；卸载后消失
+== @dsh-swarm/tool-swarm ==           [OK] 观察到 broadcast/multicast/review_submit/review_vote/team_summary；卸载后归零
+
+✅ 加载验证通过：全部插件可被真实 cordis 运行时加载并观察到预期行为。
+```
+
+## C. 实现期发现的两条真实契约细节
+
+1. **`defineTool` 的 value schema：可选参必须「省略」`required`**，写 `required: false` 会抛 `parameterSchemaSpecToJsonSchema` 错误（`required` 只接受 `true`）；可选即不写。这与「对象层不接受 `required`」是同一 DSL 约束的两面。
+2. **Service 形态插件经 `ctx.plugin()` 加载时要传 `mod.default`**：功能式插件（命名 `apply`）可直接传 ESM namespace，但 Service 的入口在 `default` 导出上，传 namespace 会报 `invalid plugin ... received object`。

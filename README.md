@@ -35,12 +35,15 @@ dsh-swarm/
 ├── .prettierrc.json        # 格式化配置
 ├── .gitignore              # 忽略 .runtime/ 与本地环境/凭证
 ├── packages/
-│   └── example-plugin/     # hello-world 插件包（插件 + 它自己的 bundle patch）
-│       ├── src/index.ts        # 最小函数式插件：name/inject/Config/apply
-│       ├── cordis.patch.yml    # bundle patch（dsh.bundle.patch 指向它）
-│       ├── tests/…spec.ts      # vitest 单测（含导出形态 / HMR 安全）
-│       ├── tsconfig.json
-│       └── package.json
+│   ├── example-plugin/          # hello-world 基线（P2 产出）
+│   ├── team-core-contract/      # 端口类型 SSOT（纯类型，无实现；ADR-0001）
+│   ├── team-bus/                # 广播 / 多播 / 主题扇出（Service）
+│   ├── team-prompt/             # 团队段落装配（函数式）
+│   ├── team-scheduler/          # 幂等调度 + stale 自愈（Service）
+│   ├── team-review/             # 验证闸 + 裁决数学（Service）
+│   ├── team-completion/         # 团队完成判定（Service）
+│   └── tool-swarm/              # 模型工具（函数式）
+│   # 每个包：src/index.ts + tests/*.spec.ts + tsconfig.json + package.json
 ├── scripts/
 │   ├── env.sh              # source 后进入隔离环境（P1-env-setup 产出）
 │   ├── setup-env.sh        # 幂等搭建隔离环境（P1-env-setup 产出）
@@ -99,6 +102,25 @@ corepack pnpm format:check
 
 ---
 
+## 阶段 1 协作插件（P4a）
+
+在 `example-plugin` 之外，新增 7 个协作能力包（一个能力一个包，包间**只经端口通信**）：
+
+| 包                              | 形态    | 服务键               | 职责                                                            |
+| ------------------------------- | ------- | -------------------- | --------------------------------------------------------------- |
+| `@dsh-swarm/team-core-contract` | 纯类型  | —                    | 端口类型 **SSOT** + `ctx.teamCore` 类型增强（无实现，ADR-0001） |
+| `@dsh-swarm/team-bus`           | Service | `ctx.teamBus`        | 广播 / 多播 / 主题扇出（自过滤、原子多播、防滥用）              |
+| `@dsh-swarm/team-prompt`        | 函数式  | —                    | 稳定段 + cache-safe context + 渐进披露                          |
+| `@dsh-swarm/team-scheduler`     | Service | `ctx.teamScheduler`  | 幂等扫描调度 + stale 自催/升级 + 降级                           |
+| `@dsh-swarm/team-review`        | Service | `ctx.teamReview`     | 验证闸 + 裁决数学（一票否决 / 打分阈值 / 自投拒绝）             |
+| `@dsh-swarm/team-completion`    | Service | `ctx.teamCompletion` | 完成判定三条件 + 上升沿去重                                     |
+| `@dsh-swarm/tool-swarm`         | 函数式  | —                    | 暴露 broadcast/multicast/review\_\*/team_summary 模型工具       |
+
+**端口隔离（ADR-0001，方案 C）**：这 7 个包**只从 `@dsh-swarm/team-core-contract` 取类型**，不得 import `@dsh-swarm/team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。
+`@dsh-swarm/team-core`（Service + `native` 后端）与 `@dsh-swarm/bundle` 的组装属于 **P4-impl-core**，不在本阶段。
+
+---
+
 ## 环境注意
 
 正常路径就是标准 pnpm 流程：
@@ -136,9 +158,21 @@ corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 
 - [x] pnpm workspace 骨架（根 package.json / pnpm-workspace.yaml / tsconfig 基座 / lint+format / .gitignore）
 - [x] hello-world 插件包 + bundle 声明
+- [x] **阶段 1 协作插件 7 包**（team-core-contract / team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）
 - [x] `pnpm build` / `pnpm test` / `pnpm verify` / `pnpm lint` / `pnpm format:check` 全部实跑通过
-- [x] 真实 cordis 加载验证
-- [ ] 团队协作插件族（消息总线 / 任务看板 / 验证闸 / 分布式 / worktree 锁 / 人类成员路由）——**下一阶段**
+- [x] 真实 cordis 加载验证覆盖**全部 8 个包**（`scripts/verify-load.mjs`）
+- [ ] `@dsh-swarm/team-core`（Service + `native` 后端）与 `@dsh-swarm/bundle` 组装 —— **P4-impl-core**
+- [ ] 阶段 2/3：worktree+文件锁 / 跨进程分布式 / 技能与记忆 / 人类成员席位 / Web UI
+
+### 依赖版本陷阱（重要）
+
+安装 DSH 原生实验包时**必须显式带 `@0.2.1-rc.3`**（dist-tag `next`）：
+
+```bash
+pnpm add @deepseek-ai/dsh-experimental-agent-team@0.2.1-rc.3
+```
+
+npm 上这两个实验包的 `latest`（`0.1.5-alpha.2`）与我们的运行时不兼容，会被版本门禁直接禁用，强行打开会在 `spawn`/typert codec 上报错。详见 `docs/agent-team-spike.md`。
 
 ### 对手册的两处修正（真实 0.2.1-rc.3 实测）
 
