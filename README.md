@@ -99,24 +99,36 @@ corepack pnpm format:check
 
 ---
 
-## 本机环境注意（磁盘受限）
+## 环境注意
 
-本机根文件系统已 **100% 占满**，直接 `pnpm install` 会因 `ENOSPC` 失败。当前采用的规避方式（**不影响仓库源码，只影响本机依赖落点**）：
-
-- 依赖目录软链到 tmpfs：`node_modules -> /dev/shm/dsh-swarm/node_modules`；
-- pnpm store 指向 tmpfs：`--store-dir=/dev/shm/dsh-swarm-store`（已从全局 store 播种，减少下载）。
-
-因此本机执行安装时建议：
+正常路径就是标准 pnpm 流程：
 
 ```bash
-source scripts/env.sh
+source scripts/env.sh          # 隔离 Node v22.23.4 + pnpm 11.28.5 + 独立 DSH_HOME
+corepack pnpm install          # 默认 store 即可
+corepack pnpm verify
+```
+
+> **网络**：不要挂 Clash 之类本地代理（实测大 body 会 `SSL_ERROR_SYSCALL`）。npm 直连或走 npmmirror 均可（见 `docs/env-setup.md`「网络注意事项」）。
+>
+> **推送凭证**：若需 `git push`，**不要**先 `source scripts/env.sh`——它会把 `HOME` 改到项目内隔离目录，
+> 导致凭证助手找不到 `/root/.git-credentials`。推送请用：
+> `git -c credential.helper=/root/repo/jiuwen/.proxy-config/git-cred-helper.sh push`。
+
+<details>
+<summary>可选：磁盘紧张时的临时规避（开发过程中曾用到，现磁盘已充足，通常不需要）</summary>
+
+若根盘接近占满，可把依赖与 store 放到 tmpfs，避免写满根盘：
+
+```bash
 mkdir -p /dev/shm/dsh-swarm/node_modules
 ln -sfn /dev/shm/dsh-swarm/node_modules node_modules
 corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 ```
 
-> 换到磁盘充足的机器时，去掉 `--store-dir` 与软链，直接 `corepack pnpm install` 即可。
-> `/dev/shm` 是易失内存，**重启后需重建**。
+`/dev/shm` 是易失内存，重启后需重建（`node_modules` 已在 `.gitignore` 中）。
+
+</details>
 
 ---
 

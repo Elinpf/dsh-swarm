@@ -149,9 +149,28 @@ All matched files use Prettier code style!
 
 ---
 
-## 7. 未覆盖 / 下一步
+## 7. 标准安装复验（磁盘恢复后）
 
-- **未做**完整的 `dsh --profile <name> --dump-config` 组合验证：本机根盘 100% 满，
-  `dsh plugin add` 会在 profile 内触发依赖安装而 `ENOSPC`；待磁盘充足或换机器时补做。
-  当前以「真实 cordis 加载 + 观察注册」作为加载验证。
+开发过程中一度因根盘 100% 满而用 tmpfs 规避；磁盘恢复后改用**默认安装路径**复验，全部通过：
+
+```console
+$ source scripts/env.sh
+$ corepack pnpm install --prefer-offline
+Progress: resolved 0, reused 0, downloaded 154, added 155, done
+Done in 7.6s using pnpm v11.28.5
+
+$ # build / test / verify / typecheck / lint / format:check  —— 全部 OK
+```
+
+即：**换任意磁盘充足的机器，`source scripts/env.sh` + `corepack pnpm install` + `corepack pnpm verify`
+即可从零跑起来**，无需任何本机特殊处理。
+
+---
+
+## 8. 未覆盖 / 下一步
+
+- **未做**完整的 `dsh --profile <name> --dump-config` 组合验证：该路径需要先在 profile 内安装
+  整个 `@deepseek-ai/dsh-base`（数百个包），超出「骨架 + hello-world」阶段的范围。
+  当前以「真实 cordis 运行时加载 + 观察注册」作为加载验证（cordis 即 DSH 的插件内核）。
+  待进入团队协作插件实现阶段、确需整机联调时再补 profile 级验证。
 - 团队协作插件族（消息总线 / 任务看板 / 验证闸 / 跨进程 / worktree 锁 / 人类成员路由）属于下一阶段任务。
