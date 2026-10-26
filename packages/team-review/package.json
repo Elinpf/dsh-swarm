@@ -1,0 +1,31 @@
+{
+  "name": "@dsh-swarm/team-review",
+  "version": "0.0.1",
+  "private": true,
+  "description": "验证闸 + 裁决数学：任务完成前经评审，二元一票否决 / 打分均值阈值",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/index.js", "lib/index.d.ts"],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "@dsh-swarm/team-core-contract": "workspace:*" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.2.1-rc.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
