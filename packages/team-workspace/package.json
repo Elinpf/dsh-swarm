@@ -1,0 +1,42 @@
+{
+  "name": "@elinpf/dsh-swarm-team-workspace",
+  "version": "0.0.1",
+  "private": true,
+  "description": "成员工作区隔离（复用 ctx.worktrees）+ 文件锁/写域守卫（挂 fs/*-intent waterfall）",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@elinpf/dsh-swarm-team-capability-contract": "workspace:*",
+    "@elinpf/dsh-swarm-team-core-contract": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.2.1-rc.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
