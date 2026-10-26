@@ -1,0 +1,77 @@
+# dsh-swarm 组合层：施加在 dsh-base 之后。
+# 先 disabled 关掉与团队工具冲突的 legacy 直属委派行，再 insert dsh-swarm 能力行。
+# 行序不承载加载语义，激活由服务可用性驱动（plugin-dev-guide §3.2）。
+#
+# 提醒：插入的实验包行必须钉 0.2.1-rc.3 版本（见 README「依赖版本陷阱」）。
+
+# —— 关闭 legacy 直属委派行（对齐 agent-team-profile 的处理）——
+- id: tool-subagent-control
+  disabled: true
+- id: tool-subagent-list-agents
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+
+- insert:
+    # —— 阶段 0：复用 DSH 原生团队域 + 工具（版本必须 0.2.1-rc.3）——
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
+      config:
+        maxMembers: 8
+        maxTasks: 256
+        maxMessageBytes: 65536
+        disposalTimeoutMs: 5000
+
+    - id: tool-agent-team
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
+      config:
+        freshProvider: spawn
+        forkProvider: fork
+
+    # —— dsh-swarm：端口 + 协作内核补全 ——
+    - id: team-core
+      name: '@dsh-swarm/team-core'
+      config:
+        backend: auto
+        maxMembers: 8
+        maxTasks: 256
+        maxMessageBytes: 65536
+
+    - id: team-prompt
+      name: '@dsh-swarm/team-prompt'
+      config:
+        locales: cn
+        leaderProgressiveDisclosure: true
+
+    - id: team-bus
+      name: '@dsh-swarm/team-bus'
+      config:
+        maxFanout: 64
+        maxMessageBytes: 65536
+
+    - id: team-review
+      name: '@dsh-swarm/team-review'
+      config:
+        pools:
+          - { kind: binary, rule: veto, roles: [verifier, challenger] }
+        maxRounds: 3
+        stallTimeoutMs: 1800000
+
+    - id: team-scheduler
+      name: '@dsh-swarm/team-scheduler'
+      config:
+        mode: autonomous
+        pollMs: 30000
+
+    - id: team-completion
+      name: '@dsh-swarm/team-completion'
+      config:
+        blockOnUnread: true
+
+    - id: tool-swarm
+      name: '@dsh-swarm/tool-swarm'
+      config:
+        enableBroadcast: true
+        enableReview: false
