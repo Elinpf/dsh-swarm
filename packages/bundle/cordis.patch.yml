@@ -1,8 +1,10 @@
 # dsh-swarm 组合层：施加在 dsh-base 之后。
-# 先 disabled 关掉与团队工具冲突的 legacy 直属委派行，再 insert dsh-swarm 能力行。
+# 先 disabled 关掉与团队工具冲突的 legacy 直属委派行，再 insert **仅 dsh-swarm 自身**的包行。
 # 行序不承载加载语义，激活由服务可用性驱动（plugin-dev-guide §3.2）。
 #
-# 提醒：插入的实验包行必须钉 0.2.1-rc.3 版本（见 README「依赖版本陷阱」）。
+# 说明：原生团队域（agent-team / tool-agent-team）由
+# `@deepseek-ai/dsh-experimental-agent-team-profile@0.2.1-rc.3` 提供，本 bundle **不重复插入**
+# （P6-e2e-profile 实测发现重复行；此处收敛以避免潜在重复 id 歧义）。
 
 # —— 关闭 legacy 直属委派行（对齐 agent-team-profile 的处理）——
 - id: tool-subagent-control
@@ -15,22 +17,7 @@
   disabled: true
 
 - insert:
-    # —— 阶段 0：复用 DSH 原生团队域 + 工具（版本必须 0.2.1-rc.3）——
-    - id: agent-team
-      name: '@deepseek-ai/dsh-experimental-agent-team'
-      config:
-        maxMembers: 8
-        maxTasks: 256
-        maxMessageBytes: 65536
-        disposalTimeoutMs: 5000
-
-    - id: tool-agent-team
-      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
-      config:
-        freshProvider: spawn
-        forkProvider: fork
-
-    # —— dsh-swarm：端口 + 协作内核补全 ——
+    # —— dsh-swarm：端口 + 协作内核补全（原生团队域由 agent-team-profile 提供，不在此重复）——
     - id: team-core
       name: '@dsh-swarm/team-core'
       config:

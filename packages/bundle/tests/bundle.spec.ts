@@ -38,14 +38,15 @@ describe('@dsh-swarm/bundle', () => {
     }
   })
 
-  it('insert 覆盖 7 个 dsh-swarm 插件行 + 2 个原生实验行', () => {
+  it('insert 只覆盖 dsh-swarm 自身包行，不重复插入上游 agent-team 行', () => {
     expect(patch).toContain('- insert:')
     for (const id of SWARM_PLUGINS) {
       expect(patch).toMatch(new RegExp(`- id:\\s*${id}\\b`))
       expect(patch).toContain(`name: '@dsh-swarm/${id}'`)
     }
-    expect(patch).toContain("name: '@deepseek-ai/dsh-experimental-agent-team'")
-    expect(patch).toContain("name: '@deepseek-ai/dsh-experimental-tool-agent-team'")
+    // 原生团队域由 agent-team-profile 提供，本 bundle 不得重复插入（P6 实测发现的瑕疵）
+    expect(patch).not.toMatch(/- id:\s*agent-team\b/)
+    expect(patch).not.toMatch(/- id:\s*tool-agent-team\b/)
   })
 
   it('实验包 peer 钉死 0.2.1-rc.3（防 latest 版本陷阱）', () => {
