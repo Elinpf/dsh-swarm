@@ -526,6 +526,7 @@ $ corepack pnpm lint && corepack pnpm format:check  # 本包（team-bus/tool-swa
 ## Y.4 诚实边界与未决项
 
 - O1 为 **opt-in**：不启用时行为与改动前逐位一致；启用才产生结构性收益。
+- **O2（扇出并发化）尝试后无收益 → 已回退**：桩 S2 `--repeat 15` 下 e2eMs 6.73[3..38] → 7.80[3..44]（噪声内，后测均值未降），投递/唤醒不变；且并发会打乱投递顺序，故回退、不产生提交。详见 `docs/optimization-log.md §3`。
 - 复测用**桩模式**（零模型成本）。O1 的结构性收益不需真实模型即可判定；而报告 §4 的「轮次」收益在 headless 单根轮截断下**本就不可证实**，故本轮**不为它烧 token**（真实模型消耗 = 0）。
 - 候选 #3（`in_review`）、#4（默认 scheduled）、#2b（默认改 record-only）均属**可观测行为变更**，已 `send_message` 请示 Leader，未授权前不动。
 - 实测用的 A/B 开关（`--broadcast-fanout`，对 `scripts/bench/` 的**追加式**改动）因 `scripts/bench/` 当前是**他人在研的未跟踪目录**，为避免把别人 WIP 裹进本次提交，暂未随本提交入库；其 diff 已记入 `docs/optimization-log.md §2.2`，可照此复现。
