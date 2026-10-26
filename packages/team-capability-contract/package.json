@@ -1,0 +1,40 @@
+{
+  "name": "@elinpf/dsh-swarm-team-capability-contract",
+  "version": "0.0.1",
+  "private": true,
+  "description": "阶段 2 能力端口契约（SSOT）：teamWorkspace/teamSkills/teamMemory/teamCompaction 类型 + ctx 增强；纯类型无实现",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.2.1-rc.3",
+    "@deepseek-ai/dsh-llm": "^0.2.1-rc.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-agent": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-llm": "0.2.1-rc.3",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
