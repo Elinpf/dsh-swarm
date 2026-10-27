@@ -46,16 +46,29 @@ cache-safe context（不进前缀）：`team:identity` / `team:roster` / `team:i
 **语种**：随 `locales`（cn/en）双语；段为全局注册，以条件主语
 「如果你是本团队的 Team Lead（lead）」保证语义只对 lead 生效。
 
+## P57 行为变更说明（治 `wait_agent` 长轮询）
+
+**变更内容**：
+
+1. **等待硬约束提升到常驻 `team:leader`**：新增第 4 条——「**派发后结束你的轮次；默认禁止长阻塞**」
+   （事件唤醒优先 / **不要反复轮询** / 最多**一次带超时上限**的 `wait_agent` / **绝不连续多次 wait**），
+   并显式调和上游 `tool-agent-team:41`「Lead must wait…」——「靠事件唤醒按轮聚合，不是原地阻塞」。
+2. **修 `teamBuilt` 判定 bug**：渐进披露的「团队已建」判定原用 `e.data?.role==='teammate'`，与真实
+   `team/member` v2 事件形状（`{version,teamId,member:{…}}`，**无顶层 role**）不匹配 ⇒ `teamBuilt` 永不置真
+   ⇒ `team:dispatch`/`team:task-state` **永久被过滤**（静默失真）。现改为 `e.data?.member`。
+
+**为什么**：P56 复查（`docs/leader-wait-model.md §9`）发现 leader 派发后长时间 `wait_agent` 轮询，根因是
+（a）承载该指引的 `team:dispatch` 被渐进披露 bug **永久过滤**（从未进 prompt）、（b）起手窗口无此指引、
+（c）原措辞是「有例外的软约束」。修复 = 修判定 + 提升到常驻段 + 改硬约束（纵深防御）。
+
 ## 验证
 
-- 单测 `tests/team-prompt.spec.ts`（含新段存在/内容、**不被渐进披露过滤**、英文变体）。
+- 单测 `tests/team-prompt.spec.ts`（新段存在/内容、**不被渐进披露过滤**、英文变体、**真实 team/member 形状放行**、**旧错误形状不释放**回归防护）。
 - 集成测 `tests/team-prompt.integration.spec.ts`：用**真实 `@deepseek-ai/dsh-system-prompt`**
-  装配 + `renderPrompt`，断言 `team:leader` 确实进入渲染后的提示词、且团队未建时不被过滤。
-- **真实 profile 行为探针（headless + 真实模型，先红后绿）**：纯用户请求
-  「收集一下最近最新的 AI 相关近况，给我一份简报。」下，leader 的工具序列为
-  `... list_agents → spawn_teammate×4 → team_task_create×5 → send_message...`，
-  **先派成员、成员先于任务、全程未调用 `web_search`**（对齐并修复用户截图反例）。
-  详见 `docs/verification.md` §P54-E。
+  装配 + `renderPrompt`，断言 `team:leader` 确实进入渲染后的提示词、团队未建时不被过滤、真实形状放行后 dispatch 进入。
+- **真实 profile 行为探针（headless + 真实模型）**：
+  - P54：纯用户请求「收集最近 AI 近况」→ `list_agents → spawn×4 → team_task_create×5 → send_message`，**先派成员、全程未自搜**（`docs/verification.md §P54-E`）。
+  - P57（有界委派 ×3 轮）：每轮 `spawn` 后 **`hasDispatch=true`**（prompt-dump），**spawn 先于任何 `wait_agent`**，**`wait_agent` 不构成轮询**（0/1/0）。（`docs/verification.md §P57`）
 
 ```console
 $ pnpm --filter @elinpf/dsh-swarm-team-prompt test

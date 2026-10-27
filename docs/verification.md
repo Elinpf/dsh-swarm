@@ -1571,3 +1571,74 @@ $ bash scripts/e2e-profile.sh --no-model   # PASS=7 FAIL=0
 - **解锁选项（写给用户/后续）**：① 集群模式 preset **禁用原生 `send_message`、改用本栈工具**；② 或由**上游 `tool-agent-team` 补 hook**（非本仓）。**本仓不 hook 原生路径。**
 - **处置（用户已确认）**：**该限制已知、经用户拍板暂不处理**（记为已知限制，用户持续观察）。**解锁选项**：① 集群模式 preset **禁用原生 `send_message`、改用本栈工具**；② 或上游 `tool-agent-team` 补 hook。**「已知（暂不处理）」≠「待办（漏做）」**——本条是**经确认的取舍**，非遗漏。
 - **`origin` 字段**：已正式加入 `@elinpf/dsh-swarm-team-core-contract` 的 `TeamCore.send(req)`（`origin?: 'broadcast'|'directed'`）——**非宽断言偏离**；广播豁免据此实现。
+
+---
+
+## P57 — 治 `wait_agent` 长轮询：修 teamBuilt 判定 bug + 等待硬约束提升到常驻段
+
+> 执行人：prompt-engineering-analyst ｜ 时间：2026-10-27 ｜ 依据：`docs/leader-wait-model.md §9`（P56）
+> 边界：只改 `packages/team-prompt/*`（+测试/文档）。
+
+### A. 改动面
+
+- `src/index.ts`：① **修 `teamBuilt` 判定**——从错误形状 `e.data?.role==='teammate'` 改为真实形状 `e.type==='team/member' && e.data?.member`
+  （正名：`team/member` v2 data = `{version,teamId,member:{id,name,description,provider,context,phase}}`，`role` 不在顶层；
+  且该事件**只为 spawn 的 teammate 发**——lead 是投影 `projection.ts:344`、不发事件，见 `roster.ts:255-260`）。
+  ② **等待硬约束提升到常驻 `team:leader`**（事件唤醒优先 / 默认禁止长阻塞 / 单次短 wait / 绝不轮询），并与上游
+  `tool-agent-team:41`「Lead must wait…」**显式调和**（写明「靠事件唤醒按轮聚合，不是原地阻塞」）。
+- `tests/team-prompt.spec.ts` / `tests/team-prompt.integration.spec.ts`：真实形状放行 + 旧错误形状**回归防护** + 常驻段等待措辞 + 真实装配。
+
+### B. 【事实】修前 hasDispatch 恒 false（bug 复现）
+
+- 旧判定 `e.data?.role==='teammate'` 与真实 `team/member` 形状**不匹配** ⇒ `teamBuilt` 永不置真 ⇒
+  `DEFERRED_BEFORE_TEAM=['team:dispatch','team:task-state']` **永久被过滤**（建团队后也不释放）。
+- prompt-dump 佐证（见 §E 的「stale-lib」一轮）：`sectionNames` 全程无 `team:dispatch`。
+- 回归防护单测：喂旧错误形状 `{data:{role}}` → 断言**不释放**（若变红即判定又被写错字段）。
+
+### C. 单测 + 静态检查
+
+```console
+$ pnpm --filter @elinpf/dsh-swarm-team-prompt test     # 19 passed（含真实形状放行 + 真实装配）
+$ pnpm --filter @elinpf/dsh-swarm-team-prompt typecheck # 通过；eslint / prettier 通过
+```
+
+### D. 全链路无模型回归（全绿）
+
+```console
+$ pnpm -r run build ; node scripts/verify-load.mjs ; node scripts/verify-native-wiring.mjs
+$ node scripts/verify-e2e.mjs ; bash scripts/e2e-profile.sh --no-model   # PASS=7 FAIL=0
+```
+
+### E. 真实 profile 行为探针（≥3 轮，有界委派，先设上限）
+
+- 环境：`DSH_PROFILE=headless` + `--patch .runtime/p56-probe-overlay.yml`（注入 `prompt-dump-plugin.mjs`，落盘每次装配的段落名）
+  + `--json`；真实模型 DeepSeek-Flash。每轮**跑前设 token 上限**（watcher 读 `status.usage` 累加，超限 kill）。
+- **第 1 组（3 轮，stale-lib — 先说清）**：因**修 bug 后未重建 `lib/`**，运行时用的是旧产物 ⇒ **恰好复现 bug**：
+  `hasDispatch=false`（全程）；但 `hasEventWake=true`（来自常驻 `team:leader`）。
+  **⇒ 副作用证据**：即使 `team:dispatch` 未进 prompt，**常驻硬约束已单独压住长轮询**（`wait_agent` 调用 0/0/1，无连续 wait）。
+  代价 ≈ 295k。
+- **第 2 组（3 轮，重建后 — 修复验证）**：每轮 `spawn` 后 `hasDispatch=true`（`12/13`、`21/22`、`11/12` 次装配为真）：
+
+  | 轮 | tool_call 序列（要点） | spawn idx | wait 次数/最长连续 | hasDispatch=true | 判定 |
+  |---|---|---|---|---|---|
+  | 1 | `spawn_teammate → team_task_create → task_update → send_message → read → task_get` | 0 | 0 / 0 | 12/13 | ✅ |
+  | 2 | `spawn×2 → task_create×3 → send_message → wait_agent → task_list → send_message → task_list` | 0,1 | 1 / 1 | 21/22 | ✅ |
+  | 3 | `spawn_teammate → team_task_create → send_message → read → task_get` | 0 | 0 / 0 | 11/12 | ✅ |
+
+  - ✅ **`hasDispatch=true`（spawn 后）**——bug 真修好、指引真进 prompt。
+  - ✅ **`spawn` 先于任何 `wait_agent`**（守住 delegation-first）。
+  - ✅ **`wait_agent` 不构成轮询**（目标 0；实测 0/1/0，最长连续 1，无连续 wait）。
+  代价 ≈ 167k。
+- **预算（如实）**：两组合计 ≈ **462k**（295k + 167k）——**≤0.5M 硬上限**，但**超 0.3M 目标**（因首组 stale-lib 返工）。
+- **证据文件**：`.runtime/probe/p57-round{1..3}.json/.dump`（第 1 组）、`.runtime/probe/p57fix-round{1..3}.json/.dump`（第 2 组）。
+- **分级**：【真实 profile 级 已验证】`hasDispatch=true`（3/3 轮）+ 不轮询（3/3 轮）+ spawn 先于 wait（3/3 轮）；
+  【单测级 已验证】真实形状放行 / 旧形状不释放。
+
+### F. 忠实「纯用户请求→简报」场景
+
+**未由本任务付费复现**（P54 实测约 846k/轮，≥3 轮远超上限）；**以用户 demo 实测为准**。
+
+### G. 诚实边界 / 未覆盖
+
+- 探针 prompt 为**有界委派**（非简报），规模小；忠实场景由用户实测覆盖（§F）。
+- 首组因 **stale-lib**（修后未 build）出现返工——已如实登记；**教训：改源码后必须 `pnpm -r build` 再跑真实产物探针**。
