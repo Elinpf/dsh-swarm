@@ -255,3 +255,24 @@ hasDispatch = false ×6   ；team:dispatch 出现次数 = 0   ；hasEventWake = 
 
 **附：prompt 落盘探针**（已入库）：`scripts/xproc/prompt-dump-plugin.mjs`；用法
 `P56_PROMPT_DUMP=<file> bash scripts/run-headless.sh --patch <overlay·insert 该插件> --json "<prompt>"`（`--patch` 须在 `--json` **之前**）。
+
+
+### 9.7 澄清：P46 阶段2 的「不再调 `wait_agent`」结论**不成立**（方差假绿）
+
+**问题**：P46 阶段2 断言「改后 leader 不再调 `wait_agent`」，但 §9.6 已证 **`team:dispatch`（P46 唯一受 `leaderWaitModel` 影响的段）从未进入 prompt**。⇒ 该「绿」不可能来自 P46 改动，必须定位真因。
+
+**可复用 prompt 落盘能力的直接实验**（同一 `nativeWait` 提示、同一代码，各跑 2 次；免额外模型预算，2 次共 ≈44k token）：
+```
+run1: wait_agent 调用=1  ; hasDispatch=true 次数=0
+run2: wait_agent 调用=0  ; hasDispatch=true 次数=0
+```
+⇒ **同一提示、同一代码，`wait_agent` 时有时无；且 `team:dispatch` 两次都不在 prompt。**
+
+**结论（事实）**：
+1. **P46 的提示改动对 leader 行为无因果**——它要影响的 `team:dispatch` **被渐进披露永久过滤**（§9.6 根因），**从未生效**。
+2. **P46 阶段2「不再调 `wait_agent`」= 运行间方差（假绿）**；阶段1「红」与阶段2「绿」是**两次独立采样**，非「改动前后」。⇒ **P46 结论【推翻】**（不可作为「已把默认改成不等待」的证据）。
+3. 排除其它可能：`leaderWaitModel` **只**被 `team:dispatch` 使用（`src/index.ts`），无其它段受影响 ⇒ 无「①其它段」路径；「②场景无 spawn」不成立（nativeWait 场景**确有** spawn_teammate）。
+
+**含义**：
+- 「leader 默认事件唤醒」**目前既未生效（§9.6）也未被可靠验证（§9.7）**；P46 结论文档需按「未生效/待重做」更正。
+- **修复顺序**：P57 修 `teamBuilt` 判定（让 `team:dispatch` 真正进入 prompt）→ 再**用 `prompt-dump` 断言 `hasDispatch=true`** → 然后**多轮重复**测「长轮询是否被治住」（单次不足，须多采样，防方差假绿）。
