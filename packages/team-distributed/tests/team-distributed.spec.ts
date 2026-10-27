@@ -163,6 +163,59 @@ describe('@elinpf/dsh-swarm-team-distributed', () => {
     expect(core.calls.send).toBe(1)
   })
 
+  it('对端入站 attach：远端 event 帧 → 本地运行时消费；重复 messageId 不二次消费', async () => {
+    const handlers: Array<(pid: string, f: any) => void> = []
+    const transport = {
+      send: async () => ({ seq: 1 }),
+      peers: () => [],
+      onFrame: (h: (pid: string, f: any) => void) => {
+        handlers.push(h)
+        return () => {}
+      },
+    }
+    const { ctx } = makeCtx({ teamCore: fakeCore(), teamTransport: transport })
+    const svc = new TeamDistributedService(ctx, cfg())
+    const got: string[] = []
+    svc.onInboundMessage((m) => got.push(m.messageId))
+    expect(handlers.length).toBe(1) // 构造时已 attach
+
+    handlers[0]!('peerA', {
+      kind: 'event',
+      teamId: 'T',
+      payload: { targetId: 'bob', messageId: 'rm-1', content: [] },
+    })
+    expect(got).toEqual(['rm-1'])
+    expect(svc.inboundCount).toBe(1)
+    // 重复投递（at-least-once）→ 恰好一次消费
+    handlers[0]!('peerA', {
+      kind: 'event',
+      teamId: 'T',
+      payload: { targetId: 'bob', messageId: 'rm-1', content: [] },
+    })
+    expect(got).toEqual(['rm-1'])
+    expect(svc.state().dedupDropped).toBe(1)
+  })
+
+  it('attachTransport 返回的 disposer 解绑入站', async () => {
+    const handlers: Array<(pid: string, f: any) => void> = []
+    const transport = {
+      send: async () => ({ seq: 1 }),
+      peers: () => [],
+      onFrame: (h: (pid: string, f: any) => void) => {
+        handlers.push(h)
+        return () => {}
+      },
+    }
+    const { ctx } = makeCtx({ teamCore: fakeCore(), teamTransport: transport })
+    const svc = new TeamDistributedService(ctx, cfg())
+    const got: string[] = []
+    svc.onInboundMessage((m) => got.push(m.messageId))
+    svc.attachTransport() // 重新 attach（旧的被替换）
+    expect(handlers.length).toBe(2)
+    handlers[1]!('p', { kind: 'event', teamId: 'T', payload: { messageId: 'x', content: [] } })
+    expect(got).toEqual(['x'])
+  })
+
   it('journal 落盘（atomic-write）：活过进程重启，恢复后重放且不重复', async () => {
     const core = fakeCore()
     core.setSendFails(true)

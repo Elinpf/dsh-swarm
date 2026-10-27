@@ -954,3 +954,102 @@ $ npm view @deepseek-ai/dsh-subprocess-ssh dist-tags --json → next 0.2.1-rc.4
 - P25 §I.5 的 `ssh-rpc` 登记由「内存 dual mock」**升级为：机制在真实 SSH 通道上已验证；`dsh-ssh` 本体未接通（附解锁条件）**。
 - `ctx.subagents` out-of-process 登记由「无 provider」**更正为：包存在且可装上加载，执行链路未验证（附解锁条件）**。
 - 全程真实模型 token 消耗 **0**（本地确定性探针；未驱动子运行时的模型执行）。
+
+---
+
+# P27-broadcast-semantics：核实广播/唤醒语义与源系统对齐（含前提纠正）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 裁定：(A) 严格对齐源系统——**不改进广播默认语义、不声称省轮**。
+
+## A. 前提纠正（重要）
+
+原任务前提「源系统广播不唤醒未寻址成员 → 省 N−1 轮」**经核实为误读**。源系统广播**同样唤醒全体非发送者**：
+
+- `interaction-mechanisms.md` L232：广播 `to='*'` → 唤醒每个非发送者 1 轮；
+- §3 唤醒表：「直接消息（发给别人）→ 不唤醒」；「广播 `BroadcastEvent` → **会**」；
+- L17：「被信号叫醒但邮箱无自己消息 → 空转 handler、不耗轮」——针对**发给别人的直接消息 / 无关 topic churn**，**不适用于广播**。
+
+⇒ **广播唤醒全体 = 与源系统一致，非缺陷，不存在省轮空间。**（详见 `docs/experiments-idle-wakeup.md §9`。）
+
+## B. 真正对齐点核实（真实 profile + 源码，**未发现真 bug**）
+
+- **DM 给 A 不唤醒 B/C**：新增 `exp-idle-wakeup --arm dm_one`（仅对 alice 发 1 条 DM）真实 profile 实测：
+
+  | 成员           | turns | 额外轮 | 收到 relay |
+  | -------------- | ----- | ------ | ---------- |
+  | alice（被 DM） | 2     | **1**  | 1          |
+  | bob            | 1     | **0**  | 0          |
+  | carol          | 1     | **0**  | 0          |
+
+  → 唤醒数 **1/3**，root+teammate 合计 **115,816 token（2.32% / 5M）**。与源系统「直接消息只唤醒收件人」**已对齐**。原始：`.runtime/bench/p27-dm-one/`。
+
+- **无关 topic 订阅者**：`team-bus.notifySubscribers` 仅对 `sub.topic === snap.topic` 的**收件人**回调，且回调在本进程内（不产生 LLM 轮）——源码 `packages/team-bus/src/index.ts:286-296`。无空唤醒。
+- **任务看板 churn**：`team-scheduler` 仅在「成员空闲且无活跃任务」时 nudge（有意的派发/自愈），与源系统一致。
+
+⇒ **未发现真 bug，无需修复。**
+
+## C. opt-in 手段与遗留
+
+- `record-only` / `quiet` **保持 opt-in、不作默认**：适用高流量信息型广播；**风险**=静默广播**无法触发协同动作**（「全体停止/任务变更」类若无人被唤醒可能长期无人处理）。已文档化（`experiments-idle-wakeup.md §9.3`）。
+- **遗留（只记录，待 P21 后评估）**：**写放大**——源系统广播 **O(1)** 写（1 记录 + 读水位线）vs 我们 **O(N)**（1 落库 + 逐人 DM）；唤醒语义相同、存储/写入形态不同，改动涉 mailbox 语义。
+
+## D. 全链路回归
+
+```console
+$ corepack pnpm build / test / verify / verify:e2e / lint / format:check   # 全绿
+$ bash scripts/e2e-profile.sh --no-model                                   # PASS，dump/wiring 断言全过
+```
+
+> token 消耗：本轮真实模型 **115,816 / 5,000,000（2.32%）**。
+
+
+## K. 对端入站 attach：性质判定、补齐与回归固化（P29-peer-inbound-attach / dev-2）
+
+针对 P20 指出的「transport 无『对端入站 attach』公开面（入站仅经 in-process bus）」追问：**对端侧到底能不能把收到的帧接进一个真实团队运行时**。
+
+### K.1 性质判定：**(a) 我们没暴露能力**（实现层缺胶水），非架构硬限制
+
+依据（读源码 + 实走）：
+- **传输层已有公开入站面**：`team-transport` 暴露 `onFrame(handler)`（`packages/team-transport/src/index.ts:600`）与
+  `acceptInbound(link)`（:695）——帧可被订阅、对端可连入本端点。⇒ **transport 层不是没有 attach 面**（P20 的措辞略过头）。
+- **缺的是「入站帧 → 团队运行时」的胶水**：`team-distributed` 此前**只 `send` 到 Lead，从不订阅 `ctx.teamTransport.onFrame`**
+  （源码中无 `onFrame` 调用），故远端帧到了 transport 也没接进运行时。⇒ 这是 **(a)**。
+- **无架构硬限制**：DSH 团队状态确为「单写者 Lead 权威」（`team-distributed` 已按此实现），但 follower **消费** Lead 投递本就不需要共识；
+  `ctx.teamTransport` 是可注入的 seam，运行时 attach 完全可实现。
+
+### K.2 补齐：最小对端 attach 面（`team-distributed`）
+
+- 新增公开面 `attachTransport(): () => void`：订阅 `ctx.teamTransport.onFrame`，`mutation` 经 opId 幂等 apply、
+  `event`（投递）经 `messageId` 去重后交给消费面。构造时**自动 attach**（有 transport 即接）。
+- 新增消费面 `onInboundMessage(handler): () => void` + 观测 `inboundCount` + 事件 `swarm/distributed/inbound`。
+- 单测（`team-distributed` 现 12 条）：远端 `event` 帧 → 本地消费；重复 `messageId` **不二次消费**（`dedupDropped++`）；disposer 解绑。
+
+### K.3 跨进程端到端（A 进程成员 → B 进程运行时真实消费）✅
+
+新增 `scripts/xproc/peer-daemon.mjs`：一个**独立 node 进程**，在 stdin/stdout 上跑最小线协议，
+并把入站帧经 `attachTransport`/`onInboundMessage` **接进本进程真实的 `team-distributed` 运行时**。
+
+探针 D 段（真实 `ctx.subprocess` 起该对端守护进程，非回声 mock）：
+```console
+$ node scripts/verify-crossprocess.mjs
+== D. 对端入站 attach：另一进程各自跑本栈并真实消费（A→B 跨进程端到端）==
+[OK]   A→B 跨进程：B 进程运行时真实消费到 x1（consumed=1 条）
+[OK]   A 收到 B 的对端 ack（传输层确认）
+[OK]   重复投递不二次消费（仍有 1 条）
+```
+⇒ 「另一进程各自跑本栈、互相投递、**对端真实消费**」**已跑通一条端到端链路**（不再是单边成立）。
+
+### K.4 回归固化
+
+- 新增根脚本 **`pnpm verify:xproc`** = `build && node scripts/verify-crossprocess.mjs`，纳入标准验证链。
+- 探针自带 **SKIP**：无可用 SSH 目标时 C 段自动跳过并提示（不误报失败）；A/B/D 段依赖真实 node 子进程，无需网络。
+
+### K.5 已知边界（诚实登记，带源码位置）
+
+- **跨进程「对端」需要一个跑本栈的守护进程**（`relay.mjs` 或 `peer-daemon.mjs`）来承接线协议并 attach。
+  我们**没有**「一个已在运行的第三方 dsh 进程被任意对端拨入」的**服务端 transport**：
+  `team-transport` 的端点发现仅在**同进程**的 `LoopbackBus`（`src/index.ts` `sharedBus`），`local-child` 是**出站 spawn**
+  （`ChildProcessLinkFactory.create`），没有 listening/server backend。
+- 因此现阶段跨进程协作的**真实可用边界**是：**传输层（帧/ack/重连/杀进程）+ 对端运行时消费**（本任务已证，需预置对端守护/端点名）。
+  **未突破的**是「任意两个 dsh 进程自动互连（无需预置守护与端点协商）」——需补一个**服务端（listening）transport backend + 远端端点注册/发现**，
+  这属于对 `team-transport` 的扩展（我们地盘内可实现，但超出本次最小 attach 范围，登记为后续项）。

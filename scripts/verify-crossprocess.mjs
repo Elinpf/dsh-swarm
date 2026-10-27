@@ -12,7 +12,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import { fileURLToPath } from 'node:url'
 import { spawn as nodeSpawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -284,6 +284,62 @@ if (!sshAvailable()) {
   await ctx.stop?.()
   for (const c of children) c.kill('SIGKILL')
   delete process.env.RELAY_ACK_TIMEOUT_MS
+}
+
+console.log('\n== D. 对端入站 attach：另一进程各自跑本栈并真实消费（A→B 跨进程端到端）==')
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-attach-'))
+  const sink = join(dir, 'consumed.jsonl')
+  const DAEMON = join(root, 'scripts/xproc/peer-daemon.mjs')
+  Object.assign(process.env, { PEER_SINK: sink })
+
+  const ctx = new Context()
+  await ctx.plugin(SubprocessLocal) // 真实 ctx.subprocess
+  await ctx.plugin(TR.default, {
+    backend: 'local-child',
+    endpoint: 'leaderA',
+    nodeBin: 'node',
+    childRelayPath: DAEMON, // 对端不是回声 relay，而是「跑本栈的对端守护」
+    ackTimeoutMs: 1000,
+    reconnectIntervalMs: 0,
+    autoReconnect: false,
+  })
+  // A 进程（leader）把一条 DM 投给自己的对端 B 进程
+  await ctx.teamTransport.send('peerB', {
+    kind: 'event',
+    teamId: 'T',
+    payload: { targetId: 'bob', messageId: 'x1', content: [{ type: 'text', text: 'hi-B' }] },
+  })
+  await sleep(400)
+  const consumed = existsSync(sink)
+    ? readFileSync(sink, 'utf8').trim().split('\n').filter(Boolean)
+    : []
+  assert(
+    consumed.some((l) => l.includes('"messageId":"x1"')),
+    `A→B 跨进程：B 进程运行时真实消费到 x1（consumed=${consumed.length} 条）`,
+  )
+  assert(ctx.teamTransport.stats().acked >= 1, 'A 收到 B 的对端 ack（传输层确认）')
+
+  // at-least-once：重复投同一 messageId → B 侧幂等，不二次消费
+  await ctx.teamTransport.send('peerB', {
+    kind: 'event',
+    teamId: 'T',
+    payload: { targetId: 'bob', messageId: 'x1', content: [{ type: 'text', text: 'hi-B' }] },
+  })
+  await sleep(400)
+  const consumed2 = existsSync(sink)
+    ? readFileSync(sink, 'utf8').trim().split('\n').filter(Boolean)
+    : []
+  assert(consumed2.length === consumed.length, `重复投递不二次消费（仍有 ${consumed2.length} 条）`)
+
+  await ctx.stop?.()
+  delete process.env.PEER_SINK
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
 }
 
 console.log(

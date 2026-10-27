@@ -67,6 +67,15 @@ interface TransportSeam {
     seq: number
   }>
   peers(): PeerStatus[]
+  /** 对端入站 attach 面：订阅远端帧（transport 的公开入站钩子）。 */
+  onFrame?(handler: (peerId: string, frame: TransportInboundFrame) => void): () => void
+}
+
+/** 入站帧形状（与 team-transport 的 TransportFrame 对齐的结构化子集）。 */
+interface TransportInboundFrame {
+  kind: string
+  teamId: string
+  payload: unknown
 }
 
 /**
@@ -76,6 +85,13 @@ interface TransportSeam {
 export interface DeliverJournal {
   queued: Map<string, { targetId: string; content: unknown[] }>
   delivered: Set<string>
+}
+
+/** 对端入站消费到的一条团队消息（attach 面）。 */
+export interface InboundMessage {
+  messageId: string
+  targetId: string
+  content: unknown[]
 }
 
 export function createJournal(): DeliverJournal {
@@ -121,6 +137,9 @@ export class TeamDistributedService extends Service implements TeamDistributed {
   private readonly applied = new Map<string, AppliedOp>()
   private readonly journal: DeliverJournal
   private dedupDroppedValue = 0
+  private readonly inboundHandlers = new Set<(msg: InboundMessage) => void>()
+  private detachInbound: (() => void) | undefined
+  private inboundApplied = 0
 
   constructor(ctx: Context, config: Config = { role: 'lead', deliveryTtlMs: 30000 }) {
     super(ctx, 'teamDistributed')
@@ -130,6 +149,8 @@ export class TeamDistributedService extends Service implements TeamDistributed {
     this.journal = injected ?? loadJournalFile(config.journalPath) ?? createJournal()
     ctx.effect(() => () => this.dispose(), 'teamDistributed.lifecycle()')
     if (this.transport) {
+      // 对端 attach：把 ctx.teamTransport 的入站帧接到本运行时（此前缺失的胶水）
+      this.attachTransport()
       void this.spawnRecoveryLoop()
     } else {
       this.ctx.logger?.warn?.(
@@ -254,6 +275,66 @@ export class TeamDistributedService extends Service implements TeamDistributed {
     }
   }
 
+  // ── 对端入站 attach（spec §3.1/§4.3：远端帧 → 本地团队运行时）──────────────
+
+  /**
+   * 订阅 `ctx.teamTransport` 的入站帧，并**接到本运行时**：`mutation` 经 opId 幂等 apply，
+   * `event`（投递）经 messageId 去重后交给 {@link onInboundMessage} 订阅者。
+   * 返回 disposer。重复调用无副作用。
+   */
+  attachTransport(): () => void {
+    const t = this.transport
+    if (!t?.onFrame) {
+      this.ctx.logger?.warn?.('team-distributed: ctx.teamTransport has no onFrame → cannot attach')
+      return () => {}
+    }
+    this.detachInbound?.()
+    this.detachInbound = t.onFrame((_peerId, frame) => this.applyInbound(frame))
+    return () => {
+      this.detachInbound?.()
+      this.detachInbound = undefined
+    }
+  }
+
+  /** 消费者 attach 面：订阅「真实消费到的远端投递」。 */
+  onInboundMessage(handler: (msg: InboundMessage) => void): () => void {
+    this.inboundHandlers.add(handler)
+    return () => {
+      this.inboundHandlers.delete(handler)
+    }
+  }
+
+  /** 观测：入站 apply/consume 计数。 */
+  get inboundCount(): number {
+    return this.inboundApplied
+  }
+
+  private applyInbound(frame: TransportInboundFrame): void {
+    if (frame.kind === 'event') {
+      const p = (frame.payload ?? {}) as {
+        targetId?: string
+        messageId?: string
+        content?: unknown[]
+      }
+      const messageId = p.messageId ?? ''
+      if (!messageId) return
+      if (this.journal.delivered.has(messageId)) {
+        // 幂等：同一 messageId 不二次消费（at-least-once → 恰好一次应用）
+        this.dedupDroppedValue++
+        return
+      }
+      this.journal.delivered.add(messageId)
+      this.inboundApplied++
+      const msg: InboundMessage = {
+        messageId,
+        targetId: p.targetId ?? '',
+        content: p.content ?? [],
+      }
+      for (const h of this.inboundHandlers) h(msg)
+      this.emit('swarm/distributed/inbound', { version: 1 as const, ...msg })
+    }
+  }
+
   // ── 投递（at-least-once + messageId 幂等）─────────────────────────────────
 
   async deliver(
@@ -364,6 +445,9 @@ export class TeamDistributedService extends Service implements TeamDistributed {
   }
 
   dispose(): void {
+    this.detachInbound?.()
+    this.detachInbound = undefined
+    this.inboundHandlers.clear()
     this.applied.clear()
   }
 
