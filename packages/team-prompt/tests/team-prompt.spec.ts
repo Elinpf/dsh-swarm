@@ -123,3 +123,22 @@ describe('@elinpf/dsh-swarm-team-prompt', () => {
     expect(Object.keys(ctx._handlers).every((k) => ctx._handlers[k]!.length === 0)).toBe(true)
   })
 })
+
+describe('P46 leader 等待模型提示（event-wake 默认）', () => {
+  it('默认 event-wake：team:dispatch 提示「派发后结束轮次、不要 wait_agent 长阻塞」', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, { ...config, leaderWaitModel: 'event-wake' })
+    const dispatch = ctx._sections.find((s: any) => s.name === 'team:dispatch')
+    expect(dispatch.text).toContain('结束你的轮次')
+    expect(dispatch.text).toContain('wait_agent')
+    expect(ctx._sections).toHaveLength(4) // 段数不变
+  })
+
+  it('blocking-allowed：保留「可同步等待」旧口径', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, { ...config, leaderWaitModel: 'blocking-allowed' })
+    const dispatch = ctx._sections.find((s: any) => s.name === 'team:dispatch')
+    expect(dispatch.text).toContain('可选')
+    expect(dispatch.text).not.toContain('结束你的轮次')
+  })
+})

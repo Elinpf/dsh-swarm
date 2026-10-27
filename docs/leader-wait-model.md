@@ -116,3 +116,34 @@ grep -n '唤醒' /root/.jiuwenswarm/.agent_teams/jiuwen_team_web_1a1765709a5_5ff
 ### 6.2 对阶段 2 的含义
 - ②已证能力具备 ⇒ 阶段 2 只需改「**默认行为/提示**」（A/B），无需新增传输能力。
 - ③需阶段 2 落地「定向唤醒」后再做**干净**断言；本脚本已把 ③ 标为 **INFO（不误判 FAIL）**。
+
+
+---
+
+## 7. 阶段 2 实现（P46，落点 `team-prompt` / `team-core`）
+
+> 地盘：**只改 `team-prompt` 与 `team-core`**；不动 `tool-swarm`（P49/dev-1）、`packages/bundle/*`（P44/dev-1）。`wait_agent` 是上游 experimental 工具，**不**在 `tool-swarm` 内。
+
+### 7.1 B（leader 提示：事件唤醒优先）— `team-prompt`
+- 新增配置 **`leaderWaitModel: 'event-wake' | 'blocking-allowed'`（默认 `event-wake`）**。
+- `team:dispatch` 段文本随该配置切换：
+  - `event-wake`：**「派发或发消息后请结束你的轮次」**；成员消息唤醒新一轮；**不要用 `wait_agent` 长阻塞**（仅同轮必须聚合才用）；**只处理发给你的消息/含你的广播**。
+  - `blocking-allowed`：保留旧口径（`wait_agent` 可选）。
+- **防什么行为偏差**：防「leader 因原生提示默认挂 `wait_agent` 长阻塞」（P46 阶段 1 红态 R/`nativeWait` 已复现：tool_calls 含 `wait_agent`）。段数不变（仍 4 段），不增提示预算。
+- 测试（`team-prompt` 现 7 条）：`event-wake` 文本含「结束你的轮次」；`blocking-allowed` 含「可选」且不含前者。
+
+### 7.2 A（`wait_agent` 保留为可选、非默认）— 由 B 覆盖
+- **不改工具层**：`wait_agent`（上游 experimental）**保留、随时可用**，只是**不再被引导为默认动作**（B 已达成）。
+- **防什么行为偏差**：防「把『不阻塞』实现成禁用等待」而破坏「同轮聚合」合法用法。
+
+### 7.3 C（定向唤醒 leader；无关广播不空转）
+- **`team-core.send` 本就是「定向 DM」**：`req.range.kind !== 'dm'` 直接拒绝（`packages/team-core/src/index.ts` send 首行），**逐条只发一个 target**——已被既有测试覆盖（`team-core.spec:86-108`：`sendCalls[0].target==='w'`，broadcast 抛 `TEAMCORE_RANGE_UNSUPPORTED`）。
+- 唤醒链路：`send` → 原生 `sendMessage` → **`root.steer`（启动/恢复轮次）+ `activity.notify`（唤醒 wait）**（P45 §1.2）⇒ **发给 leader 的 DM/@all 会唤醒 leader**。
+- **无关广播不空转**属 **`team-bus` 扇出**语义（dev-1 地盘，P49 在改 multicast）——**本任务不动**，登记为跨任务项；提示侧已加「只处理发给你的消息/含你的广播」。
+- **防什么行为偏差**：防「非定向消息把 leader 从静态唤醒」的放大；核心层已用「DM-only」收口。
+
+### 7.4 D（可选）未做
+- `wait` 被消息唤醒时「返回并携带该消息」需改**上游** `TeamActivity.wait` 返回形状（`boolean`→带负载）——**非我们包**，登记为可选上游项，未做。
+
+### 7.5 E（回归）待跑
+- 阶段 2 改后需**真实 profile 端到端**回归（预算先报 Leader）。确定性回归：`build`/`test`/`verify`/`verify:e2e`（无模型）。

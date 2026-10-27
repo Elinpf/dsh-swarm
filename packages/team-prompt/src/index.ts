@@ -37,6 +37,12 @@ export interface Config {
   leaderProgressiveDisclosure: boolean
   /** 覆盖内置稳定段；为空则用内置常量。 */
   sections: SectionSpec[]
+  /**
+   * leader 等待模型（P46）：
+   * - `event-wake`（默认）：**派发/发消息后结束轮次**，由成员消息唤醒新一轮；不把 `wait_agent` 当默认动作。
+   * - `blocking-allowed`：保留「可同步等待」的旧口径（`wait_agent` 仍可用）。
+   */
+  leaderWaitModel: 'event-wake' | 'blocking-allowed'
 }
 
 export const Config: z<Config> = z.object({
@@ -45,6 +51,9 @@ export const Config: z<Config> = z.object({
   sections: z
     .array(z.object({ name: z.string(), order: z.number(), text: z.string() }))
     .default([]),
+  leaderWaitModel: z
+    .union([z.const('event-wake'), z.const('blocking-allowed')])
+    .default('event-wake'),
 })
 
 /** 稳定段名（进前缀）与顺序约定。 */
@@ -60,7 +69,10 @@ export const CONTEXT_NAMES = ['team:identity', 'team:roster', 'team:info'] as co
 /** 团队建成前延后的段（渐进披露）。 */
 const DEFERRED_BEFORE_TEAM = ['team:dispatch', 'team:task-state']
 
-function builtinSections(locales: 'cn' | 'en'): SectionSpec[] {
+function builtinSections(
+  locales: 'cn' | 'en',
+  leaderWaitModel: 'event-wake' | 'blocking-allowed' = 'event-wake',
+): SectionSpec[] {
   const cn = locales === 'cn'
   return [
     {
@@ -74,8 +86,12 @@ function builtinSections(locales: 'cn' | 'en'): SectionSpec[] {
       name: 'team:dispatch',
       order: 15,
       text: cn
-        ? '就绪任务由调度器派发；你也可主动认领。'
-        : 'Ready tasks are dispatched by the scheduler; you may also claim them.',
+        ? leaderWaitModel === 'event-wake'
+          ? '就绪任务由调度器派发；你也可主动认领。**派发或发消息后请结束你的轮次**：成员的消息会唤醒你开新一轮，优先用事件唤醒；**不要用 wait_agent 长阻塞等待**（仅当同一轮必须同步聚合多个成员结果时才用 wait_agent）。只处理发给你的消息/含你的广播。'
+          : '就绪任务由调度器派发；你也可主动认领。如需同步等待队友结果，可用 wait_agent（可选）。'
+        : leaderWaitModel === 'event-wake'
+        ? 'Ready tasks are dispatched by the scheduler; you may also claim them. **After dispatching or messaging, end your turn**: teammate messages wake you into a new turn (event-wake first); do NOT block on wait_agent (use it only when the same turn must aggregate multiple teammates synchronously). Act only on messages addressed to you (or broadcasts that include you).'
+        : 'Ready tasks are dispatched by the scheduler; you may also claim them. You may use wait_agent (optional) to wait synchronously for teammates.',
     },
     {
       name: 'team:task-state',
@@ -96,7 +112,10 @@ function builtinSections(locales: 'cn' | 'en'): SectionSpec[] {
 
 /** 注册团队段落；一切注册都在 ctx.effect 内，卸载即回滚。 */
 export function apply(ctx: Context, config: Config): void {
-  const specs = config.sections.length > 0 ? config.sections : builtinSections(config.locales)
+  const specs =
+    config.sections.length > 0
+      ? config.sections
+      : builtinSections(config.locales, config.leaderWaitModel)
 
   ctx.effect(() => {
     // 渐进披露状态：观察到 teammate 成员即视为「团队已建立」。

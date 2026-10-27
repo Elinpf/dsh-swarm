@@ -206,6 +206,13 @@ $DSH --profile headless --dump-config | grep -E "team-core|team-bus|tool-swarm"
 $DSH --profile headless remove @elinpf/dsh-swarm-bundle    # 关闭即回退（零残留）
 ```
 
+### 「集群模式」agent preset（**默认**，P44）
+
+- **默认「集群模式」**：`@elinpf/dsh-swarm-bundle` 现随包提供 agent preset `swarm`（`name: '集群模式'`，`order: 0`），并把 `agent-preset-registry` 的 `default` 覆盖为 `swarm` → **安装后默认即「集群模式」**（原默认 `standard`，属行为变更）。
+- **如何切回 / 切换**：在 Web 的模式选择器切到 `standard`（标准模式）或其他内置 preset（`ptc`/`minimal`/`cordis`）；或在 profile 层覆盖 `agent-preset-registry.default`。profile 层同名 preset 会覆盖本 bundle 的声明（**演示实例不受影响**）。
+- **该模式包含什么**：与 `standard` preset **完全相同的工具集**（32 个插件 id），**外加** dsh-swarm bundle 注入的团队协作行（team-core/bus/review/scheduler/completion/workspace/skills/memory/compaction/transport/distributed/human + tool-swarm）。
+- **验证**：dump-config 中 `swarm` 与 `standard` 的插件 id 集**逐项一致**（32/32，无缺失无多余，仅 id/order/name 不同）。
+
 ---
 
 ## 环境注意
@@ -257,7 +264,7 @@ corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 - [ ] 整机 profile 级联调（完整 `dsh-base` + 实验包 + 可用模型端点）—— 见 `docs/verification.md` 边界说明
 - [ ] Web 端 roster / task-board UI（`team-human` 只提供桥接面，Web UI 未写）
 
-> **默认派发模式（如实登记）**：`team-scheduler` 的 `Config.mode` **当前默认仍是 `autonomous`**（`team-scheduler/src/index.ts` 默认值 + `bundle` 实测 `mode: autonomous`）。「默认改为 `scheduled`」的原任务 P19 **已取消**（重建为 P19b，仍未落地）——**不要把计划中的默认变更当作已完成**；如需无人值守自动 claim，请显式配置 `mode: scheduled`。
+> **默认派发模式（P44 更正，保留历史）**：`team-scheduler` 的 `Config.mode` **曾默认为 `autonomous`**；**已于 P19b（commit `2031d44`）改为默认 `scheduled`**（详见上文「任务派发模式（默认 `scheduled`）」段）。原任务 P19 曾被取消并重建为 P19b，**现已落地**——以实现为准：**默认即 `scheduled`**；如需切回自主认领，显式配置 `mode: 'autonomous'`。（此前本节曾写「当前默认仍是 `autonomous` / P19b 仍未落地」，属 P19b 落地前的旧状态，现更正。）
 
 ### 依赖版本陷阱（重要）
 
@@ -273,3 +280,8 @@ npm 上这两个实验包的 `latest`（`0.1.5-alpha.2`）与我们的运行时�
 
 1. **`output.schema` 的 `required`**：手册 §2.2 示例把 `required: true` 写在对象层，真实 value schema DSL **不支持**（抛 `JsonSchemaError`）。正确写法是把 `required: true` 写在**属性**上（见 `packages/example-plugin/src/index.ts`）。
 2. **消费 DSH 声明需要 `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`**：DSH 的 `.d.ts` 之间用 `.ts` 扩展名互相引用；不开启这两项，`declare module '@deepseek-ai/cordis'` 的类型增强会被静默丢弃（症状：`ctx.tools` / `ctx.systemPrompt` 不存在）。已写入 `tsconfig.base.json`。
+
+## 行为变更：leader 等待模型（P46）
+
+leader 默认改为**纯事件唤醒**（对齐 JiuwenSwarm）：**派发/发消息后结束轮次**，由成员消息唤醒新一轮；**不把 `wait_agent` 当默认动作**（工具保留、随时可用，仅同轮必须聚合时使用）。
+由 `team-prompt` 配置 `leaderWaitModel`（`event-wake` 默认 / `blocking-allowed` 旧口径）控制。详见 `docs/leader-wait-model.md`。
