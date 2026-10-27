@@ -283,15 +283,20 @@ export class TeamBusService extends Service implements TeamBus {
       throw new TeamBusError('TEAMBUS_TX_FAILED', String((e as Error)?.message ?? e))
     }
 
-    await this.fanout(caller, req.targets, {
-      // 扇出用「代表快照」：内容/主题一致，仅 targetId 逐目标不同。
-      id: records[0]?.id ?? this.nextId('mcast'),
-      senderId: sender.id,
-      senderName: sender.name,
-      topic,
-      content: req.content,
-      delivery: req.delivery,
-    })
+    await this.fanout(
+      caller,
+      req.targets,
+      {
+        // 扇出用「代表快照」：内容/主题一致，仅 targetId 逐目标不同。
+        id: records[0]?.id ?? this.nextId('mcast'),
+        senderId: sender.id,
+        senderName: sender.name,
+        topic,
+        content: req.content,
+        delivery: req.delivery,
+      },
+      'directed',
+    )
     return { messageId: records[0]?.id ?? '' }
   }
 
@@ -303,10 +308,15 @@ export class TeamBusService extends Service implements TeamBus {
 
   // ── 内部 ──────────────────────────────────────────────────────────────────
 
-  private async fanout(caller: Agent, targetIds: string[], snap: BroadcastSnapshot): Promise<void> {
+  private async fanout(
+    caller: Agent,
+    targetIds: string[],
+    snap: BroadcastSnapshot,
+    origin: 'broadcast' | 'directed' = 'directed',
+  ): Promise<void> {
     for (const id of targetIds) {
-      // 1) 信号走总线：以 DM 送达（内容已落库）
-      await this.deliver(caller, id, snap)
+      // 1) 信号走总线：以 DM 送达（内容已落库）；携带 origin 供 team-core 决定是否计入未读台账
+      await this.deliver(caller, id, snap, origin)
       // 2) 通知本进程内的主题订阅者
       this.notifySubscribers([id], snap)
     }
@@ -345,14 +355,31 @@ export class TeamBusService extends Service implements TeamBus {
     return out
   }
 
-  private async deliver(caller: Agent, targetId: string, snap: BroadcastSnapshot): Promise<void> {
+  private async deliver(
+    caller: Agent,
+    targetId: string,
+    snap: BroadcastSnapshot,
+    origin: 'broadcast' | 'directed' = 'directed',
+  ): Promise<void> {
     const member = this.members(caller).find((m) => m.id === targetId)
     if (!member) return
     try {
-      await this.ctx.teamCore.send(caller, {
+      // origin 是 team-core 的 P51 扩展（可选）；经窄断言调用，避免硬改契约
+      await (
+        this.ctx.teamCore.send as (
+          a: unknown,
+          r: {
+            range: { kind: 'dm'; to: string }
+            content: unknown[]
+            delivery: 'quiet' | 'wakeup'
+            origin?: 'broadcast' | 'directed'
+          },
+        ) => Promise<unknown>
+      )(caller, {
         range: { kind: 'dm', to: member.name },
         content: snap.content,
         delivery: snap.delivery,
+        origin,
       })
     } catch (e) {
       // 投递失败不打断扇出（内容已落库，可补投）；仅告警。

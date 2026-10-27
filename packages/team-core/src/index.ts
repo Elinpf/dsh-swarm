@@ -297,7 +297,13 @@ export class TeamCoreService extends Service implements TeamCore {
 
   async send(
     caller: Agent,
-    req: { range: MessageRange; content: ContentBlock[]; delivery: 'quiet' | 'wakeup' },
+    req: {
+      range: MessageRange
+      content: ContentBlock[]
+      delivery: 'quiet' | 'wakeup'
+      /** 来源：'broadcast'（公告类，**不计入未读/pending 台账**）| 'directed'（默认，计入）。 */
+      origin?: 'broadcast' | 'directed'
+    },
   ): Promise<{ messageId: string; status: 'accepted' | 'queued' }> {
     if (req.range.kind !== 'dm') {
       throw new TeamCoreError(
@@ -312,8 +318,10 @@ export class TeamCoreService extends Service implements TeamCore {
       content: req.content,
       signal: controller.signal,
     })
-    // P51②：定向消息进「待处理」台账（durable，通道 A）；广播**不进**（team-core.send 本就仅接受 DM）
-    this.notePending(caller, res.messageId, req.range.to, req.content)
+    // P51②：定向消息进「待处理」台账（durable，通道 A）；**公告类（origin='broadcast'）不计入**
+    // （否则任意公告都会让任务永久无法完成——见口径：未读闸只对定向消息生效）
+    if (req.origin !== 'broadcast')
+      this.notePending(caller, res.messageId, req.range.to, req.content)
     return { messageId: res.messageId, status: 'accepted' }
   }
 
