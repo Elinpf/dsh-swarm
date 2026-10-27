@@ -1249,3 +1249,39 @@ $ node scripts/verify-unblock-latency.mjs
 - **socket 文件权限（0700 目录 + 0600 文件）只隔离"不同用户"**：在多用户/共享主机上，若目录权限被放宽或对端同用户，**均不构成鉴权**。
 - **仍未做**：令牌轮换/签名、跨机（registry 为同机目录，跨机不发现）、TLS/加密（当前假设本机可信）。
 - 结论：本机**同用户**场景可防误连 + 自动回收死端点；**跨用户/共享主机不安全**，跨机不适用。
+
+
+## O. 真实 profile 的 scheduler arming 入口（P38b / dev-2）
+
+### O.1 定位结论：**(a) 漏了装配入口**（实现层缺自装配），非 (b)/(c)
+
+- 证据：全仓 `packages/*/src` 内**无任何 `.arm(` 调用点**（仅 tests / `verify-unblock-latency.mjs` / bench 桩）。
+  插件被子系统**加载**，但从未**启动扫描** → scheduled 不派发、autonomous 不 nudge，**P31 的 `onTaskTerminal` 主动推送也依赖 `armedAgent` → 同样不触发**。
+- 非 (b)（应由宿主调用但无通道）：DSH 插件模型下服务应**自装配**；`ctx.inject` 提供了「依赖就绪即可回调」的通道，无需宿主显式调用。
+- 非 (c)（上游未就绪）：`agents`/`teamCore` 在真实 profile 下可用；只是没人触发。
+- 对照源系统（`cluster-architecture.md`）：`TeamScheduler` **仅当 `role=LEADER`** 才创建 —— 故自装配必须**按 LEADER 门控**。
+
+### O.2 修复方式（`team-scheduler` 自装配）
+
+- 构造时 `ctx.inject(['agents','teamCore'], cb)`；依赖就绪后 `tryAutoArm()`：
+  解析首个 agent（`agents.list()[0]`）→ 若 `teamCore.tryMembership(agent).role==='lead'` → `arm(agent)`。
+- **非 LEADER（follower）不 arm**，与源语义一致；`agents` 晚于本插件就绪时**有界重试**（~2 分钟）。
+- 新增 `Config.autoArm`（默认 `true`）；置 `false` 可**复现旧行为**（用于先红后绿）。
+
+### O.3 验证：确定性 + 真实 profile 先红后绿
+
+- **确定性单测（team-scheduler 15 条）**：LEADER 就绪即 arm → **scheduled 真派发**（t1 pending→in_progress）；非 LEADER 不 arm（不派发/不 nudge）；`autoArm=false` 复现旧行为（保持 pending）。
+- **真实 profile（`scripts/e2e-sched-arm.sh`，自建、不改 bench）**：
+  ```console
+  $ bash scripts/e2e-sched-arm.sh --auto-arm false --expect pending
+  [info] arm-job 最终状态 = pending (期望 pending)      ← 修复前行为（红）
+  $ bash scripts/e2e-sched-arm.sh --auto-arm true  --expect in_progress
+  [info] arm-job 最终状态 = in_progress (期望 in_progress)  ← 自装配后（绿）
+  ```
+  ⇒ 真实 headless profile 下：**scheduled 真被扫描并派发**（pending→in_progress，owner 落定）；无模型端点时脚本 **SKIP**。
+
+### O.4 后续影响
+
+- 真实 profile 下 scheduler 现**自动运行**：scheduled 派发、autonomous nudge、轮询兜底真跑；**P31 的 `swarm/task/unblocked` 主动推送随之生效**。
+- `bundle` 无需改动（插件已在 bundle 内，自装配生效）。
+- 边界：仅当本进程 agent 在成员表中 `role==='lead'` 才 arm；跨进程 follower 需各自按 LEADER 语义装配（当前 follower 不 arm，符合单写者模型）。

@@ -56,6 +56,8 @@ export interface Config {
   busyTaskStatuses: Array<'pending' | 'in_progress' | 'in_review'>
   /** 评审卡住阈值：`in_review` 停留超过此毫秒数即向 Lead 升级（每次卡住的评审只升一次）。 */
   reviewStallMs: number
+  /** 自装配（P38b）：LEADER agent 就绪时自动 arm；置 false 可复现「无人 arm」的旧行为（用于先红后绿）。 */
+  autoArm: boolean
 }
 
 const MAX_SCAN_PASSES = 4
@@ -73,6 +75,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
       .array(z.union([z.const('pending'), z.const('in_progress'), z.const('in_review')]))
       .default(['pending', 'in_progress', 'in_review']),
     reviewStallMs: z.number().step(1).min(1).default(1800000),
+    autoArm: z.boolean().default(true),
   })
 
   private readonly config: Config
@@ -94,6 +97,10 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
   private readonly memberStatus = new Map<string, string>()
   /** 看板全终态的上/下升沿（→ `swarm/task/list-drained`）。 */
   private drained = false
+  /** 是否已由**自身装配**（读到 LEADER agent）arm；显式 arm() 不计入。 */
+  private autoArmed = false
+  /** 自动装配的有界重试定时器。 */
+  private autoArmTimer: ReturnType<typeof setInterval> | undefined
 
   constructor(ctx: Context, config: Config = defaultConfig()) {
     super(ctx, 'teamScheduler')
@@ -105,11 +112,65 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     on?.call(ctx, 'swarm/task/terminal', () => {
       if (this.armedAgent) void this.onTaskTerminal(this.armedAgent).catch(() => {})
     })
+    // 装配（P38b）：插件加载后**自行**在「本进程是 LEADER」时 arm——否则真实 profile 下
+    // 从未有人调用 arm()，scheduled 不派发、autonomous 不 nudge、P31 推送也不触发。
+    this.registerAutoArm(ctx)
     ctx.effect(() => () => this.dispose(), 'teamScheduler.lifecycle()')
   }
 
   get mode(): SchedulerMode {
     return this._mode
+  }
+
+  /**
+   * 装配入口（P38b）：DSH 插件模型下服务应**自装配**。当 `agents`/`teamCore` 就绪且本进程的
+   * agent 在成员表中 `role==='lead'` 时，自动 `arm()`；非 LEADER（如 follower）**不 arm**，
+   * 与源系统「TeamScheduler 仅当 role=LEADER 才创建」一致。
+   */
+  private registerAutoArm(ctx: Context): void {
+    if (!this.config.autoArm) return // 显式关闭（复现旧行为/先红后绿）
+    const inject = (
+      ctx as unknown as {
+        inject?: (deps: string[], cb: (c: Context) => unknown) => () => void
+      }
+    ).inject
+    if (typeof inject !== 'function') return // 假 ctx/测试：保持显式 arm() 语义
+    inject.call(ctx, ['agents', 'teamCore'], () => {
+      if (!this.tryAutoArm()) this.startAutoArmRetry()
+      return () => {}
+    })
+  }
+
+  /** 尝试自装配：解析 LEADER agent → arm。成功返回 true。 */
+  private tryAutoArm(): boolean {
+    if (this.armedAgent) return true // 已 arm（显式或自动）
+    const get = (this.ctx as unknown as { get?: (n: string) => unknown }).get
+    const agents = get?.call(this.ctx, 'agents') as { list?: () => Agent[] } | undefined
+    const agent = agents?.list?.()[0]
+    if (!agent) return false
+    const core = get?.call(this.ctx, 'teamCore') as
+      | { tryMembership?: (a: Agent) => { role?: string } | undefined }
+      | undefined
+    if (core?.tryMembership?.(agent)?.role !== 'lead') return false
+    this.arm(agent)
+    this.autoArmed = true
+    this.ctx.logger?.info?.('team-scheduler: auto-armed on LEADER agent (mode=%s)', this._mode)
+    return true
+  }
+
+  /** agents/teamCore 晚于本插件就绪时的**有界**重试（~2 分钟封顶）。 */
+  private startAutoArmRetry(): void {
+    if (this.autoArmTimer || this.armedAgent) return
+    let tries = 0
+    this.autoArmTimer = setInterval(() => {
+      tries += 1
+      const done = this.armedAgent !== undefined || this.tryAutoArm()
+      if (done || tries > 240) {
+        if (this.autoArmTimer) clearInterval(this.autoArmTimer)
+        this.autoArmTimer = undefined
+      }
+    }, 500)
+    ;(this.autoArmTimer as { unref?: () => void }).unref?.()
   }
 
   async scan(agent: Agent): Promise<ScanReport> {
@@ -266,6 +327,11 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     this.readyNudged.clear()
     this.memberStatus.clear()
     this.drained = false
+    if (this.autoArmTimer) {
+      clearInterval(this.autoArmTimer)
+      this.autoArmTimer = undefined
+    }
+    this.autoArmed = false
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────────────
@@ -454,6 +520,7 @@ function defaultConfig(): Config {
     staleEscalateStreak: 3,
     busyTaskStatuses: ['pending', 'in_progress', 'in_review'],
     reviewStallMs: 1800000,
+    autoArm: true,
   }
 }
 

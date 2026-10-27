@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TeamSchedulerService from '../src/index.ts'
 
-function makeCtx(opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean } = {}) {
+function makeCtx(
+  opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean; agents?: any[] } = {},
+) {
   const members = opts.members ?? [
     { id: 'lead', name: 'lead', role: 'lead', phase: 'active', status: 'running' },
     { id: 'w', name: 'w', role: 'teammate', phase: 'active', status: 'idle' },
@@ -20,7 +22,9 @@ function makeCtx(opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean }
   const sent: Array<{ from: string; to: string; text: string }> = []
   const emissions: Array<{ type: string; payload: any }> = []
   const onHandlers: Record<string, Array<() => void>> = {}
+  const injectCallbacks: Array<(c: any) => unknown> = []
   const disposers: Array<() => void> = []
+  const agentsService = { list: () => opts.agents ?? [] }
   const services: Record<string, unknown> = {}
   const teamCore = {
     backend: 'native' as const,
@@ -48,8 +52,14 @@ function makeCtx(opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean }
   const ctx: any = {
     teamCore,
     teamBus: {},
-    agents: {},
+    agents: agentsService,
     systemPrompt: {},
+    get: (n: string) =>
+      n === 'agents' ? agentsService : n === 'teamCore' ? teamCore : services[n],
+    inject: (_deps: string[], cb: (c: any) => unknown) => {
+      injectCallbacks.push(cb)
+      return () => {}
+    },
     logger: { warn() {}, debug() {}, info() {} },
     reflect: { provide: (n: string, v: unknown) => void (services[n] = v) },
     effect: (fn: () => unknown) => {
@@ -66,7 +76,7 @@ function makeCtx(opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean }
     },
     _disposeAll: () => disposers.forEach((d) => d()),
   }
-  return { ctx, sent, tasks, teamCore, emissions, onHandlers }
+  return { ctx, sent, tasks, teamCore, emissions, onHandlers, injectCallbacks }
 }
 
 const agent = { id: 'lead', name: 'lead' } as never
@@ -79,6 +89,7 @@ const cfg = (over: Partial<any> = {}) => ({
     'pending' | 'in_progress' | 'in_review'
   >,
   reviewStallMs: 1800000,
+  autoArm: true,
   ...over,
 })
 
@@ -296,5 +307,91 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     await sch.scan(agent)
     await sch.scan(agent)
     expect(emissions.filter((e) => e.type === 'swarm/task/list-drained').length).toBe(1)
+  })
+  it('P38b：自装配——LEADER agent 就绪即 arm，scheduled 真被派发', async () => {
+    const tasks = [
+      {
+        id: 't1',
+        revision: 0,
+        subject: 's',
+        description: '',
+        status: 'pending',
+        blockedBy: [],
+        ready: true,
+      },
+    ]
+    const {
+      ctx,
+      tasks: ts,
+      injectCallbacks,
+    } = makeCtx({
+      tasks,
+      agents: [{ id: 'lead', name: 'lead' }],
+    })
+    const sch = new TeamSchedulerService(ctx, cfg({ mode: 'scheduled', pollMs: 10 }))
+    // 模拟 agents/teamCore 就绪 → 触发自装配
+    injectCallbacks.forEach((cb) => cb({ get: ctx.get }))
+    await new Promise((r) => setTimeout(r, 60))
+    expect(ts[0]!.status).toBe('in_progress') // 真被扫描并派发
+    sch.dispose()
+  })
+
+  it('P38b：autoArm=false 复现旧行为（无人 arm → 不派发）—— 先红证据', async () => {
+    const tasks = [
+      {
+        id: 't1',
+        revision: 0,
+        subject: 's',
+        description: '',
+        status: 'pending',
+        blockedBy: [],
+        ready: true,
+      },
+    ]
+    const {
+      ctx,
+      tasks: ts,
+      injectCallbacks,
+    } = makeCtx({
+      tasks,
+      agents: [{ id: 'lead', name: 'lead' }],
+    })
+    const sch = new TeamSchedulerService(
+      ctx,
+      cfg({ mode: 'scheduled', pollMs: 10, autoArm: false }),
+    )
+    injectCallbacks.forEach((cb) => cb({ get: ctx.get }))
+    await new Promise((r) => setTimeout(r, 60))
+    expect(ts[0]!.status).toBe('pending') // 无人 arm → 保持 pending（=修复前行为）
+    sch.dispose()
+  })
+
+  it('P38b：自装配——非 LEADER 不 arm（不派发、不 nudge）', async () => {
+    const tasks = [
+      {
+        id: 't1',
+        revision: 0,
+        subject: 's',
+        description: '',
+        status: 'pending',
+        blockedBy: [],
+        ready: true,
+      },
+    ]
+    const {
+      ctx,
+      sent,
+      tasks: ts,
+      injectCallbacks,
+    } = makeCtx({
+      tasks,
+      agents: [{ id: 'w', name: 'w' }], // 成员表里 role=teammate
+    })
+    const sch = new TeamSchedulerService(ctx, cfg({ mode: 'autonomous', pollMs: 10 }))
+    injectCallbacks.forEach((cb) => cb({ get: ctx.get }))
+    await new Promise((r) => setTimeout(r, 60))
+    expect(ts[0]!.status).toBe('pending')
+    expect(sent.length).toBe(0)
+    sch.dispose()
   })
 })
