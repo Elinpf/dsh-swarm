@@ -42,6 +42,9 @@ describe('P54 真实装配：team:leader 进入渲染后的系统提示词', () 
     expect(prompt).toContain('不亲自执行任务')
     expect(prompt).toContain('spawn_teammate')
     expect(prompt).toContain('不要自己去查')
+    // ✅ P57：等待硬约束也在常驻段、团队未建时即渲染（不依赖被延迟的 team:dispatch）
+    expect(prompt).toContain('默认禁止长阻塞')
+    expect(prompt).toContain('结束你的轮次')
     // 对照组：证明渐进披露逻辑本身在工作（协作约定段确实被摘掉）
     expect(names).not.toContain('team:dispatch')
     expect(names).not.toContain('team:task-state')

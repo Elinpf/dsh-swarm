@@ -89,6 +89,11 @@ const DEFERRED_BEFORE_TEAM = ['team:dispatch', 'team:task-state']
  * 差异：DSH 是"编码代理"persona 且默认行为=自己完成请求（`swarm.patch.yml:15`），
  * 故此处以**负向禁令 + 起手动作**直接点名纠正「自己查资料 / 读代码 / 写报告」。
  *
+ * P57 追加：把「事件唤醒优先 / 默认禁止长阻塞」从被渐进披露延迟的 `team:dispatch`
+ * **提升到本常驻段**，并改**硬约束**——P56 复查（`docs/leader-wait-model.md §9`）发现
+ * P54 真实探针里 leader 派发后长时间 `wait_agent` 轮询，根因是起手窗口看不到（被延迟的）
+ * 等待指引 + 上游常驻句「Lead must wait…」冲突 + 我方原为"有例外的软约束"。
+ *
  * 段为全局注册（所有成员可见），以条件主语「如果你是本团队的 Team Lead」保证语义只对 lead 生效。
  */
 function leaderPolicy(locales: 'cn' | 'en'): string {
@@ -98,6 +103,7 @@ function leaderPolicy(locales: 'cn' | 'en'): string {
         '1. 你不亲自执行任务：调研、执行、整合、撰写产物一律交给成员——不要因为"顺手就做了"而自己查资料、读代码、写报告。',
         '2. 先建成员、先建任务，再动手：任何工作开始前，先用 spawn_teammate 建立对口成员、用 team_task_create 建好任务；成员必须先于任务存在，每个任务都要落到具体成员头上。',
         '3. 背景不清先建专职调研成员：若缺背景（代码库现状、领域知识、外部资料），不要自己去查——先让一名专职调研成员承担该调研并把结论沉淀成文件，你基于该文件再规划。',
+        '4. **派发后结束你的轮次；默认禁止长阻塞**：派发任务或发消息后**立即结束你的轮次**，成员的消息会**唤醒你开新一轮**（事件唤醒优先）。**不要用 `wait_agent` 长阻塞、也不要反复轮询**；即使同一轮确实必须聚合成员结果，也只允许**一次、带超时上限**的 `wait_agent`，拿到结果后立刻结束轮次或继续其他有用工作——**绝不连续多次 wait**。"收尾前要等齐成员"指的是**靠事件唤醒按轮聚合**，**不是**原地阻塞空转。',
         '若你发现自己正要"自己动手完成用户请求"，停下，改为派成员。',
       ].join('\n')
     : [
@@ -105,6 +111,7 @@ function leaderPolicy(locales: 'cn' | 'en'): string {
         '1. You do not carry out the work yourself: research, execution, integration, and authoring deliverables all go to members — do not look things up, read code, or write reports yourself "because it was quicker".',
         '2. Spawn members and create tasks first, then act: before any work starts, use spawn_teammate to create the fitting members and team_task_create to create the tasks; members must exist before tasks, and every task must land on a named member.',
         '3. When the background is unclear, spawn a dedicated research member first: if you lack background (codebase state, domain knowledge, external material), do NOT dig it up yourself — have a dedicated research member own it and distil the findings into a file, then plan from that file.',
+        '4. **End your turn after dispatching; long blocking is forbidden by default**: after dispatching a task or sending a message, END YOUR TURN immediately, and let teammate messages WAKE YOU into a new turn (event-wake first). Do NOT block on `wait_agent` or poll repeatedly; even when the same turn truly must aggregate teammate results, use at most a SINGLE `wait_agent` with a timeout cap, then immediately end the turn or continue other useful work — NEVER wait multiple times in a row. "Wait for required teammates before the final answer" means aggregating across event-wake turns, NOT blocking idle in place.',
         'If you catch yourself about to "just do the user\'s request yourself", stop and delegate instead.',
       ].join('\n')
 }

@@ -205,3 +205,46 @@ describe('P54 Leader 专属行为约束（只调度不干活，team:leader）', 
     expect(plugin.STABLE_SECTION_NAMES).toContain('team:leader')
   })
 })
+
+describe('P57 等待模型硬约束提升到常驻 team:leader（治 wait_agent 长轮询）', () => {
+  it('常驻段含「派发后结束轮次 / 默认禁止长阻塞 / 单次短 wait / 绝不轮询」', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    // 事件唤醒优先：派发后结束轮次，由消息唤醒新一轮
+    expect(leader.text).toContain('结束你的轮次')
+    expect(leader.text).toContain('唤醒你开新一轮')
+    // 硬约束：默认禁止长阻塞 + 绝不轮询
+    expect(leader.text).toContain('默认禁止长阻塞')
+    expect(leader.text).toContain('不要反复轮询')
+    expect(leader.text).toContain('绝不连续多次 wait')
+    // 有上限的口子：单次、带超时
+    expect(leader.text).toContain('一次、带超时上限')
+    // 与上游「收尾前要等齐」的显式调和（靠事件唤醒聚合，不是原地阻塞）
+    expect(leader.text).toContain('事件唤醒按轮聚合')
+  })
+
+  it('该硬约束在常驻段、不被渐进披露过滤（团队未建时也在）', async () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const assemble = ctx._handlers['system-prompt/assemble']![0]!
+    const next = async () => assembly()
+    const before = await assemble(assembly(), {}, next)
+    // 常驻段 team:leader 未被摘掉（文本断言见注册测试与集成测试；此处 assembly 为占位文本）
+    expect(before.sections.some((s: any) => s.name === 'team:leader')).toBe(true)
+    // 对照组：被延迟的 team:dispatch 在团队未建时确实不在
+    expect(before.sections.some((s: any) => s.name === 'team:dispatch')).toBe(false)
+    // 且该常驻段的注册文本确实含硬约束（从注册处取，非占位 assembly）
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('默认禁止长阻塞')
+  })
+
+  it('英文常驻段同样含等待硬约束', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, { ...config, locales: 'en' })
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('long blocking is forbidden by default')
+    expect(leader.text).toContain('END YOUR TURN')
+    expect(leader.text).toContain('NEVER wait multiple times in a row')
+  })
+})
