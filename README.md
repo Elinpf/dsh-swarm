@@ -212,6 +212,7 @@ $DSH --profile headless remove @elinpf/dsh-swarm-bundle    # 关闭即回退（�
 - **如何切回 / 切换**：在 Web 的模式选择器切到 `standard`（标准模式）或其他内置 preset（`ptc`/`minimal`/`cordis`）；或在 profile 层覆盖 `agent-preset-registry.default`。profile 层同名 preset 会覆盖本 bundle 的声明（**演示实例不受影响**）。
 - **该模式包含什么**：与 `standard` preset **完全相同的工具集**（32 个插件 id），**外加** dsh-swarm bundle 注入的团队协作行（team-core/bus/review/scheduler/completion/workspace/skills/memory/compaction/transport/distributed/human + tool-swarm）。
 - **验证**：dump-config 中 `swarm` 与 `standard` 的插件 id 集**逐项一致**（32/32，无缺失无多余，仅 id/order/name 不同）。
+- **行为变更（P58，persona）**：`swarm` preset 的 `persona.prefix` 由「`You are a coding agent…`」改为**集群 Leader 语义**——「你是团队的 **Leader / 调度者**：负责面向用户的沟通与任务拆解、派发；**不亲自调研或执行**；**成员先于任务**；**派发后结束你的轮次，由成员的消息唤醒新一轮**」。原因：原 persona 与 P54（leader 不亲自执行）及 P56（不默认长阻塞）冲突。仅改 persona 文本，**插件集与 `standard` 仍 32/32 同构**。
 
 ---
 

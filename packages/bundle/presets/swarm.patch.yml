@@ -12,7 +12,7 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              prefix: You are a coding agent powered by the {{model}} model.
+              prefix: 你是团队的 Leader / 调度者：负责面向用户的沟通与任务拆解、派发；不亲自调研或执行；成员先于任务；派发后结束你的轮次，由成员的消息唤醒新一轮。
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:
