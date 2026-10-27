@@ -1195,6 +1195,36 @@ $ node scripts/verify-unblock-latency.mjs
 - 通知型事件**不 durable**（无新状态）；若后续要把「解锁」当状态，再按 ADR-0002 增补。
 - push 依赖**同进程** `swarm/task/terminal`（`ctx.on`）；跨进程的终态传播仍靠 transport（见 §K/§L），未在本轮打通跨进程 unlock 推送。
 
+---
+
+# P34-mock-fidelity：加固 in-process e2e 的 seam mock（弱断言 → 强断言）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 起因：P30 审计出的 mock 盲区（`sendMessage` 丢 `content` → 假绿）
+
+## A. 补齐的 mock 行为（**以真实实现为基准对照，非自造**）
+
+`scripts/verify-e2e.mjs` 的 seam mock `updateTask` 由「仅 `claim`/`complete`」→ **忠实建模 native 状态机**，对照
+`@deepseek-ai/dsh-experimental-agent-team/lib/index.js:1288-1360`：
+
+- `claim`（需 `pending`+ready → `in_progress`+owner；owned-by-other → `TEAM_TASK_ALREADY_CLAIMED`；未就绪 → `TEAM_TASK_BLOCKED`）
+- `release`（需 `in_progress` → `pending`，清 owner）· `complete`（需 `in_progress` → `completed`）
+- `reopen`（需 `completed` → `pending`，清 owner）
+- `reassign`（需 `pending`/`in_progress`；owner 空 → `pending`，否则 → `in_progress`+新 owner）
+- `delete`（有下游阻塞者 → `TEAM_TASK_HAS_DEPENDENTS`）· `edit` · `set_dependencies`
+- `createTask`：建模 `blockedBy` **DAG + readiness**（`ready = pending && 依赖全 completed`）
+
+## B. 由弱转强的断言（e2e `== P34：任务动作保真 ==`，全绿）
+
+12 条强断言：DAG readiness · claim → in_progress+owner · release → pending 清 owner · reassign(端口 assign) · complete · **非法转换拒绝**（`pending` complete → `TEAM_TASK_INVALID_TRANSITION`）· reopen · DAG 阻塞（`TEAM_TASK_BLOCKED`）· 上游完成后 downstream `ready=true` · delete 有依赖拒绝 · delete 无依赖成功。
+
+## C. 仍为**弱断言**（已显式标注，须真实 profile 验收）
+
+`delivery`(quiet/wakeup) · 跨进程 · 持久化/崩溃恢复 · `waitForChange`（mock 恒 `timeout`）· `updateTask` 的 **revision CAS 未强制**。e2e 顶部「mock 保真度说明」已固定——后来人写断言前可查盲区。
+
+## D. 全链路
+
+`build / test / verify / verify:e2e / lint / format:check` + `e2e-profile.sh` 全绿（`verify:e2e` 含上述 12 条 P34 强断言）。
+
 
 ## N. local-listen 端点租约 + 握手鉴权（P32 遗留收紧 / dev-2）
 

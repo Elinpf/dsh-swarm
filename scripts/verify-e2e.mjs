@@ -32,24 +32,38 @@ const tasks = []
 const sent = []
 let seq = 0
 
+// 任务存储 + 忠实建模原生状态机所需的小工具（P34）。
+const taskOf = (id) => tasks.find((t) => t.id === id)
+const depsDone = (t) => (t.blockedBy ?? []).every((id) => taskOf(id)?.status === 'completed')
+const isReady = (t) => t.status === 'pending' && depsDone(t)
+const taskView = (t) => ({ ...t, ready: isReady(t) })
+const taskErr = (code, m) => Object.assign(new Error(`${code}: ${m}`), { code })
+
 /**
- * 端口 mock：模拟 `ctx.agentTeams` 的结构（P30 审计：明确覆盖/盲区，避免"断言看不见东西"）。
+ * ── mock 保真度说明（P34；后来人写断言前必读）──────────────────────────────────
+ * 本 mock 模拟 `ctx.agentTeams` 的**结构**（端口 seam），**不是**真实后端。保真度如下：
  *
- * **覆盖的语义字段**：
- *  - `sendMessage`：记录 `{ target, content }`（真实 seam 另带 `{ signal }`——对断言无意义，不记）；
- *    `range`/`delivery` 由 `team-core.send` 在端口层消化，**不进入 native seam**。
- *  - `updateTask`：**仅模拟 `claim` / `complete`** 两个 native 动作；`release`/`reopen`/`assign`/
- *    `reassign`/`delete`/`edit`/`set_dependencies` **未模拟** → 依赖它们的断言在此 mock 下**失真**，勿假设。
- *  - `createTask`：忽略 `blockedBy`（无 DAG/readiness 建模）。
- *  - `waitForChange`：**恒返回 `timedOut:true`**（无真实阻塞）。
- *  - `spawnTeammate`/`listMembers`/`membership`/`tryMembership`/`getTask`/`listTasks`：最小结构。
+ * **已忠实建模（可写强断言）**：
+ *  - `sendMessage`：记录 `{ target, content }`；真实 seam 另带 `{ signal }`（对断言无意义，不记）。
+ *    `range`/`delivery` 由 `team-core.send` 在端口层消化，**不进 native seam**。
+ *  - `updateTask`：`claim` / `release` / `complete` / `reopen` / `reassign`(端口 `assign`) / `delete` /
+ *    `edit` / `set_dependencies` —— 状态迁移与非法转换**以真实原生实现为基准**（见下「对照」）。
+ *  - `createTask` / `getTask` / `listTasks`：建模 `blockedBy` **DAG 依赖 + readiness**
+ *    （`ready = pending && blockedBy 全部 completed`，与原生 `projectTaskView`/`taskReady` 一致）。
  *
- * **盲区（mock 无法忠实模拟的真实行为）**：任务 DAG 依赖解锁、`waitForChange` 真实阻塞、
- *  `delivery`（quiet/wakeup）语义、跨进程 / 持久化 / footprint。依赖这些的断言在此 mock 下属**弱断言**，
- *  应在真实 profile（`scripts/e2e-profile.sh`）或用真实 seam 验收。
+ * **对照（原生 `@deepseek-ai/dsh-experimental-agent-team` 实测行号）**：`claim`(需 pending+ready→
+ *  in_progress+owner) · `release`(需 in_progress→pending, 清 owner) · `complete`(需 in_progress→completed) ·
+ *  `reopen`(需 completed→pending, 清 owner) · `reassign`(需 pending/in_progress；owner 空→pending，否则→
+ *  in_progress+新 owner) · `delete`(有下游阻塞者则拒) —— 见 `lib/index.js:1288-1360`。
+ *
+ * **不覆盖 / 仍属「弱断言」（须在真实 profile 或真 seam 验收，勿在此假设）**：
+ *  - `waitForChange`：恒 `timedOut:true`（无真实阻塞/事件驱动）。
+ *  - `delivery`（quiet/wakeup）语义、广播/多播扇出的真实投递。
+ *  - 跨进程 / 持久化 / 崩溃恢复 / footprint。
+ *  - `updateTask` 的 **revision CAS 未强制**（原生以 `expectedRevision` 乐观并发；本 mock 只校验动作/状态）。
  *
  * **注意**：`team-core` 的叠加态动作（`submit_review`/`reject_review`/`open_plan`/`plan-*`）由团队端口
- *  自处理、**不经此 mock**，故其断言不受上述 `updateTask` 盲区影响。
+ *  自处理、**不经此 mock**；其断言测的是端口行为，不受上面 mock 保真度限制。
  */
 const seam = {
   membership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
@@ -75,25 +89,85 @@ const seam = {
       subject: req.subject,
       description: req.description,
       status: 'pending',
-      blockedBy: [],
-      ready: true,
+      blockedBy: req.blockedBy ?? [],
+      ownerName: undefined,
     }
     tasks.push(t)
-    return { ...t }
+    return taskView(t)
   },
-  getTask: (_c, id) => ({ ...tasks.find((t) => t.id === id) }),
-  listTasks: () => tasks.map((t) => ({ ...t })),
+  getTask: (_c, id) => {
+    const t = taskOf(id)
+    return t ? taskView(t) : undefined
+  },
+  listTasks: () => tasks.map(taskView),
+  // 忠实建模原生任务状态机（对照 `@deepseek-ai/dsh-experimental-agent-team/lib/index.js:1288-1360`）：
+  // 非法转换抛**带 code** 的错，与真实一致；`assign`(端口) 已由 team-core 映射为 `reassign`。
   updateTask: async (_c, req) => {
-    const t = tasks.find((x) => x.id === req.taskId)
-    if (req.action === 'claim') {
-      t.status = 'in_progress'
-      t.ownerName = req.owner
-      t.ready = false
-    } else if (req.action === 'complete') {
-      t.status = 'completed'
+    const t = taskOf(req.taskId)
+    if (!t) throw taskErr('TEAM_TASK_NOT_FOUND', req.taskId)
+    switch (req.action) {
+      case 'claim':
+        if (t.ownerName !== undefined && t.ownerName !== req.owner)
+          throw taskErr('TEAM_TASK_ALREADY_CLAIMED', `${req.taskId} owned by another member`)
+        if (t.status !== 'pending' || !depsDone(t))
+          throw taskErr('TEAM_TASK_BLOCKED', `${req.taskId} is not ready to claim`)
+        t.status = 'in_progress'
+        t.ownerName = req.owner
+        break
+      case 'release':
+        if (t.status !== 'in_progress')
+          throw taskErr('TEAM_TASK_INVALID_TRANSITION', 'only an in-progress task can be released')
+        t.status = 'pending'
+        t.ownerName = undefined
+        break
+      case 'complete':
+        if (t.status !== 'in_progress')
+          throw taskErr('TEAM_TASK_INVALID_TRANSITION', 'only an in-progress task can complete')
+        t.status = 'completed'
+        break
+      case 'reopen':
+        if (t.status !== 'completed')
+          throw taskErr('TEAM_TASK_INVALID_TRANSITION', 'only a completed task can reopen')
+        t.status = 'pending'
+        t.ownerName = undefined
+        break
+      case 'reassign':
+        if (t.status !== 'pending' && t.status !== 'in_progress')
+          throw taskErr(
+            'TEAM_TASK_INVALID_TRANSITION',
+            'only a pending or in-progress task can be reassigned',
+          )
+        if (req.owner === undefined || String(req.owner).trim() === '') {
+          t.status = 'pending'
+          t.ownerName = undefined
+          break
+        }
+        if (!depsDone(t)) throw taskErr('TEAM_TASK_BLOCKED', `${req.taskId} is blocked`)
+        t.status = 'in_progress'
+        t.ownerName = req.owner
+        break
+      case 'delete': {
+        const dependent = tasks.find(
+          (x) => x.status !== 'deleted' && x.id !== t.id && (x.blockedBy ?? []).includes(t.id),
+        )
+        if (dependent)
+          throw taskErr('TEAM_TASK_HAS_DEPENDENTS', `${req.taskId} still blocks ${dependent.id}`)
+        t.status = 'deleted'
+        t.ownerName = undefined
+        break
+      }
+      case 'edit':
+        if (req.subject !== undefined) t.subject = req.subject
+        if (req.description !== undefined) t.description = req.description
+        break
+      case 'set_dependencies':
+        if (req.blockedBy !== undefined) t.blockedBy = req.blockedBy
+        break
+      default:
+        throw taskErr('TEAM_TASK_INVALID_ACTION', String(req.action))
     }
     t.revision += 1
-    return { ...t }
+    return taskView(t)
   },
   waitForChange: async () => ({ timedOut: true }),
   interrupt: () => ({ previousStatus: 'running' }),
@@ -287,6 +361,128 @@ assert(
       s.target === 'alice' && String(s.content?.[0]?.text ?? '').includes('revision-requested'),
   ),
   '返工：定向 steer 回作者（alice 收到 revision-requested）',
+)
+
+// ── P34：任务动作保真（mock 已忠实建模 native 状态机）——强断言 ──────────────
+console.log(
+  '\n== P34：任务动作保真（DAG/claim/release/assign/complete/reopen/delete + 非法转换）==',
+)
+const a = await rootCtx.teamCore.createTask(lead, { subject: 'A', description: '' })
+assert(
+  a.status === 'pending' && a.ready === true,
+  'DAG/readiness：空依赖任务 → pending 且 ready=true',
+)
+const a1 = await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: a.revision,
+  action: 'claim',
+  owner: 'alice',
+})
+assert(
+  a1.status === 'in_progress' && a1.ownerName === 'alice',
+  'claim：pending+ready → in_progress + owner=alice',
+)
+const a2 = await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: a1.revision,
+  action: 'release',
+})
+assert(
+  a2.status === 'pending' && a2.ownerName === undefined,
+  'release：in_progress → pending，清 owner',
+)
+const a3 = await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: a2.revision,
+  action: 'assign',
+  owner: 'bob',
+})
+assert(
+  a3.status === 'in_progress' && a3.ownerName === 'bob',
+  'reassign(端口 assign)：pending → in_progress + owner=bob',
+)
+const a4 = await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: a3.revision,
+  action: 'complete',
+})
+assert(a4.status === 'completed', 'complete：in_progress → completed')
+// 非法转换：pending 任务不能 complete（忠实原生，抛 TEAM_TASK_INVALID_TRANSITION）
+const cc = await rootCtx.teamCore.createTask(lead, { subject: 'C', description: '' })
+let invalid = false
+try {
+  await rootCtx.teamCore.updateTask(lead, {
+    taskId: cc.id,
+    expectedRevision: cc.revision,
+    action: 'complete',
+  })
+} catch (e) {
+  invalid = /TEAM_TASK_INVALID_TRANSITION/.test(String(e))
+}
+assert(invalid, '非法转换：pending 任务 complete → TEAM_TASK_INVALID_TRANSITION')
+// DAG：B 阻塞于 A；A 未完成时 B 不可 claim；A 完成后 B ready
+// DAG：先 reopen A 使 A 未完成；B 阻塞于 A → B 不可 claim；A 完成后 B ready
+const ar = await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: a4.revision,
+  action: 'reopen',
+})
+assert(ar.status === 'pending', 'reopen：completed → pending')
+const b = await rootCtx.teamCore.createTask(lead, {
+  subject: 'B',
+  description: '',
+  blockedBy: [a.id],
+})
+assert(b.ready === false, 'DAG：B 有未完成依赖 → ready=false')
+let blockedErr = false
+try {
+  await rootCtx.teamCore.updateTask(lead, {
+    taskId: b.id,
+    expectedRevision: b.revision,
+    action: 'claim',
+    owner: 'alice',
+  })
+} catch (e) {
+  blockedErr = /TEAM_TASK_BLOCKED/.test(String(e))
+}
+assert(blockedErr, 'DAG：依赖未完成 → claim 被拒 TEAM_TASK_BLOCKED')
+const a5 = await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: ar.revision,
+  action: 'claim',
+  owner: 'alice',
+})
+await rootCtx.teamCore.updateTask(lead, {
+  taskId: a.id,
+  expectedRevision: a5.revision,
+  action: 'complete',
+})
+assert(
+  rootCtx.teamCore.getTask(lead, b.id).ready === true,
+  'DAG：上游 A complete → 下游 B ready=true',
+)
+// delete：有下游阻塞者则拒（忠实原生）；无依赖则 deleted
+let delErr = false
+try {
+  await rootCtx.teamCore.updateTask(lead, {
+    taskId: a.id,
+    expectedRevision: rootCtx.teamCore.getTask(lead, a.id).revision,
+    action: 'delete',
+  })
+} catch (e) {
+  delErr = /TEAM_TASK_HAS_DEPENDENTS/.test(String(e))
+}
+assert(delErr, 'delete：仍有下游阻塞者 → TEAM_TASK_HAS_DEPENDENTS')
+const dd = await rootCtx.teamCore.createTask(lead, { subject: 'D', description: '' })
+const d1 = await rootCtx.teamCore.updateTask(lead, {
+  taskId: dd.id,
+  expectedRevision: dd.revision,
+  action: 'delete',
+})
+assert(d1.status === 'deleted', 'delete：无依赖 → deleted')
+// 显式标注仍为**弱断言**的维度（见文件顶部「mock 保真度说明」）
+console.log(
+  '[WEAK] delivery(quiet/wakeup)、跨进程、持久化、waitForChange 在本 mock 下属弱断言——须在真实 profile 验收',
 )
 
 // ── 阶段 2：锁守卫 / 技能可见性 / 记忆注入 ──────────────────────────────────
