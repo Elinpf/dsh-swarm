@@ -225,3 +225,33 @@ grep -n '唤醒' /root/.jiuwenswarm/.agent_teams/jiuwen_team_web_1a1765709a5_5ff
 2. 措辞由「有例外的软约束」改「**默认禁止长阻塞；聚合也用『短 wait_agent（单次、有上限）』，绝不轮询**」，压低被当许可的空间。
 3. 与上游 `tool-agent-team:41`「Lead must wait…」**做显式调和**（我们的段里点明：wait 只用于短暂聚合，收尾靠事件唤醒）。
 4. persona 同步（§9.4）。
+
+
+### 9.6 【更正 §9 判定】实为 (a)——`team:dispatch` **从未进入 prompt**（P46 未覆盖该环境）
+
+**§9 的 (b) 判定被本节的直接证据推翻。** 用「prompt 落盘探针」（`scripts/xproc/prompt-dump-plugin.mjs` + `run-headless.sh --patch <overlay> --json …`，**免模型额外开销由现探针承担**）在**真实会话**里落盘每次 `system-prompt/assemble` 的**段落名与文本**：
+
+**事实**（一次 `spawn_teammate zed + send_message` 的真实会话，6 次装配全量）：
+```
+sectionNames = [harness:identity, deployment:persona-prefix, team:leader, team:role, team:inbound,
+                plan:policy, team:policy, tool:*…, deployment:persona-suffix]
+hasDispatch = false ×6   ；team:dispatch 出现次数 = 0   ；hasEventWake = 0
+```
+⇒ **`team:dispatch` / `team:task-state` 在整个会话都未进入 leader 的 prompt**（含 spawn 之后）——**P46 的「事件唤醒/别长阻塞」指引从未生效**。
+
+**根因（事实+推断）**：
+- **【事实】渐进披露判定字段错配**：`team-prompt` 以 `ctx.on('session/event')` 观察 `team/member`，判 `e.data?.role === 'teammate'` 才置 `teamBuilt=true`（`packages/team-prompt/src/index.ts:190-193`）。
+  但原生 `team/member` 事件 data 形状是 `{ version, teamId, member: TeamMemberSnapshot }`，**`member` 里只有 `phase`（`provisioning`/`active`…），没有 `role`**（`agent-team/src/projection.ts:100-105` + `types.ts` `TeamMemberSnapshot`）。
+  ⇒ **`e.data.role` 恒为 undefined，`teamBuilt` 永不置真** ⇒ `DEFERRED_BEFORE_TEAM=['team:dispatch','team:task-state']` **永久被过滤**。
+- **【推断】** 这正是 P54 高频 `wait_agent` 的**直接根因**：leader 全程**看不到**我们的「事件唤醒优先/不默认等待」指引；它只看到常驻的 `team:leader`（P54 段，无等待措辞）与上游 `team:policy`（含「Lead must wait…」）。
+- P54 的 `verification §D` 只验证了「**建团队前** dispatch 被摘（过滤在工作）」，**未验证「建团队后是否释放」**——本缺陷正落在未覆盖的那半。
+
+**判定更正**：**是 (a)：P46 未覆盖该环境/会话**（提示从未呈现），**非 (b) 提示强度不足**。§9 的 §9.2 三条「强度」分析仍可作为**修好披露后的次级风险**保留，但**首要修复 = 修正 `teamBuilt` 判定**。
+
+**修复建议（未改码；属 `team-prompt`，先报 Leader）**：
+- 把 `teamBuilt` 判定从 `e.data?.role==='teammate'` 改为**按真实事件形状**：`e.type==='team/member' && e.data?.member`（可用 `member.phase !== 'provisioning'` 更严），或干脆**对 leader 不延迟** `team:dispatch`（leader 起手即需此指引）。
+- 加**单测**：模拟 `team/member` 事件（真实形状）→ 断言 `team:dispatch` 被释放；并模拟未建→被摘。
+- 复核探针：用本 `prompt-dump` 能力在真实会话断言 **spawn 后某次装配 `hasDispatch=true`**。
+
+**附：prompt 落盘探针**（已入库）：`scripts/xproc/prompt-dump-plugin.mjs`；用法
+`P56_PROMPT_DUMP=<file> bash scripts/run-headless.sh --patch <overlay·insert 该插件> --json "<prompt>"`（`--patch` 须在 `--json` **之前**）。
