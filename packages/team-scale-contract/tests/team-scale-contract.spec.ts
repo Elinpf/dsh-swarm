@@ -28,7 +28,9 @@ describe('@elinpf/dsh-swarm-team-scale-contract', () => {
 
   it('三个端口形状被冻结（编译期断言）', () => {
     // transport
-    expectTypeOf<TransportBackend>().toEqualTypeOf<'in-process' | 'local-child' | 'ssh-rpc'>()
+    expectTypeOf<TransportBackend>().toEqualTypeOf<
+      'in-process' | 'local-child' | 'ssh-rpc' | 'local-listen'
+    >()
     expectTypeOf<PeerState>().toEqualTypeOf<
       'connected' | 'degraded' | 'resyncing' | 'unreachable'
     >()

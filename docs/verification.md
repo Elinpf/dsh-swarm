@@ -1054,3 +1054,41 @@ $ node scripts/verify-crossprocess.mjs
 - 因此现阶段跨进程协作的**真实可用边界**是：**传输层（帧/ack/重连/杀进程）+ 对端运行时消费**（本任务已证，需预置对端守护/端点名）。
   **未突破的**是「任意两个 dsh 进程自动互连（无需预置守护与端点协商）」——需补一个**服务端（listening）transport backend + 远端端点注册/发现**，
   这属于对 `team-transport` 的扩展（我们地盘内可实现，但超出本次最小 attach 范围，登记为后续项）。
+
+
+## L. 对端 listening backend + 端点发现（P32 / dev-2）
+
+把 P29 §K.5 登记的边界做掉：**任意两个独立启动的进程自动互连**，无需预置守护进程。
+
+### L.1 可行性判定：**可行**（DSH 无 listening seam，但可自建；已实走）
+
+- **DSH 侧检查**：`ctx.subprocess`/`ctx.ssh` 不提供「监听/被拨入」能力（`ctx.ssh` 是 host→helper 的**出站**耦合；`ctx.subprocess.spawn` 是**出站** spawn）。
+  即「没有现成的 listening seam」。
+- **但传输层可自建**：Node 内置 `node:net` 在**本机**开 Unix socket 监听无需任何 DSH 能力（实测 `net.createServer().listen(0,'127.0.0.1')` → `listen ok {127.0.0.1:…}`）。
+  ⇒ 结论：**可行**——由 `team-transport` 自建 `local-listen` 后端（监听 + 端点注册/发现）。不挂代理、隔离到项目内 registry 目录。
+
+### L.2 实现（`team-transport`，新增第 4 个后端 `local-listen`）
+
+- 契约：`TransportBackend` 增 `'local-listen'`（`team-scale-contract/src/transport.ts`）。
+- 监听服务端：在 `<registryDir>/<endpoint>.sock` 上 `net.createServer` accept；**端点注册**=`<registryDir>/<endpoint>.json` `{endpoint,path,pid}`。
+- 拨号（**端点发现**）：读 `<registryDir>/<peer>.json` → `net.connect(path)` → 首行 `hello{endpoint}` 握手定对端名。
+- `SocketLink`：JSONL 帧 + hello 握手 + 未就绪帧缓冲（与既有 `NodeStreamLink` 同族）。
+- 复用既有重连/重放/去重/ack 机制（state machine 不变）。
+
+### L.3 验证（真实两进程自动互连）✅
+
+- 单测：两服务同进程各起 `local-listen`（真实 socket + registry），A 发现 B 并投递、B 收到、ack、dispose 后 registry/socket 清理（`team-transport` 现 14 条）。
+- **两进程端到端**（`scripts/xproc/listen-peer.mjs`，各自独立启动，无预置守护）：
+  ```console
+  == E. local-listen：两个独立启动的进程自动互连并投递 DM ==
+  [OK]   B 独立启动并注册端点（registry B.json 由监听服务端写出）
+  [OK]   A 自动发现 B 并投递 DM，B 进程收到（1 帧）
+  [OK]   A 经 registry 发现到 B（found=true，无预置守护进程）
+  ```
+- 已纳入 **`pnpm verify:xproc`**（无 sshd 时 C 段 SKIP；E 段依赖本机 socket，稳定）。
+
+### L.4 边界更新（相对 P29 §K.5）
+
+- **已突破**：同机**任意两个 dsh 进程**可经 `local-listen` + registry **自动互连**（无需预置守护进程）。
+- **仍止于**：**跨机**互连仍走 `ssh-rpc`（需远端 helper 归档部署，见 §J）；registry 为同机共享目录，不跨机发现。
+- **未做的**：端点租约/过期清理（当前 dispose 删文件；崩溃残留需 GC）、鉴权（本机 Unix socket 依赖文件权限 0700）。

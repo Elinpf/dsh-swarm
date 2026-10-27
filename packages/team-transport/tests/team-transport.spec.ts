@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import TeamTransportService, {
   getLoopbackBus,
   resetLoopbackBus,
@@ -292,6 +295,37 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     expect(seen).toEqual([42]) // 丢失的回声被补齐，且恰好一次（父 ack 后子进程停止重发）
     a.dispose()
     seam.killAll()
+  })
+
+  it('local-listen：两服务经 socket + 端点注册/发现互连（真实本机监听）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-listen-'))
+    const { ctx: ca } = makeCtx()
+    const { ctx: cb } = makeCtx()
+    const a = new TeamTransportService(
+      ca,
+      cfg({ backend: 'local-listen', endpoint: 'A', registryDir: dir }),
+    )
+    const b = new TeamTransportService(
+      cb,
+      cfg({ backend: 'local-listen', endpoint: 'B', registryDir: dir }),
+    )
+    await sleep(80) // 监听服务端异步起来后写入 registry
+    expect(a.backend).toBe('local-listen')
+    expect(existsSync(join(dir, 'A.json'))).toBe(true)
+    expect(existsSync(join(dir, 'B.json'))).toBe(true)
+
+    const got: number[] = []
+    b.onFrame((_p, f) => got.push((f.payload as any).n))
+    await a.send('B', frame('event', 3))
+    await sleep(200)
+    expect(got).toEqual([3])
+    expect(a.stats().acked).toBeGreaterThanOrEqual(1)
+
+    a.dispose()
+    b.dispose()
+    expect(existsSync(join(dir, 'A.json'))).toBe(false)
+    expect(existsSync(join(dir, 'B.json'))).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('V4 真实子进程：kill 子进程 → degraded → 重生子进程 → connected（epoch 复位）', async () => {

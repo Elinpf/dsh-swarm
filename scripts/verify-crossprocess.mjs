@@ -342,6 +342,48 @@ console.log('\n== D. 对端入站 attach：另一进程各自跑本栈并真实�
   }
 }
 
+console.log('\n== E. local-listen：两个独立启动的进程自动互连并投递 DM ==')
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-listen-'))
+  const sink = join(dir, 'sink.jsonl')
+  const PEER = join(root, 'scripts/xproc/listen-peer.mjs')
+  const bjson = join(dir, 'B.json')
+
+  // 进程 B 独立启动：监听 + 注册端点
+  const recv = nodeSpawn(process.execPath, [PEER, 'B', dir, 'receiver', sink], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  for (let i = 0; i < 120 && !existsSync(bjson); i++) await sleep(50)
+  assert(existsSync(bjson), 'B 独立启动并注册端点（registry B.json 由监听服务端写出）')
+
+  // 进程 A 独立启动：经 registry **发现** B → 拨号 → 投递 DM
+  const send = nodeSpawn(process.execPath, [PEER, 'A', dir, 'sender', sink, 'B'], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  })
+  await new Promise((res) => send.on('close', res))
+  await sleep(300)
+
+  const frames = existsSync(sink)
+    ? readFileSync(sink, 'utf8').trim().split('\n').filter(Boolean)
+    : []
+  assert(
+    frames.some((l) => l.includes('dm-1')),
+    `A 自动发现 B 并投递 DM，B 进程收到（${frames.length} 帧）`,
+  )
+  const doneFile = join(dir, 'A.done')
+  assert(
+    existsSync(doneFile) && readFileSync(doneFile, 'utf8').includes('"found":true'),
+    'A 经 registry 发现到 B（found=true，无预置守护进程）',
+  )
+  recv.kill('SIGKILL')
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
+}
+
 console.log(
   fails === 0
     ? '\n✅ 真实跨进程探针通过（真实 ctx.subprocess 子进程 + 真实进程杀死/重启 journal）'

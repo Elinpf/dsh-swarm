@@ -13,8 +13,12 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** 传输后端：单进程零开销 / 同机子进程 stdio / 跨机 SSH-RPC。 */
-export type TransportBackend = 'in-process' | 'local-child' | 'ssh-rpc'
+/**
+ * 传输后端：单进程零开销 / 同机子进程 stdio / 跨机 SSH-RPC /
+ * **本机监听（服务端）** —— `local-listen` 让进程在本地 socket 上**监听**并由端点注册/发现互联，
+ * 突破「只能出站 spawn」的限制（P32）。
+ */
+export type TransportBackend = 'in-process' | 'local-child' | 'ssh-rpc' | 'local-listen'
 
 /**
  * 断线重连状态机（spec §3.3）：

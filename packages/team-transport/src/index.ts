@@ -18,6 +18,9 @@
  */
 
 import { fileURLToPath } from 'node:url'
+import { createServer, connect as netConnect, type Server, type Socket } from 'node:net'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -427,6 +430,161 @@ class InProcessLinkFactory implements LinkFactory {
   dispose(): void {}
 }
 
+// ── local-listen：本机监听 + 端点注册/发现（P32，「任意两进程自动互连」）──────
+
+/** 端点注册条目（写在 registry 目录，供其它进程**发现**）。 */
+interface RegistryEntry {
+  endpoint: string
+  path: string
+  pid: number
+}
+
+function sanitizeEndpoint(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_')
+}
+
+/** 一条 socket 链路（JSONL 帧 + 首行 hello 握手定对端名）。 */
+class SocketLink implements RawLink {
+  private msgCb: ((m: WireFrame) => void) | undefined
+  private closeCb: (() => void) | undefined
+  private readyCb: ((l: SocketLink) => void) | undefined
+  private pending: WireFrame[] = []
+  private buffer = ''
+  private helloSeen = false
+  remoteId: string
+
+  constructor(remoteId: string, private readonly sock: Socket) {
+    this.remoteId = remoteId
+    sock.setEncoding('utf8')
+    sock.on('data', (d) => {
+      this.buffer = drainLines(this.buffer, d, (line) => this.onLine(line))
+    })
+    sock.on('close', () => this.closeCb?.())
+    sock.on('error', () => this.closeCb?.())
+  }
+
+  onReady(cb: (l: SocketLink) => void): void {
+    this.readyCb = cb
+  }
+  /** 客户端连接后主动发 hello；服务端在收到 hello 后才算就绪。 */
+  sendHello(endpoint: string): void {
+    this.helloSeen = true
+    this.sock.write(`${JSON.stringify({ t: 'hello', endpoint })}\n`)
+  }
+
+  private onLine(line: string): void {
+    let m: WireFrame & { endpoint?: string }
+    try {
+      m = JSON.parse(line)
+    } catch {
+      return
+    }
+    if (!this.helloSeen) {
+      if (m.t === ('hello' as string)) {
+        this.helloSeen = true
+        if (!this.remoteId && m.endpoint) this.remoteId = m.endpoint
+        this.readyCb?.(this)
+      }
+      return
+    }
+    if (this.msgCb) this.msgCb(m)
+    else this.pending.push(m)
+  }
+
+  send(msg: WireFrame): void {
+    try {
+      this.sock.write(`${JSON.stringify(msg)}\n`)
+    } catch {
+      /* 对端已断：close 会触发重连 */
+    }
+  }
+  close(): void {
+    try {
+      this.sock.destroy()
+    } catch {
+      /* idempotent */
+    }
+  }
+  onMessage(cb: (m: WireFrame) => void): void {
+    this.msgCb = cb
+    if (this.pending.length) {
+      const queued = this.pending
+      this.pending = []
+      for (const m of queued) cb(m)
+    }
+  }
+  onClose(cb: () => void): void {
+    this.closeCb = cb
+  }
+}
+
+/** 本机监听服务端：在 `<registryDir>/<endpoint>.sock` 上 accept 入站连接。 */
+class LocalListenServer {
+  private server: Server | undefined
+  constructor(
+    private readonly dir: string,
+    private readonly endpoint: string,
+    private readonly onConnection: (link: RawLink) => void,
+  ) {}
+
+  async start(): Promise<void> {
+    mkdirSync(this.dir, { recursive: true })
+    const sockPath = join(this.dir, `${sanitizeEndpoint(this.endpoint)}.sock`)
+    rmSync(sockPath, { force: true })
+    this.server = createServer((sock) => this.handle(sock))
+    await new Promise<void>((resolve, reject) => {
+      this.server!.once('error', reject)
+      this.server!.listen(sockPath, () => resolve())
+    })
+    const entry: RegistryEntry = { endpoint: this.endpoint, path: sockPath, pid: process.pid }
+    writeFileSync(join(this.dir, `${sanitizeEndpoint(this.endpoint)}.json`), JSON.stringify(entry))
+  }
+
+  private handle(sock: Socket): void {
+    const link = new SocketLink('', sock)
+    link.onReady((l) => this.onConnection(l))
+  }
+
+  dispose(): void {
+    try {
+      this.server?.close()
+    } catch {
+      /* ignore */
+    }
+    this.server = undefined
+    const base = sanitizeEndpoint(this.endpoint)
+    rmSync(join(this.dir, `${base}.json`), { force: true })
+    rmSync(join(this.dir, `${base}.sock`), { force: true })
+  }
+}
+
+/** 拨号工厂：从 registry **发现**端点地址并连接（端点发现）。 */
+class LocalListenDialFactory implements LinkFactory {
+  constructor(private readonly dir: string, private readonly self: string) {}
+
+  async create(peerId: string): Promise<RawLink | undefined> {
+    const file = join(this.dir, `${sanitizeEndpoint(peerId)}.json`)
+    if (!existsSync(file)) return undefined
+    let entry: RegistryEntry
+    try {
+      entry = JSON.parse(readFileSync(file, 'utf8')) as RegistryEntry
+    } catch {
+      return undefined
+    }
+    return await new Promise<RawLink | undefined>((resolve) => {
+      const sock = netConnect(entry.path)
+      const link = new SocketLink(peerId, sock)
+      const done = (v: RawLink | undefined) => resolve(v)
+      sock.once('error', () => done(undefined))
+      sock.once('connect', () => {
+        link.sendHello(this.self)
+        done(link)
+      })
+    })
+  }
+  dispose(): void {}
+}
+
 // ── 服务 ──────────────────────────────────────────────────────────────────────
 
 export interface Config {
@@ -452,6 +610,8 @@ export interface Config {
   childRelayPath?: string
   /** 子进程工作目录（默认进程 cwd）。 */
   childCwd?: string
+  /** local-listen 后端的端点注册/发现目录（默认 `<cwd>/.runtime/xproc-registry`）。 */
+  registryDir?: string
 }
 
 interface OutboundFrame {
@@ -485,7 +645,9 @@ interface PeerRecord {
 
 export class TeamTransportService extends Service implements TeamTransport {
   static Config: z<Config> = z.object({
-    backend: z.union(['in-process', 'local-child', 'ssh-rpc'] as const).default('in-process'),
+    backend: z
+      .union(['in-process', 'local-child', 'ssh-rpc', 'local-listen'] as const)
+      .default('in-process'),
     endpoint: z.string(),
     maxQueue: z.number().step(1).min(1).default(1024),
     maxHistory: z.number().step(1).min(1).default(1024),
@@ -496,6 +658,7 @@ export class TeamTransportService extends Service implements TeamTransport {
     nodeBin: z.string(),
     childRelayPath: z.string(),
     childCwd: z.string(),
+    registryDir: z.string(),
   })
 
   private config: Config
@@ -517,6 +680,7 @@ export class TeamTransportService extends Service implements TeamTransport {
   }
   private timers = new Map<string, ReturnType<typeof setInterval>>()
   private retryTimer: ReturnType<typeof setInterval> | undefined
+  private listenServer: LocalListenServer | undefined
   /** 本进程纪元（跨进程去重窗口复位用）。 */
   private readonly epoch = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   private disposed = false
@@ -544,8 +708,19 @@ export class TeamTransportService extends Service implements TeamTransport {
       this.acceptInbound(link),
     )
     const requested = cfg.backend
-    let factory = this.makeFactory(requested)
+    let factory: LinkFactory | undefined
     this.effectiveBackend = requested
+    if (requested === 'local-listen') {
+      // 服务端监听 + 端点注册/发现（P32）
+      const dir = this.config.registryDir ?? join(process.cwd(), '.runtime', 'xproc-registry')
+      this.listenServer = new LocalListenServer(dir, this.selfEndpoint, (link) =>
+        this.acceptInbound(link),
+      )
+      await this.listenServer.start()
+      factory = new LocalListenDialFactory(dir, this.selfEndpoint)
+    } else {
+      factory = this.makeFactory(requested)
+    }
     if (!factory) {
       // 失败降级：请求的后端不可用 → 回落 in-process，告警（spec §4.2）
       this.ctx.logger?.warn?.(
@@ -568,6 +743,7 @@ export class TeamTransportService extends Service implements TeamTransport {
 
   private makeFactory(backend: TransportBackend): LinkFactory | undefined {
     if (backend === 'in-process') return new InProcessLinkFactory(this.bus!, this.selfEndpoint)
+    if (backend === 'local-listen') return undefined // 由 start() 单独装配（需先起监听服务端）
     if (backend === 'local-child') {
       const seam = this.ctx.get('subprocess') as SubprocessSeam | undefined
       if (!seam?.spawn) return undefined
@@ -865,6 +1041,8 @@ export class TeamTransportService extends Service implements TeamTransport {
     }
     this.factory?.dispose()
     this.factory = undefined
+    this.listenServer?.dispose()
+    this.listenServer = undefined
     this.bus?.disconnect(this.selfEndpoint)
     this.unregisterEndpoint?.()
     this.unregisterEndpoint = undefined
