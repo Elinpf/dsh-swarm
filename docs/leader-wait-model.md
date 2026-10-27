@@ -87,3 +87,32 @@ sed -n '525,531p' packages/team-core/src/index.ts
 # JiuwenSwarm 唤醒语义
 grep -n '唤醒' /root/.jiuwenswarm/.agent_teams/jiuwen_team_web_1a1765709a5_5ff0b15f4726/team-workspace/interaction-mechanisms.md
 ```
+
+
+---
+
+## 6. 阶段 1 实测（P46，真实 profile + 模型；先红后绿）
+
+探针：`scripts/verify-leader-wake.mjs`（真实 `llm-pi-ai` overlay / DeepSeek-Flash；原始输出入 `.runtime/probe/p46-*.json`）。
+判定只看**实际 `tool_call` / `turn` 事件**，不看文本措辞。
+
+| 场景 | 时序 | turns | tool_calls | tokens | 结论 |
+|---|---|---|---|---|---|
+| R `nativeWait`（**红态**，不禁止等待） | 改前 | 1 | spawn_teammate,**wait_agent**,list_agents | 28188 | **【成立】** 原生默认下 leader **确实调用 `wait_agent` 挂等** |
+| G1 `noWait`（显式要求派发后结束轮次） | — | 1 | spawn_teammate,send_message | 28696 | **【成立】** 不调 `wait_agent`、turn 1 结束 |
+| W `wakeOnMember`（成员 @all，含 leader） | 改前 | **1,2** | spawn_teammate | 20900 | **【成立】** ②空闲 leader **被成员消息唤醒开 turn 2** |
+| I `peerOnly`（成员 DM 另一成员，不含 leader） | 改前 | 1,2 | spawn_teammate,list_agents,send_message | 45207 | **【仍不可判定】** 见下「混淆项」 |
+| G4 `regression`（spawn+DM+task 看板） | — | 1 | spawn/send/task_create/task_list/team_summary/list_agents | 52909 | **【成立】** ④主体行为不变（团队工具调用 6≥4） |
+
+**总 token ≈ 175,900（0.176M）**，在批准预算（目标 ≤0.5M / 硬上限 1.0M）内。
+
+### 6.1 判定汇总（阶段 1）
+- **① 【成立】**（红态已复现）：原生默认下 leader 调 `wait_agent` 挂等；显式「派发后结束轮次」则不挂等。
+- **② 【成立】**：空闲 leader 被成员消息（@all）**唤醒开新轮**（`turns=1,2`）——**能力确实具备**（印证 P45 §2）。
+- **③ 【仍不可判定】**：本 setup 有**混淆项**——leader spawn 的子成员**完成结果必然回报 spawner(leader)**，因此无论消息是否「无关」，leader 都会开 turn 2。
+  **解锁条件**：用**非 leader 派生**的既有成员，向**不含 leader** 的目标投递（需多成员/多轮驱动，或阶段 2 的「定向唤醒」实现后断言）。
+- **④ 【成立】**：回归通过。
+
+### 6.2 对阶段 2 的含义
+- ②已证能力具备 ⇒ 阶段 2 只需改「**默认行为/提示**」（A/B），无需新增传输能力。
+- ③需阶段 2 落地「定向唤醒」后再做**干净**断言；本脚本已把 ③ 标为 **INFO（不误判 FAIL）**。
