@@ -1454,16 +1454,21 @@ RED_EXIT=1
 
 ## E. 单测 + 真实 profile 断言
 - `tool-swarm` 单测 +2（name→id 解析 / 未知名字清晰报错）→ **10 passed**。
-- **真实 profile**（`scripts/e2e-profile.sh` 全量，含真实模型）：新增断言
+- **真实 profile**（`scripts/e2e-profile.sh` 全量，含真实模型；**用重建后的 lib**）：新增断言
   ```
   [PASS] multicast 按名字可用（P49 回归）
   [PASS] 无 TEAMBUS_UNKNOWN_TARGET（P49 回归）
   结果：PASS=15 FAIL=0
   ```
 
-## F. 全链路（受他人 main 破坏阻塞，如实登记）
-- `tool-swarm` 构建 / 单测 / lint / 探针 / `e2e-profile`（模型）均绿。
-- **`pnpm build` 当前红**：`packages/team-bus/src/index.ts(366,9): error TS2353: 'origin' does not exist in type '{ range: MessageRange; … }'` —— 系 **dev-2 的 P51 提交（HEAD `cb208d9`）** 在 `team-bus` 调 `teamCore.send({…, origin})` 但未在契约 `send` 的 req 上加 `origin?`。**与 P49 无关**（P49 未动 team-bus/契约）。已上报 Leader 协调 dev-2 补契约字段或回退；修好后重跑全链路补记。
+## F. 全链路（已结案，全绿）
+- 首次全链路曾因 **dev-2 的 P51 提交（HEAD `cb208d9`）** 在 `team-bus` 调 `teamCore.send({…, origin})` 而契约缺 `origin?`（`TS2353`）导致 `pnpm build` 红（**与 P49 无关**）。**dev-2 已把 `origin?: 'broadcast' | 'directed'` 正式加入契约 `TeamCore.send(req)` 并修复**（`00ab7aa`），树恢复。
+- **树恢复后重跑（重建 lib，2026-10-27）**：
+  ```console
+  $ corepack pnpm build / test / verify / verify:e2e / lint / format:check   # 全绿
+  $ bash scripts/e2e-profile.sh            # 全量含模型：PASS=15 FAIL=0（multicast 断言绿）
+  ```
+  > 本 P49 期间顺带对 dev-2 的 `team-bus/src/projection.ts`、`team-bus/tests/team-bus.spec.ts` 做了**纯机械 prettier 格式化**（`211f687`，使 format:check 全绿）。
 
 ---
 
