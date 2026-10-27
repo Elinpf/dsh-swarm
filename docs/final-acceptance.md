@@ -2,6 +2,14 @@
 
 > 产出人：report-synthesizer（调研报告汇总员） ｜ 任务：**P21-final-acceptance（首版）→ P37-final-revision（终版）** ｜ 时间：2026-10-27
 > 定位：**面向交付/接手者**的验收件，回答一个问题——「JiuwenSwarm 的六项精髓能力，到底还剩哪些没落地、可信度多高、别人怎么用」。
+
+> **【P52 更正 · 2026-10-27】durable 落盘通道的真实性**：经 P50 独立核实，本约定此前**只 `ctx.emit` 进程内广播、从未 append 到会话日志**
+> （182 份真实会话日志中 `swarm/*` 0 条）⇒ **「可跨重启恢复」当时并不成立**（P23 的恢复验证是**模拟**：内存捕获 + 手动 recover）。
+> 已由 **P52** 修为真持久：统一入口 `@elinpf/dsh-swarm-team-durable.emitDurable(session, name, payload)`
+> → **`appendPluginRecord("plugin:swarm/…")`**（通道 A），并在 `@deepseek-ai/dsh-session` 落地 plugin record；
+> `durableRecordOf(ev)` 供 replay fold。证据与逐类判定见 `docs/durability-findings.md`。
+> 下文若与「已修复」相关表述冲突，**以本条为准**（历史叙述：曾为 emit-only 不可恢复 → P52 修为真持久）。
+
 > 素材边界：**只整合 `dsh-swarm/docs/` 下已落盘产物 + 仓库实际状态**，不新增未经证据支持的结论。
 > 证据强度标记：**【已验证】**＝**真实 profile 下、真实栈、端到端**（或真实 OS 进程级）实测；**【单测级】**＝vitest 行为单测 / **进程内**集成冒烟（含端口 mock / 记录型 seam）；**【未验证】**＝仅有设计、推断或真实 profile 缺入口。
 >

@@ -4,6 +4,14 @@
 > 目标：把「插件内存态在重启 / 跨进程 / 崩溃恢复后丢失」当**一类缺陷**审计：逐包盘点 → 分类（天然短暂 / 必须持久）→ 修复「必须持久」项，或如实登记为已知限制。
 > 结论表见 §1，能力边界见 `README.md`「跨重启状态」段。
 
+> **【P52 更正 · 2026-10-27】durable 落盘通道的真实性**：经 P50 独立核实，本约定此前**只 `ctx.emit` 进程内广播、从未 append 到会话日志**
+> （182 份真实会话日志中 `swarm/*` 0 条）⇒ **「可跨重启恢复」当时并不成立**（P23 的恢复验证是**模拟**：内存捕获 + 手动 recover）。
+> 已由 **P52** 修为真持久：统一入口 `@elinpf/dsh-swarm-team-durable.emitDurable(session, name, payload)`
+> → **`appendPluginRecord("plugin:swarm/…")`**（通道 A），并在 `@deepseek-ai/dsh-session` 落地 plugin record；
+> `durableRecordOf(ev)` 供 replay fold。证据与逐类判定见 `docs/durability-findings.md`。
+> 下文若与「已修复」相关表述冲突，**以本条为准**（历史叙述：曾为 emit-only 不可恢复 → P52 修为真持久）。
+
+
 ## 0. 定性：为什么整栈都是内存态
 
 全仓**没有任何包声明 storage/durable 依赖**（`inject` 里无 `storage`；team-memory 注释自认「`ctx.storage` 作为可选持久化，缺失时仅存活于内存，告警」）。
