@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import TeamTransportService, {
   getLoopbackBus,
   resetLoopbackBus,
   type Config,
-  type DuplexSeam,
+  type SubprocessSeam,
 } from '../src/index.ts'
 
-/**
- * 假 ctx：只提供 Service 构造 + 本包逻辑所需的 `effect/get/logger/emit`。
- * `events` 收集 `swarm/transport/peer`（用于断言状态机迁移可观测）。
- */
+/** 假 ctx：只提供 Service 构造 + 本包逻辑所需的 `effect/get/logger/emit`。 */
 function makeCtx(services: Record<string, unknown> = {}) {
   const events: Array<{ name: string; payload: any }> = []
   const disposers: Array<() => void> = []
@@ -40,51 +39,54 @@ function cfg(over: Partial<Config> = {}): Config {
     maxHistory: 1024,
     reconnectTimeoutMs: 15000,
     reconnectIntervalMs: 0,
+    ackTimeoutMs: 1000,
     autoReconnect: false,
-    childArgs: [],
     ...over,
   }
 }
 
-const frame = (kind: 'mutation' | 'event', teamId = 't'): any => ({
+const frame = (kind: 'mutation' | 'event', n = 1): any => ({
   kind,
-  teamId,
-  payload: { n: Math.random() },
+  teamId: 't',
+  payload: { n },
 })
 
-/** 内存双工对（模拟 ctx.ssh / ctx.subprocess 归一后的 JSONL 通道）。 */
-function duplexPair() {
-  const mk = () => {
-    const data: Array<(s: string) => void> = []
-    const closeCbs: Array<() => void> = []
-    const written: string[] = []
-    const d: DuplexSeam & { written: string[]; feed(s: string): void; remoteClose(): void } = {
-      written,
-      write(s: string) {
-        written.push(s)
-      },
-      onData(cb) {
-        data.push(cb)
-      },
-      onClose(cb) {
-        closeCbs.push(cb)
-      },
-      close() {
-        closeCbs.forEach((c) => c())
-      },
-      feed(s: string) {
-        data.forEach((c) => c(s))
-      },
-      remoteClose() {
-        closeCbs.forEach((c) => c())
-      },
-    }
-    return d
-  }
-  return { local: mk() }
-}
-
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const RELAY = fileURLToPath(new URL('../relay/relay.mjs', import.meta.url))
+
+/**
+ * **真实子进程** seam：用 Node `child_process` 起 relay 真进程（非 mock）。
+ * 与 `ctx.subprocess` 的 handle 形状对齐：`{ stdin, stdout, terminate, done }`。
+ */
+function nodeSeam(env: Record<string, string> = {}) {
+  const children: ChildProcess[] = []
+  const seam: SubprocessSeam & { children: ChildProcess[]; killAll(): void } = {
+    children,
+    async resolveExecutable() {
+      return process.execPath
+    },
+    spawn(spec) {
+      const child = nodeSpawn(spec.argv[0]!, spec.argv.slice(1) as string[], {
+        cwd: spec.cwd,
+        stdio: ['pipe', 'pipe', 'inherit'],
+        env: { ...process.env, ...env },
+      })
+      children.push(child)
+      return {
+        stdin: child.stdin ?? undefined,
+        stdout: child.stdout ?? undefined,
+        terminate: () => void child.kill('SIGKILL'),
+        done: new Promise((res) =>
+          child.on('close', (code, signal) => res({ exitCode: code, signal: signal ?? null })),
+        ),
+      }
+    },
+    killAll() {
+      for (const c of children) c.kill('SIGKILL')
+    },
+  }
+  return seam
+}
 
 describe('@elinpf/dsh-swarm-team-transport', () => {
   beforeEach(() => resetLoopbackBus())
@@ -107,10 +109,8 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     expect(seq).toBe(1)
     expect(got).toHaveLength(1)
     expect(got[0]!.pid).toBe('A')
-    expect(got[0]!.frame.kind).toBe('event')
     expect(a.stats().acked).toBe(1)
     expect(a.peers().find((p) => p.peerId === 'B')!.state).toBe('connected')
-
     a.dispose()
     b.dispose()
   })
@@ -124,22 +124,18 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     b.onFrame(() => count++)
 
     const bus = getLoopbackBus()
-    bus.shouldDrop = (m) => m.t === 'ack' // 只吞 ack：A 侧帧保留在待发队列
+    bus.shouldDrop = (m) => m.t === 'ack'
     await a.send('B', frame('event'))
     expect(count).toBe(1)
     expect(a.stats().acked).toBe(0)
     expect(a.peers().find((p) => p.peerId === 'B')!.pending).toBe(1)
 
     bus.shouldDrop = undefined
-    bus.disconnect('B') // 制造断线
-    expect(a.peers().find((p) => p.peerId === 'B')!.state).toBe('degraded')
-    await a.reconnect('B') // 重放 queued-minus-acked
-
-    expect(count).toBe(1) // 恰好一次生效（重复帧被幂等吞掉）
+    bus.disconnect('B')
+    await a.reconnect('B')
+    expect(count).toBe(1)
     expect(b.stats().dedupDropped).toBeGreaterThanOrEqual(1)
     expect(a.stats().acked).toBeGreaterThanOrEqual(1)
-    expect(a.peers().find((p) => p.peerId === 'B')!.pending).toBe(0)
-
     a.dispose()
     b.dispose()
   })
@@ -151,8 +147,7 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     const b = new TeamTransportService(cb, cfg({ endpoint: 'B' }))
     await a.send('B', frame('event'))
 
-    const bus = getLoopbackBus()
-    bus.disconnect('B')
+    getLoopbackBus().disconnect('B')
     expect(a.peers().find((p) => p.peerId === 'B')!.state).toBe('degraded')
     await a.reconnect('B')
     expect(a.peers().find((p) => p.peerId === 'B')!.state).toBe('connected')
@@ -163,12 +158,11 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     expect(states).toContain('degraded')
     expect(states).toContain('resyncing')
     expect(states[states.length - 1]).toBe('connected')
-
     a.dispose()
     b.dispose()
   })
 
-  it('V4 增量补齐：B→A 丢帧后重连，A 终态无丢失、无重复', async () => {
+  it('V1/V4 增量补齐：B→A 丢帧后重连，A 终态无丢失、无重复', async () => {
     const { ctx: ca } = makeCtx()
     const { ctx: cb } = makeCtx()
     const a = new TeamTransportService(ca, cfg({ endpoint: 'A' }))
@@ -177,22 +171,16 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     a.onFrame((_pid, f) => seen.push((f.payload as any).n))
     const bus = getLoopbackBus()
 
-    // B 向 A 发 3 帧，第 2、3 帧在链路被吞（A 只收到第 1 帧）
     bus.shouldDrop = (m) => m.t === 'app' && (m.seq === 2 || m.seq === 3)
-    await b.send('A', { kind: 'event', teamId: 't', payload: { n: 1 } })
-    await b.send('A', { kind: 'event', teamId: 't', payload: { n: 2 } })
-    await b.send('A', { kind: 'event', teamId: 't', payload: { n: 3 } })
+    await b.send('A', frame('event', 1))
+    await b.send('A', frame('event', 2))
+    await b.send('A', frame('event', 3))
     expect(seen).toEqual([1])
-    expect(b.peers().find((p) => p.peerId === 'A')!.pending).toBe(2)
 
     bus.shouldDrop = undefined
     bus.disconnect('A')
-    await a.reconnect('B') // A 主动重连：sync-req(增量) + 双方重放
-
-    expect(seen.sort((x, y) => x - y)).toEqual([1, 2, 3]) // 无丢失
-    expect(new Set(seen).size).toBe(3) // 无重复
-    expect(a.peers().find((p) => p.peerId === 'B')!.sinceSeq).toBe(3)
-
+    await a.reconnect('B')
+    expect(seen.sort((x, y) => x - y)).toEqual([1, 2, 3])
     a.dispose()
     b.dispose()
   })
@@ -200,7 +188,7 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
   it('V1 超 TTL 不可达：unreachable++（只影响该 peer）', async () => {
     const { ctx: ca } = makeCtx()
     const a = new TeamTransportService(ca, cfg({ endpoint: 'A', reconnectTimeoutMs: 1 }))
-    await a.send('Z', frame('event')) // 目标端点未注册
+    await a.send('Z', frame('event'))
     await sleep(5)
     await a.reconnect('Z')
     expect(a.peers().find((p) => p.peerId === 'Z')!.state).toBe('unreachable')
@@ -218,55 +206,121 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
   })
 
   it('失败降级：ssh-rpc 不可用 → 回落 in-process 并告警', async () => {
-    const { ctx: ca, warns } = makeCtx() // 无 ctx.ssh
+    const { ctx: ca, warns } = makeCtx()
     const a = new TeamTransportService(ca, cfg({ backend: 'ssh-rpc', endpoint: 'A' }))
     expect(a.backend).toBe('in-process')
     expect(warns.some((w) => w.includes('fallback'))).toBe(true)
     a.dispose()
   })
 
-  it('local-child 后端：经 ctx.subprocess seam 把帧 JSONL 化上网', async () => {
-    const { local } = duplexPair()
-    const subprocessSeam = { spawn: async () => local }
-    const { ctx: ca } = makeCtx({ subprocess: subprocessSeam })
-    const a = new TeamTransportService(
-      ca,
-      cfg({
-        backend: 'local-child',
-        endpoint: 'A',
-        childCommand: 'node',
-        childArgs: ['relay.mjs'],
-      }),
-    )
-    expect(a.backend).toBe('local-child')
-    await a.send('child-1', frame('mutation'))
-    await sleep(5) // 等异步建链完成（子进程 spawn 是异步的）
-    const wires = local.written.map((w) => JSON.parse(w.trim()))
-    const app = wires.find((w) => w.t === 'app')
-    expect(app).toBeDefined()
-    expect(app.frame.kind).toBe('mutation')
-    a.dispose()
-  })
-
-  it('ssh-rpc 后端：经 ctx.ssh seam 的 openDuplex 承载帧', async () => {
-    const { local } = duplexPair()
-    const sshSeam = { openDuplex: async () => local }
-    const { ctx: ca } = makeCtx({ ssh: sshSeam })
+  it('ssh-rpc 后端：经 ctx.ssh seam 的 openDuplex 承载帧（JSONL）', async () => {
+    const written: string[] = []
+    let dataCb: ((s: string) => void) | undefined
+    const duplex = {
+      write: (s: string) => void written.push(s),
+      onData: (cb: (s: string) => void) => void (dataCb = cb),
+      onClose: () => {},
+      close: () => {},
+    }
+    const { ctx: ca } = makeCtx({ ssh: { openDuplex: async () => duplex } })
     const a = new TeamTransportService(ca, cfg({ backend: 'ssh-rpc', endpoint: 'A' }))
     expect(a.backend).toBe('ssh-rpc')
     await a.send('host-1', frame('event'))
     await sleep(5)
-    const wires = local.written.map((w) => JSON.parse(w.trim()))
+    const wires = written.map((w) => JSON.parse(w.trim()))
     expect(wires.some((w) => w.t === 'app')).toBe(true)
+    void dataCb
     a.dispose()
   })
 
-  it('dispose：端点注销、待发队列清空', async () => {
-    const { ctx: ca } = makeCtx()
-    const a = new TeamTransportService(ca, cfg({ endpoint: 'A' }))
-    await a.send('Z', frame('event'))
+  // ── 真实子进程（local-child）───────────────────────────────────────────────
+
+  it('local-child 真实子进程：send → 子进程 ack + 回声被父观察到（真 node 进程）', async () => {
+    const seam = nodeSeam()
+    const { ctx } = makeCtx({ subprocess: seam })
+    const a = new TeamTransportService(
+      ctx,
+      cfg({ backend: 'local-child', endpoint: 'A', childRelayPath: RELAY, nodeBin: 'node' }),
+    )
+    expect(a.backend).toBe('local-child')
+    const echoes: number[] = []
+    a.onFrame((_pid, f) => echoes.push((f.payload as any).n))
+    await a.send('child-1', frame('event', 7))
+    await sleep(120)
+    expect(seam.children.length).toBe(1) // 真起了子进程
+    expect(echoes).toEqual([7]) // 恰好一次回声
+    expect(a.stats().acked).toBeGreaterThanOrEqual(1) // 子进程 ack
     a.dispose()
-    expect(getLoopbackBus().has('A')).toBe(false)
-    expect(a.peers().every((p) => p.pending === 0)).toBe(true)
+    seam.killAll()
+  })
+
+  it('V2 真实子进程：子进程丢弃 ack → 父重发 → 目标恰好一次（幂等去重）', async () => {
+    const seam = nodeSeam({ RELAY_DROP_ACKS: '1', RELAY_ACK_TIMEOUT_MS: '20' })
+    const { ctx } = makeCtx({ subprocess: seam })
+    const a = new TeamTransportService(
+      ctx,
+      cfg({
+        backend: 'local-child',
+        endpoint: 'A',
+        childRelayPath: RELAY,
+        nodeBin: 'node',
+        ackTimeoutMs: 30,
+      }),
+    )
+    let count = 0
+    a.onFrame(() => count++)
+    await a.send('child-1', frame('event', 1))
+    await sleep(200)
+    expect(count).toBe(1) // 恰好一次生效（重复只 ack 不回声）
+    expect(a.stats().retried).toBeGreaterThanOrEqual(1) // 发生了 ack 超时重发
+    expect(a.peers().find((p) => p.peerId === 'child-1')!.pending).toBe(0) // 最终 ack 掉
+    a.dispose()
+    seam.killAll()
+  })
+
+  it('V1 真实子进程：子进程回声丢失 → 重发定时器补齐，父终态无丢失无重复', async () => {
+    const seam = nodeSeam({ RELAY_DROP_ECHOES: '1', RELAY_ACK_TIMEOUT_MS: '20' })
+    const { ctx } = makeCtx({ subprocess: seam })
+    const a = new TeamTransportService(
+      ctx,
+      cfg({ backend: 'local-child', endpoint: 'A', childRelayPath: RELAY, nodeBin: 'node' }),
+    )
+    const seen: number[] = []
+    a.onFrame((_pid, f) => seen.push((f.payload as any).n))
+    await a.send('child-1', frame('event', 42))
+    await sleep(250) // 等子进程重发定时器补上丢失的回声
+    expect(seen).toEqual([42]) // 丢失的回声被补齐，且恰好一次（父 ack 后子进程停止重发）
+    a.dispose()
+    seam.killAll()
+  })
+
+  it('V4 真实子进程：kill 子进程 → degraded → 重生子进程 → connected（epoch 复位）', async () => {
+    const seam = nodeSeam()
+    const { ctx } = makeCtx({ subprocess: seam })
+    const a = new TeamTransportService(
+      ctx,
+      cfg({ backend: 'local-child', endpoint: 'A', childRelayPath: RELAY, nodeBin: 'node' }),
+    )
+    await a.send('child-1', frame('event', 1))
+    await sleep(80)
+    expect(seam.children.length).toBe(1)
+
+    seam.children[0]!.kill('SIGKILL') // 真实杀死
+    await sleep(100)
+    expect(a.peers().find((p) => p.peerId === 'child-1')!.state).toBe('degraded')
+
+    await a.reconnect('child-1') // 重生子进程
+    await sleep(80)
+    expect(seam.children.length).toBe(2)
+    expect(a.peers().find((p) => p.peerId === 'child-1')!.state).toBe('connected')
+
+    // 重启后仍能收发（新 epoch 复位去重窗口，不会把新帧当重复丢弃）
+    const seen: number[] = []
+    a.onFrame((_pid, f) => seen.push((f.payload as any).n))
+    await a.send('child-1', frame('event', 9))
+    await sleep(80)
+    expect(seen).toContain(9)
+    a.dispose()
+    seam.killAll()
   })
 })

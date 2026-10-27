@@ -17,6 +17,8 @@
  * @module @elinpf/dsh-swarm-team-distributed
  */
 
+import { readFileSync } from 'node:fs'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -92,6 +94,8 @@ export interface Config {
   ownerId?: string
   /** 消息在途超时后并入 recover() 重投的判定（ms）。 */
   deliveryTtlMs: number
+  /** journal 落盘路径（复用 dsh-atomic-write 原子写）；配置后 journal **活过进程重启**。 */
+  journalPath?: string
 }
 
 interface AppliedOp {
@@ -106,6 +110,7 @@ export class TeamDistributedService extends Service implements TeamDistributed {
     role: z.union(['lead', 'follower'] as const).default('lead'),
     ownerId: z.string(),
     deliveryTtlMs: z.number().step(1).min(1).default(30000),
+    journalPath: z.string(),
   })
 
   private config: Config
@@ -121,8 +126,8 @@ export class TeamDistributedService extends Service implements TeamDistributed {
     super(ctx, 'teamDistributed')
     this.config = config
     this.currentRole = config.role
-    this.journal =
-      (ctx.get('teamDistributedJournal') as DeliverJournal | undefined) ?? createJournal()
+    const injected = ctx.get('teamDistributedJournal') as DeliverJournal | undefined
+    this.journal = injected ?? loadJournalFile(config.journalPath) ?? createJournal()
     ctx.effect(() => () => this.dispose(), 'teamDistributed.lifecycle()')
     if (this.transport) {
       void this.spawnRecoveryLoop()
@@ -264,7 +269,9 @@ export class TeamDistributedService extends Service implements TeamDistributed {
     }
     // 落 queued（durable）：即使随后交付失败，也在 recover() 集合中
     this.journal.queued.set(messageId, { targetId, content })
+    await this.persistJournal()
     const ok = await this.tryDeliver(agent, messageId, targetId, content)
+    await this.persistJournal()
     return { status: ok ? 'accepted' : 'queued' }
   }
 
@@ -312,7 +319,23 @@ export class TeamDistributedService extends Service implements TeamDistributed {
       const ok = await this.tryDeliver(agent, messageId, rec.targetId, rec.content)
       if (ok) replayed++
     }
+    await this.persistJournal()
     return { replayed }
+  }
+
+  /** 落盘 journal（原子写）：`queued` = queued-minus-delivered，`delivered` = 幂等去重集。 */
+  private async persistJournal(): Promise<void> {
+    const path = this.config.journalPath
+    if (!path) return
+    const payload = JSON.stringify({
+      queued: [...this.journal.queued.entries()],
+      delivered: [...this.journal.delivered],
+    })
+    try {
+      await writeFileAtomic(path, payload, { mode: 0o600 })
+    } catch (e) {
+      this.ctx.logger?.warn?.('team-distributed: journal persist failed: %s', String(e))
+    }
   }
 
   private async spawnRecoveryLoop(): Promise<void> {
@@ -351,6 +374,23 @@ export class TeamDistributedService extends Service implements TeamDistributed {
     } catch (e) {
       this.ctx.logger?.warn?.('team-distributed: emit %s failed: %s', name, String(e))
     }
+  }
+}
+
+/** 从磁盘恢复 journal（缺失/损坏则返回 undefined，退化为内存 journal）。 */
+function loadJournalFile(path: string | undefined): DeliverJournal | undefined {
+  if (!path) return undefined
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+      queued?: Array<[string, { targetId: string; content: unknown[] }]>
+      delivered?: string[]
+    }
+    return {
+      queued: new Map(raw.queued ?? []),
+      delivered: new Set(raw.delivered ?? []),
+    }
+  } catch {
+    return undefined
   }
 }
 

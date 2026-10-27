@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import TeamDistributedService, {
   createJournal,
   resetLeadRegistry,
@@ -159,6 +161,32 @@ describe('@elinpf/dsh-swarm-team-distributed', () => {
     const again = await svc2.deliver(agent, 'bob', 'm-crash', [])
     expect(again.status).toBe('accepted')
     expect(core.calls.send).toBe(1)
+  })
+
+  it('journal 落盘（atomic-write）：活过进程重启，恢复后重放且不重复', async () => {
+    const core = fakeCore()
+    core.setSendFails(true)
+    const path = join(tmpdir(), `dsh-journal-${process.pid}-${Date.now()}.json`)
+    const { ctx } = makeCtx({ teamCore: core })
+    const svc = new TeamDistributedService(ctx, cfg({ journalPath: path }))
+    svc.becomeLead(agent, 'T')
+    const r = await svc.deliver(agent, 'off', 'm-dur', [{ type: 'text', text: 'x' }])
+    expect(r.status).toBe('queued')
+    expect(svc.pending).toBe(1)
+
+    // 模拟进程重启：新实例从同一文件加载 journal
+    const { ctx: c2 } = makeCtx({ teamCore: core })
+    const svc2 = new TeamDistributedService(c2, cfg({ journalPath: path }))
+    svc2.becomeLead(agent, 'T')
+    expect(svc2.pending).toBe(1) // queued-minus-delivered 从磁盘恢复
+
+    core.setSendFails(false)
+    const rec = await svc2.recover(agent)
+    expect(rec.replayed).toBe(1)
+    expect(svc2.pending).toBe(0) // 交付后清空并落盘
+    const again = await svc2.deliver(agent, 'off', 'm-dur', [])
+    expect(again.status).toBe('accepted')
+    expect(core.calls.send).toBe(1) // 恰好一次
   })
 
   it('V4/§3.1 脑裂：同 teamId 第二个 Lead → SPLIT_BRAIN 只读', async () => {

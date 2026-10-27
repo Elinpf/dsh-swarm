@@ -822,3 +822,70 @@ $ pnpm verify:durability         # 非发布门禁；模拟「置态 → 重建�
 统一机制建议（复用既有约定、不另造存储层）：对齐 `team-distributed.recover()` —— 每个「必须持久」变更 `emit('swarm/<domain>/*')`（durable）+ 包内 `fold` 折叠回内存态。此方案**新增跨包事件契约**（事件名/schema），属接口层变更，**已上报 Leader 确认后实施**；若确认，将按「每项 + 一条未修复时会失败、修复后转绿的恢复测试」落地。
 
 > 说明：本条与 P18 §E 的旧判断衔接——`review_stall`「重启后再升一次」的结论基于**未持久化**现状；本项一旦持久化，该行为将随之改变，届时同步更新 P18 §E 与 README 能力边界描述。
+
+
+## I. 从内存 mock 推到真实子进程（P25-real-crossprocess / dev-2）
+
+承接 §H.4 的可信度缺口：把跨进程能力从「内存双工 mock」推到「**真起子进程**」，并补上**真实进程杀死/重启**。
+
+### I.1 可行性实测（先判后做）
+
+- **`ctx.subprocess` 可驱动真实子进程**（实测）：`@deepseek-ai/dsh-subprocess-local@0.2.1-rc.3` 可独立经 cordis 加载；
+  `resolveExecutable('node')` 返回隔离 node22；`spawn({argv,cwd,stdio:{stdin:'pipe',stdout:'pipe',stderr:'inherit'},graceMs})`
+  **同步**返回 `SubprocessHandle{ stdin, stdout, stderr, control, collected, done, terminate, waitForExit }`；`await done → {exitCode:0,signal:null}`，stdout 收到 `hello-child`。
+  （探针 `.runtime/probe/px-subprocess.mjs`）
+- **`ctx.ssh` 不可用**：本仓未安装 `dsh-ssh`（`node_modules/@deepseek-ai` 无 `dsh-ssh`），故 `ssh-rpc` 后端**仍为未实测**，
+  仅保留 seam + 内存双工单测；落地条件：安装 SSH 后端并接入 `ctx.ssh`（帧/RPC 形状见 spec §9.1）。
+- **`ctx.subagents` 的 out-of-process provider 不可用**：本仓仅安装 `dsh-subagent-spawn-in-process` / `dsh-subagent-fork-in-process`
+  （`ls node_modules/@deepseek-ai | grep subagent` 无 `acp`/`dsh-sdk`/`codex`/`claude-code`）。
+  ⇒ §4.3 的「远端成员执行」**未验证**；落地条件：安装 `@deepseek-ai/dsh-subagent-dsh-sdk`（或 `dsh-acp`）+ 一个真实远端执行环境，
+  再经 `ctx.subagents.registerProvider` 接入。
+
+### I.2 local-child：**真起子进程**（不是 mock）
+
+- 新增随包发布的 `packages/team-transport/relay/relay.mjs`：一个**独立 node 进程**，stdin/stdout 走 JSONL `WireFrame`，
+  实现对端语义（`app` 幂等去重 + ack + 回声；`ack` 摘除；`sync-req` 增量重放）。
+- `team-transport` 的 `SubprocessSeam` 形状**按真实 `SubprocessHandle` 对齐**；新增 `NodeStreamLink` 适配真实 stdin/stdout，
+  并**修正 JSONL 行缓冲**（原按 `data` 块切行会把半行丢帧——真实流下的必备修复）。
+- 新增 **发送端 ack 超时重发**（`ackTimeoutMs`，spec §3.2 退避重试）；relay 侧同样带重发定时器。
+- 新增 **进程纪元 `epoch`**：对端重启后 seq 空间重置，接收端据 `epoch` 复位去重窗口（否则会把重启后的新帧当重复丢弃）。
+
+### I.3 V1–V4 在真实父子进程上的结果（含真实杀死/重启）
+
+| 验证 | 场景 | 结果 | 落点 |
+|---|---|---|---|
+| V2 不重 | relay 丢弃首条 ack → 父 ack 超时重发 → relay 按 seq 去重（只 ack 不回声） | ✅ 目标恰一次，`retried>=1`，最终 `acked` | `scripts/verify-crossprocess.mjs`（真实 `ctx.subprocess`）+ vitest「V2 真实子进程」 |
+| V1 不丢 | relay 丢弃首条回声 → relay 重发定时器补齐 → 父按 seq 去重 | ✅ 补齐且恰一次 | 同上（probe + vitest「V1 真实子进程」） |
+| V4 断线重连 | **真实 SIGKILL 子进程** → `degraded` → `reconnect()` 重生子进程 → `connected`，`epoch` 复位后可继续收发 | ✅ | vitest「V4 真实子进程」（真 node 子进程 + 真 kill） |
+| V3 崩溃恢复 | **真实 SIGKILL leader 进程** → 重启 → `recover()` 重放 queued-minus-delivered 且不重复 | ✅ replayed=1、pending 0 | `scripts/verify-crossprocess.mjs` B 段（真进程 + dsh-atomic-write journal） |
+
+真实探针输出（原样节选）：
+
+```console
+$ node scripts/verify-crossprocess.mjs        # 真实 ctx.subprocess + 真实进程杀死/重启
+== A. 真实 ctx.subprocess（dsh-subprocess-local）驱动 local-child ==
+[OK]   V2：目标恰好生效一次（收到回声 1 次）
+[OK]   V2：发生 ack 超时重发（retried=2）
+[OK]   V1：丢失回声被补齐且恰好一次（got=[1]）
+[OK]   基线：子进程 ack（acked=1）
+== B. 真实进程杀死/重启下的 journal 持久化 ==
+[OK]   首次 leader：交付失败 → queued（{"status":"pending":1}）
+[OK]   重启进程从磁盘恢复出 1 条 queued（{"idle":true,"pending":1}）
+[OK]   leader 进程被真实杀死（SIGKILL）
+[OK]   重启后 recover 重放 1 条（{"recovered":true,"replayed":1,"pending":0}）
+✅ 真实跨进程探针通过
+```
+
+### I.4 journal 去内存化
+
+`team-distributed` 新增 `journalPath`：queued-minus-delivered 与 delivered 集经 **`@deepseek-ai/dsh-atomic-write` 的 `writeFileAtomic`** 落盘，
+构造时从磁盘恢复（不新增存储层；未来可换 `ctx.storage` forms）。单测「journal 落盘（atomic-write）」+ probe B 段（真进程重启）均通过。
+
+### I.5 边界与未做到（诚实登记）
+
+- **`ssh-rpc` 仍为内存 dual mock 验证**（本仓无 `dsh-ssh`），未跑真实跨机。
+- **`ctx.subagents` out-of-process 成员执行未验证**（本仓无 acp/`dsh-sdk` provider），需安装对应 provider + 真实远端环境。
+- **local-child 的「重连」= 重生子进程**：对端重启后其 seq/历史丢失，故对端**重启后**的 at-least-once 重放可能**重复投递一次**——
+  由应用层 `messageId` 幂等兜底（transport 的 seq 去重只保证「同一对端进程内的不重」）。「sinceSeq 增量补齐」在**对端存活**的重连上验证（in-process 单测 + relay 的 `sync-req` 路径）。
+- 跨机 SSH 真断网/丢包联调仍未跑（无 SSH 后端）。
+- 真实模型 token 消耗：本任务全程为本地确定性探针/单测，**模型 token 消耗 0**。

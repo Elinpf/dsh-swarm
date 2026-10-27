@@ -17,6 +17,7 @@
  * @module @elinpf/dsh-swarm-team-transport
  */
 
+import { fileURLToPath } from 'node:url'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -49,6 +50,8 @@ interface WireFrame {
   ackSeq?: number
   /** sync-req 帧：请求方已连续收到的最大 seq（据此重放其后的增量）。 */
   sinceSeq?: number
+  /** 发送端**进程纪元**：对端重启后 seq 空间重置，接收端据此复位去重窗口（跨进程正确性的关键）。 */
+  epoch?: string
   /** app 帧负载。 */
   frame?: TransportFrame
 }
@@ -214,7 +217,7 @@ export function resetLoopbackBus(): void {
 
 // ── 子进程 / SSH 的本地结构化 seam（隔离上游实验性形状；spec §9）───────────────
 
-/** 一条带 JSONL 语义的双工通道（子进程 stdio / SSH 帧都归一到它）。 */
+/** 一条带 JSONL 语义的双工通道（SSH 帧归一到这里）。 */
 export interface DuplexSeam {
   write(data: string): void
   onData(cb: (data: string) => void): void
@@ -222,43 +225,73 @@ export interface DuplexSeam {
   close(): void
 }
 
-/** `ctx.subprocess` 的结构化 seam（只取本包用到的「起子进程拿 stdio 双工」这一面）。 */
+/**
+ * `ctx.subprocess` 的结构化 seam —— 形状**按 0.2.1-rc.3 实测对齐**
+ * （`SubprocessHandle`：`stdin` Writable / `stdout` Readable / `done` / `terminate()`；
+ * `spawn` 同步返回 handle，`resolveExecutable` 解析可执行文件）。
+ */
+export interface NodeWritableSeam {
+  write(chunk: string | Uint8Array): unknown
+}
+export interface NodeReadableSeam {
+  on(event: 'data', cb: (chunk: unknown) => void): unknown
+}
+export interface SubprocessHandleSeam {
+  readonly stdin: NodeWritableSeam | undefined
+  readonly stdout: NodeReadableSeam | undefined
+  terminate(): void
+  readonly done: Promise<{ exitCode: number | null; signal: string | null }>
+}
 export interface SubprocessSeam {
-  spawn(cfg: {
-    command: string
-    args?: string[]
-    cwd?: string
-    env?: Record<string, string>
-  }): Promise<DuplexSeam | undefined> | DuplexSeam | undefined
+  resolveExecutable?(name: string): Promise<string>
+  spawn(spec: {
+    argv: readonly string[]
+    cwd: string
+    stdio: { stdin: 'pipe'; stdout: 'pipe'; stderr: 'inherit' }
+    graceMs: number
+  }): SubprocessHandleSeam
 }
 
-/** `ctx.ssh` 的结构化 seam（【推断】形状见 spec §9.1：把连接归一为 JSON 帧双工通道）。 */
+/** `ctx.ssh` 的结构化 seam（【推断·未实测】形状见 spec §9.1；本环境未安装 dsh-ssh）。 */
 export interface SshSeam {
   connect?(endpoint: string): Promise<void> | void
   openDuplex(endpoint: string): Promise<DuplexSeam | undefined> | DuplexSeam | undefined
 }
 
-/** 把 JSONL 双工通道适配成 `RawLink`（子进程 / SSH 共用）。 */
+/** JSONL 行缓冲提取器：跨进程 `data` 事件按块到达，**必须**按行拼接，否则半行被丢。 */
+function drainLines(buffer: string, chunk: unknown, onLine: (line: string) => void): string {
+  let rest = buffer + String(chunk)
+  let idx: number
+  while ((idx = rest.indexOf('\n')) >= 0) {
+    const line = rest.slice(0, idx).trim()
+    rest = rest.slice(idx + 1)
+    if (line) onLine(line)
+  }
+  return rest
+}
+
+/** 把 JSONL 双工通道适配成 `RawLink`（SSH）。 */
 class JsonLink implements RawLink {
   private msgCb: ((m: WireFrame) => void) | undefined
   private closeCb: (() => void) | undefined
   private pending: WireFrame[] = []
+  private buffer = ''
 
   constructor(readonly remoteId: string, private readonly duplex: DuplexSeam) {
     duplex.onData((data) => {
-      for (const line of data.split('\n')) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        try {
-          const frame = JSON.parse(trimmed) as WireFrame
-          if (this.msgCb) this.msgCb(frame)
-          else this.pending.push(frame)
-        } catch {
-          // 坏帧：丢弃单帧而不炸链路（跨进程边界必须容错）
-        }
-      }
+      this.buffer = drainLines(this.buffer, data, (line) => this.accept(line))
     })
     duplex.onClose(() => this.closeCb?.())
+  }
+
+  private accept(line: string): void {
+    try {
+      const frame = JSON.parse(line) as WireFrame
+      if (this.msgCb) this.msgCb(frame)
+      else this.pending.push(frame)
+    } catch {
+      // 坏帧：丢弃单帧而不炸链路（跨进程边界必须容错）
+    }
   }
 
   send(msg: WireFrame): void {
@@ -280,16 +313,95 @@ class JsonLink implements RawLink {
   }
 }
 
+/** 把**真实**子进程 handle（stdin/stdout/terminate/done）适配成 `RawLink`。 */
+class NodeStreamLink implements RawLink {
+  private msgCb: ((m: WireFrame) => void) | undefined
+  private closeCb: (() => void) | undefined
+  private pending: WireFrame[] = []
+  private buffer = ''
+  private closed = false
+
+  constructor(readonly remoteId: string, private readonly handle: SubprocessHandleSeam) {
+    this.handle.stdout?.on('data', (chunk) => {
+      this.buffer = drainLines(this.buffer, chunk, (line) => this.accept(line))
+    })
+    void this.handle.done.then(
+      () => this.fireClose(),
+      () => this.fireClose(),
+    )
+  }
+
+  private accept(line: string): void {
+    try {
+      const frame = JSON.parse(line) as WireFrame
+      if (this.msgCb) this.msgCb(frame)
+      else this.pending.push(frame)
+    } catch {
+      // 坏帧：丢弃单帧而不炸链路
+    }
+  }
+  private fireClose(): void {
+    if (this.closed) return
+    this.closed = true
+    this.closeCb?.()
+  }
+
+  send(msg: WireFrame): void {
+    if (this.closed) return
+    try {
+      this.handle.stdin?.write(`${JSON.stringify(msg)}\n`)
+    } catch {
+      // 子进程已死：链路 close 会触发重连
+    }
+  }
+  close(): void {
+    try {
+      this.handle.terminate()
+    } catch {
+      /* idempotent */
+    }
+    this.fireClose()
+  }
+  onMessage(cb: (m: WireFrame) => void): void {
+    this.msgCb = cb
+    if (this.pending.length) {
+      const queued = this.pending
+      this.pending = []
+      for (const m of queued) cb(m)
+    }
+  }
+  onClose(cb: () => void): void {
+    this.closeCb = cb
+  }
+}
+
+/** local-child：**真起子进程**跑 relay，stdio 走 JSONL。 */
 class ChildProcessLinkFactory implements LinkFactory {
   constructor(
     private readonly seam: SubprocessSeam,
-    private readonly command: string,
-    private readonly args: string[],
+    private readonly nodeBin: string,
+    private readonly relayPath: string,
+    private readonly cwd: string,
   ) {}
 
   async create(peerId: string, endpoint: string): Promise<RawLink | undefined> {
-    const duplex = await this.seam.spawn({ command: this.command, args: [...this.args, endpoint] })
-    return duplex ? new JsonLink(peerId, duplex) : undefined
+    let exe = this.nodeBin
+    try {
+      if (this.seam.resolveExecutable) exe = await this.seam.resolveExecutable(this.nodeBin)
+    } catch {
+      /* 回退到裸命令名，交给 spawn 报错 */
+    }
+    try {
+      const handle = this.seam.spawn({
+        argv: [exe, this.relayPath, endpoint],
+        cwd: this.cwd,
+        stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'inherit' },
+        graceMs: 5000,
+      })
+      return new NodeStreamLink(peerId, handle)
+    } catch {
+      return undefined
+    }
   }
   dispose(): void {}
 }
@@ -330,17 +442,24 @@ export interface Config {
   reconnectTimeoutMs: number
   /** 自动重连尝试间隔（ms）；0 / autoReconnect=false 时只接受显式 `reconnect()`。 */
   reconnectIntervalMs: number
+  /** 未 ack 帧的重发节拍（ms）；0 关闭（spec §3.2 退避重试）。 */
+  ackTimeoutMs: number
   /** 是否自动重连。 */
   autoReconnect: boolean
-  /** local-child 后端要跑的中继命令（未配置则 local-child 视为不可用）。 */
-  childCommand?: string
-  childArgs?: string[]
+  /** local-child 后端：运行 relay 的 node 可执行文件（默认 `node`，经 resolveExecutable 解析）。 */
+  nodeBin?: string
+  /** relay 脚本路径（默认随包发布：`../relay/relay.mjs`）。 */
+  childRelayPath?: string
+  /** 子进程工作目录（默认进程 cwd）。 */
+  childCwd?: string
 }
 
 interface OutboundFrame {
   seq: number
   frame: TransportFrame
   tries: number
+  /** 最近一次上网时间（ack 超时重发判据）。 */
+  lastSentAt: number
 }
 
 interface PeerRecord {
@@ -358,6 +477,8 @@ interface PeerRecord {
   sinceSeq: number
   /** 入站去重集合。 */
   seenInbound: Set<number>
+  /** 对端进程纪元（变化 ⇒ 对端重启，去重窗口复位）。 */
+  epoch: string | undefined
   degradedSince: number
   reconnectAttempts: number
 }
@@ -370,9 +491,11 @@ export class TeamTransportService extends Service implements TeamTransport {
     maxHistory: z.number().step(1).min(1).default(1024),
     reconnectTimeoutMs: z.number().step(1).min(1).default(15000),
     reconnectIntervalMs: z.number().step(1).min(0).default(1000),
+    ackTimeoutMs: z.number().step(1).min(0).default(1000),
     autoReconnect: z.boolean().default(true),
-    childCommand: z.string(),
-    childArgs: z.array(z.string()).default([]),
+    nodeBin: z.string(),
+    childRelayPath: z.string(),
+    childCwd: z.string(),
   })
 
   private config: Config
@@ -393,6 +516,9 @@ export class TeamTransportService extends Service implements TeamTransport {
     queueDropped: 0,
   }
   private timers = new Map<string, ReturnType<typeof setInterval>>()
+  private retryTimer: ReturnType<typeof setInterval> | undefined
+  /** 本进程纪元（跨进程去重窗口复位用）。 */
+  private readonly epoch = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   private disposed = false
 
   constructor(ctx: Context, config: Config = defaultConfig()) {
@@ -430,6 +556,13 @@ export class TeamTransportService extends Service implements TeamTransport {
       factory = new InProcessLinkFactory(this.bus, this.selfEndpoint)
     }
     this.factory = factory
+    if (this.config.ackTimeoutMs > 0) {
+      this.retryTimer = setInterval(
+        () => this.scanRetries(),
+        Math.max(5, Math.floor(this.config.ackTimeoutMs / 2)),
+      )
+      ;(this.retryTimer as { unref?: () => void }).unref?.()
+    }
     return () => this.dispose()
   }
 
@@ -437,11 +570,14 @@ export class TeamTransportService extends Service implements TeamTransport {
     if (backend === 'in-process') return new InProcessLinkFactory(this.bus!, this.selfEndpoint)
     if (backend === 'local-child') {
       const seam = this.ctx.get('subprocess') as SubprocessSeam | undefined
-      if (!seam?.spawn || !this.config.childCommand) return undefined
+      if (!seam?.spawn) return undefined
+      const relayPath =
+        this.config.childRelayPath ?? fileURLToPath(new URL('../relay/relay.mjs', import.meta.url))
       return new ChildProcessLinkFactory(
         seam,
-        this.config.childCommand,
-        this.config.childArgs ?? [],
+        this.config.nodeBin ?? 'node',
+        relayPath,
+        this.config.childCwd ?? process.cwd(),
       )
     }
     const seam = this.ctx.get('ssh') as SshSeam | undefined
@@ -454,7 +590,7 @@ export class TeamTransportService extends Service implements TeamTransport {
   async send(peerId: string, frame: TransportFrame): Promise<{ seq: number }> {
     const peer = this.ensurePeer(peerId)
     const seq = peer.nextSeq++
-    const out: OutboundFrame = { seq, frame, tries: 0 }
+    const out: OutboundFrame = { seq, frame, tries: 0, lastSentAt: 0 }
     this.enqueue(peer, out)
     // 仅 CONNECTED 时立即上网；degraded/resyncing 时留在队列，重连后重放（不静默丢）
     if (peer.state === 'connected' && peer.link) this.transmit(peer, out, 'first')
@@ -536,8 +672,22 @@ export class TeamTransportService extends Service implements TeamTransport {
       history: [],
       sinceSeq: 0,
       seenInbound: new Set(),
+      epoch: undefined,
       degradedSince: Date.now(),
       reconnectAttempts: 0,
+    }
+  }
+
+  /** ack 超时重发：对未确认帧按节拍重发（spec §3.2 退避重试），保证链路丢帧可收敛。 */
+  private scanRetries(): void {
+    const now = Date.now()
+    const timeout = this.config.ackTimeoutMs
+    if (timeout <= 0) return
+    for (const peer of this.peerMap.values()) {
+      if (peer.state !== 'connected' || !peer.link) continue
+      for (const out of [...peer.outbound]) {
+        if (now - out.lastSentAt >= timeout) this.transmit(peer, out, 'retry')
+      }
     }
   }
 
@@ -593,18 +743,21 @@ export class TeamTransportService extends Service implements TeamTransport {
     }
   }
 
-  private transmit(peer: PeerRecord, out: OutboundFrame, mode: 'first' | 'replay'): void {
+  private transmit(peer: PeerRecord, out: OutboundFrame, mode: 'first' | 'replay' | 'retry'): void {
     if (!peer.link) return
     try {
-      peer.link.send({ t: 'app', seq: out.seq, frame: out.frame })
+      peer.link.send({ t: 'app', seq: out.seq, epoch: this.epoch, frame: out.frame })
     } catch (e) {
       this.ctx.logger?.warn?.('team-transport: transmit failed: %s', String(e))
       return
     }
     out.tries++
+    out.lastSentAt = Date.now()
     this.counters.sent++
     if (mode === 'replay') {
       this.counters.replayed++
+      this.counters.retried++
+    } else if (mode === 'retry') {
       this.counters.retried++
     }
     // 记录重放历史（供对端 sync-req 增量补齐）
@@ -630,6 +783,12 @@ export class TeamTransportService extends Service implements TeamTransport {
   }
 
   private handleApp(peer: PeerRecord, msg: WireFrame): void {
+    // 对端重启（epoch 变）⇒ 其 seq 空间重置：复位去重窗口，避免把新帧当重复丢弃
+    if (msg.epoch && msg.epoch !== peer.epoch) {
+      peer.epoch = msg.epoch
+      peer.sinceSeq = 0
+      peer.seenInbound.clear()
+    }
     const seq = msg.seq ?? 0
     const dup = seq > 0 && (peer.seenInbound.has(seq) || seq <= peer.sinceSeq)
     if (dup) {
@@ -694,6 +853,10 @@ export class TeamTransportService extends Service implements TeamTransport {
   private teardown(): void {
     for (const t of this.timers.values()) clearInterval(t)
     this.timers.clear()
+    if (this.retryTimer) {
+      clearInterval(this.retryTimer)
+      this.retryTimer = undefined
+    }
     for (const peer of this.peerMap.values()) {
       peer.link?.close()
       peer.link = undefined
@@ -716,8 +879,8 @@ function defaultConfig(): Config {
     maxHistory: 1024,
     reconnectTimeoutMs: 15000,
     reconnectIntervalMs: 1000,
+    ackTimeoutMs: 1000,
     autoReconnect: true,
-    childArgs: [],
   }
 }
 
