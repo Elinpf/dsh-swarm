@@ -1285,3 +1285,38 @@ $ node scripts/verify-unblock-latency.mjs
 - 真实 profile 下 scheduler 现**自动运行**：scheduled 派发、autonomous nudge、轮询兜底真跑；**P31 的 `swarm/task/unblocked` 主动推送随之生效**。
 - `bundle` 无需改动（插件已在 bundle 内，自装配生效）。
 - 边界：仅当本进程 agent 在成员表中 `role==='lead'` 才 arm；跨进程 follower 需各自按 LEADER 语义装配（当前 follower 不 arm，符合单写者模型）。
+
+
+## P. scheduled 派发的 owner 归属修复（P42 / dev-2）
+
+### P.1 语义定位（带源码位置）
+
+原生任务板（`.runtime/deepseek-harness/packages/experimental/agent-team/src/task-board.ts`）实测：
+- `claim`（`:129-136`）：`next = { ...current, status:'in_progress', ownerId: caller.id }` —— **以调用者为 owner，忽略 `owner` 入参**（有意设计：claim = 自领）。
+- `reassign`（`:172-186`）：**仅 Team Lead** 可调，要求 `request.owner` 非空，`resolveActiveMember` 解析成员后 `next = { ...current, status:'in_progress', ownerId: assignee.id }` —— **按 owner 指派给成员并置 in_progress**。
+
+⇒ 正确做法：scheduler 派发应走 **端口动作 `assign`（→ 原生 `reassign`）**，而非 `claim`。
+`team-scheduler` 原写 `updateTask(action:'claim', owner:m.name)` → 原生 claim 以**调用者（Lead）**为 owner → 任务归 lead、成员未接手（P39/#6 实测 `ownerName=lead`）。
+
+### P.2 修复
+
+- `team-scheduler/src/index.ts` 派发分支：`action:'claim'` → **`action:'assign'`**（附注释说明 claim 语义）。**不改** `claim` 的 legacy 语义、**不影响 autonomous** 分支。
+
+### P.3 真实 profile 断言（先红后绿）
+
+`scripts/e2e-sched-arm.sh`（新增 `--expect-owner`）：
+```console
+$ bash scripts/e2e-sched-arm.sh --auto-arm true --expect in_progress --expect-owner alice
+# 修复前（临时回退 action=claim）：
+[info] arm-job 状态=in_progress owner=lead（期望 …owner=alice）
+[FAIL] owner lead != alice                        ← 红
+# 修复后：
+[info] arm-job 状态=in_progress owner=alice（期望 …owner=alice）
+[PASS] scheduler arming：状态/归属符合期望          ← 绿
+```
+- 确定性单测（team-scheduler 16 条）：scheduled 派发后 `ownerName==='w'`（被派发成员，非 lead）。
+
+### P.4 后续
+
+- **P19b 前置成立**：scheduled 派发现**真正指派给成员**（owner=目标成员），可作为默认值切换的依据。
+- autono mous 与 `claim` legacy 语义**未改**。

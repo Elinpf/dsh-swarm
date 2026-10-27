@@ -28,12 +28,14 @@ PROFILE="${DSH_PROFILE:-headless}"
 CFG="${DSH_SWARM_CONFIG:-/root/.jiuwenswarm/config/config.yaml}"
 AUTO_ARM=true
 EXPECT=in_progress
+OWNER_EXPECT=""
 OUT="${RT}/probe/sched-arm"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --auto-arm) AUTO_ARM="$2"; shift 2;;
     --expect) EXPECT="$2"; shift 2;;
+    --expect-owner) OWNER_EXPECT="$2"; shift 2;;
     --out) OUT="$2"; shift 2;;
     *) echo "[FAIL] 未知参数 $1" >&2; exit 2;;
   esac
@@ -118,16 +120,20 @@ DUMP="$OUT/run.jsonl"
   >"$DUMP" 2>"$OUT/run.err" || true
 
 # ── 断言：arm-job 的最终状态 ──────────────────────────────────────────────────
-STATUS="$(python3 - "$DUMP" <<'PY'
+RES="$(python3 - "$DUMP" <<'PY'
 import sys, json
 text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
 status = None
+owner = None
 
 def walk(o):
-    global status
+    global status, owner
     if isinstance(o, dict):
-        if o.get("subject") == "arm-job" and "status" in o:
-            status = o.get("status")
+        if o.get("subject") == "arm-job":
+            if "status" in o:
+                status = o.get("status")
+            if "ownerName" in o:
+                owner = o.get("ownerName")
         for v in o.values():
             walk(v)
     elif isinstance(o, list):
@@ -148,15 +154,21 @@ for line in text.splitlines():
             walk(json.loads(obj["result"]))
         except Exception:
             pass
-print(status or "unknown")
+print((status or "unknown") + "|" + (owner or ""))
 PY
 )"
+STATUS="${RES%%|*}"
+OWNER="${RES#*|}"
 
-echo "[info] arm-job 最终状态 = $STATUS (期望 $EXPECT)"
-if [ "$STATUS" = "$EXPECT" ]; then
-  echo "[PASS] scheduler arming：状态符合期望（autoArm=$AUTO_ARM）"
+echo "[info] arm-job 状态=$STATUS owner=${OWNER:-<none>}（期望 status=$EXPECT owner=${OWNER_EXPECT:-<any>}）"
+ok=1
+[ "$STATUS" = "$EXPECT" ] || { echo "[FAIL] status $STATUS != $EXPECT"; ok=0; }
+if [ -n "$OWNER_EXPECT" ]; then
+  [ "$OWNER" = "$OWNER_EXPECT" ] || { echo "[FAIL] owner ${OWNER:-<none>} != $OWNER_EXPECT"; ok=0; }
+fi
+if [ "$ok" = 1 ]; then
+  echo "[PASS] scheduler arming：状态/归属符合期望（autoArm=$AUTO_ARM）"
   exit 0
 else
-  echo "[FAIL] scheduler arming：状态 $STATUS != 期望 $EXPECT"
   exit 1
 fi
