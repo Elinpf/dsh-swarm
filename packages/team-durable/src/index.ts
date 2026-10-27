@@ -11,6 +11,8 @@
  */
 
 /** 当前 durable 事件 schema 版本（ADR-0002 §3）。 */
+import { appendPluginRecord, pluginRecordOf } from '@deepseek-ai/dsh-session'
+
 export const DURABLE_VERSION = 1
 
 /** 一条 durable 事件；`type` 形如 `swarm/<domain>/<action>`。 */
@@ -66,4 +68,68 @@ export function foldDurableEvents<S>(
     reduce(state, payload)
   }
   return state
+}
+
+/**
+ * **唯一持久化入口**（P52，通道 A）：把 durable 事件经 DSH 正规第三方通道
+ * **`appendPluginRecord("plugin:swarm/...", …)`** 真写入会话日志（而非仅 `ctx.emit` 进程内广播）。
+ *
+ * 依据 bench P50 + team-leader 裁定：第三方写会话日志的正规通道是 `appendPluginRecord` + `plugin:` 命名空间；
+ * 直接 `session.append('swarm/…')` 需 `ignorable`、DSH 未必接受第三方扩展。
+ * **事件名对外不变**（仍是 `swarm/<domain>/<action>`），只换落盘通道（记录类型 = `plugin:` 前缀）。
+ *
+ * 用法：写侧 `emitDurable(agent.session, 'swarm/core/review-entered', {…})`；
+ * 回放侧用 {@link durableRecordOf} 从 `session/event`（或历史事件）取回 `{name,payload}` 再 fold。
+ *
+ * @returns 是否成功写入会话日志（无 session / 抛错时为 false，不阻断调用方）。
+ */
+
+/** 会话日志里的记录类型：`plugin:` 前缀 + 逻辑名（如 `plugin:swarm/core/review-entered`）。 */
+export function pluginRecordType(name: string): string {
+  return `plugin:${name}`
+}
+
+/** 逻辑名（`swarm/...`）→ 是否属于本命名空间。 */
+export function isSwarmRecordType(type: string | undefined): boolean {
+  return typeof type === 'string' && type.startsWith('plugin:swarm/')
+}
+
+/** 结构化 session seam（只取 appendPluginRecord 的调用形状，避免硬绑上游类型）。 */
+export interface DurableSessionSeam {
+  readonly __durableSession?: true
+}
+
+/** 单条可回放的 durable 记录（逻辑名 + 业务 payload）。 */
+export interface DurableRecord {
+  name: string
+  payload: Record<string, unknown>
+}
+
+export function emitDurable(
+  session: unknown,
+  name: string,
+  payload: Record<string, unknown>,
+): boolean {
+  if (!session) return false
+  try {
+    ;(appendPluginRecord as unknown as (s: unknown, t: string, d: unknown) => unknown)(
+      session,
+      pluginRecordType(name),
+      { version: DURABLE_VERSION, name, ...payload },
+    )
+    return true
+  } catch {
+    // 持久化失败不阻断业务（宁降不升）；调用方可用返回值告警
+    return false
+  }
+}
+
+/** 从一条会话事件里取回 durable 记录（仅 `plugin:swarm/` 命名空间）；非本域返回 undefined。 */
+export function durableRecordOf(event: unknown): DurableRecord | undefined {
+  const rec = pluginRecordOf(event as never) as { type?: string; data?: unknown } | undefined
+  if (!rec || !isSwarmRecordType(rec.type)) return undefined
+  const name = (rec.type as string).slice('plugin:'.length)
+  const data = (rec.data ?? {}) as Record<string, unknown>
+  const { name: _n, ...rest } = data
+  return { name, payload: rest }
 }

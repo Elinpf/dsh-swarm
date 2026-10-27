@@ -17,8 +17,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
-import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import {
+  DURABLE_VERSION,
+  emitDurable as appendDurable,
+  foldDurableEvents,
+  isDurableEvent,
+} from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent, DurableSessionSeam } from '@elinpf/dsh-swarm-team-durable'
+import { durableRecordOf } from '@elinpf/dsh-swarm-team-durable'
 import type {
   MemberView,
   MessageRange,
@@ -34,6 +40,9 @@ import type {
  * ① 实验包升级/不可用时仍能构建；② 端口与上游实现解耦（换后端只改本文件）。
  * 字段名与 0.2.1-rc.3 实测一致（如 `sendMessage` 用 `target`、任务动作是 `reassign`）。
  */
+// P52：durable 落盘走 team-durable 的 `emitDurable`（通道 A：appendPluginRecord("plugin:swarm/…")）。
+// 回放经 `durableRecordOf(ev)` 取回 `swarm/…` 逻辑名再 fold。
+
 interface AgentTeamsSeam {
   membership(agent: Agent): TeamMembership
   tryMembership(agent: Agent): TeamMembership | undefined
@@ -187,6 +196,11 @@ export class TeamCoreService extends Service implements TeamCore {
         (ev.type.startsWith('swarm/core/') || ev.type.startsWith('swarm/task/'))
       )
         this.recover([ev])
+      // P52：真落盘记录类型为 `plugin:swarm/…`；经 durableRecordOf 取回逻辑名后 fold（跨重启 replay）
+      const rec = durableRecordOf(ev)
+      if (rec && (rec.name.startsWith('swarm/core/') || rec.name.startsWith('swarm/task/'))) {
+        this.recover([{ type: rec.name, payload: rec.payload }])
+      }
     })
 
     ctx.effect(
@@ -356,7 +370,7 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.planning.add(req.taskId)
-      this.emitDurable('swarm/task/plan-request', { taskId: req.taskId })
+      this.emitDurable(caller, 'swarm/task/plan-request', { taskId: req.taskId })
       return this.overlay(cur)
     }
     if (req.action === 'submit_plan') {
@@ -367,7 +381,10 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       if (typeof req.plan === 'string') this.plans.set(req.taskId, req.plan)
-      this.emitDurable('swarm/task/plan-request', { taskId: req.taskId, plan: req.plan ?? '' })
+      this.emitDurable(caller, 'swarm/task/plan-request', {
+        taskId: req.taskId,
+        plan: req.plan ?? '',
+      })
       return this.overlay(this.require().getTask(caller, req.taskId))
     }
     if (req.action === 'approve_plan') {
@@ -379,7 +396,7 @@ export class TeamCoreService extends Service implements TeamCore {
       }
       this.planning.delete(req.taskId)
       this.planFeedback.delete(req.taskId)
-      this.emitDurable('swarm/task/plan-response', { taskId: req.taskId, approved: true })
+      this.emitDurable(caller, 'swarm/task/plan-response', { taskId: req.taskId, approved: true })
       return this.overlay(this.require().getTask(caller, req.taskId))
     }
     if (req.action === 'reject_plan') {
@@ -391,7 +408,7 @@ export class TeamCoreService extends Service implements TeamCore {
       }
       const feedback = req.feedback ?? ''
       if (feedback) this.planFeedback.set(req.taskId, feedback)
-      this.emitDurable('swarm/task/plan-response', {
+      this.emitDurable(caller, 'swarm/task/plan-response', {
         taskId: req.taskId,
         approved: false,
         feedback,
@@ -422,7 +439,7 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.reviewing.add(req.taskId)
-      this.emitDurable('swarm/core/review-entered', { taskId: req.taskId })
+      this.emitDurable(caller, 'swarm/core/review-entered', { taskId: req.taskId })
       return this.overlay(cur)
     }
     if (req.action === 'reject_review') {
@@ -433,11 +450,14 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.reviewing.delete(req.taskId)
-      this.emitDurable('swarm/core/review-left', { taskId: req.taskId, outcome: 'reopened' })
+      this.emitDurable(caller, 'swarm/core/review-left', {
+        taskId: req.taskId,
+        outcome: 'reopened',
+      })
       // 返工反馈（P30）：携带内容并回流给作者 —— 作者可从 revisionFeedbackOf/上下文读到「改什么」。
       if (typeof req.feedback === 'string' && req.feedback.length > 0) {
         this.revisionFeedback.set(req.taskId, req.feedback)
-        this.emitDurable('swarm/task/revision-requested', {
+        this.emitDurable(caller, 'swarm/task/revision-requested', {
           taskId: req.taskId,
           feedback: req.feedback,
         })
@@ -454,7 +474,7 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.reviewing.delete(req.taskId)
-      this.emitDurable('swarm/core/review-left', {
+      this.emitDurable(caller, 'swarm/core/review-left', {
         taskId: req.taskId,
         outcome:
           req.action === 'complete'
@@ -588,13 +608,18 @@ export class TeamCoreService extends Service implements TeamCore {
     return this.revisionFeedback.get(taskId)
   }
 
-  /** 发一条 durable 事件（ADR-0002）；失败不阻断（仅告警）。 */
-  private emitDurable(type: string, payload: Record<string, unknown>): void {
+  /**
+   * 发一条 durable 事件（ADR-0002，P52 修正）：进程内 `ctx.emit`（供本进程 fold）**且**
+   * **真 append 到会话日志**（`caller.session.append`，供跨重启 replay——P50 指出的缺失）。失败不阻断。
+   */
+  private emitDurable(caller: Agent, type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
         version: DURABLE_VERSION,
         ...payload,
       })
+      const session = (caller as unknown as { session?: DurableSessionSeam }).session
+      appendDurable(session, type, payload)
     } catch (e) {
       this.ctx.logger?.warn?.(
         'team-core: durable emit %s failed: %s',
