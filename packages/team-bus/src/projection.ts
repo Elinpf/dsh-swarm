@@ -24,8 +24,8 @@ import { durableRecordOf } from '@elinpf/dsh-swarm-team-durable'
 export interface SwarmChatMessage {
   /** 稳定消息 id（bus 用 `bcast-<n>`/`mcast-<n>`；DM 用原生 messageId）。 */
   id: string
-  /** 形态：全体广播 / 多播 / 与 Lead 相关的 DM。 */
-  kind: 'broadcast' | 'multicast' | 'dm'
+  /** 形态：全体广播 / 多播 / 与 Lead 相关的 DM / 收到的 relay / Lead 发出的 outbound。 */
+  kind: 'broadcast' | 'multicast' | 'dm' | 'relay' | 'outbound'
   /** bus 主题（仅 bus 消息有）。 */
   topic?: string
   senderId: string
@@ -66,7 +66,7 @@ export interface ProjectionEvent {
 const messageSchema = z
   .object({
     id: z.string(),
-    kind: z.enum(['broadcast', 'multicast', 'dm']),
+    kind: z.enum(['broadcast', 'multicast', 'dm', 'relay', 'outbound']),
     topic: z.string().optional(),
     senderId: z.string(),
     senderName: z.string(),
@@ -168,8 +168,87 @@ export function dmMessageFrom(
   return { id, kind: 'dm', senderId, senderName, content, seq: event.seq, ts: event.time }
 }
 
-/** 追加一条消息（去重 + 上限裁剪）；无变化时返回原引用。 */
-function appended(
+/**
+ * 原生 relay 事件 `agent/inbox/spliced`（`source.kind='agent-message'`, `form='relay'`）
+ * → 收到的团队消息。本轮真实流量（原生 `send_message` DM）就落在这里（P61 实测）。
+ * 框首块形如 `Team message from <name>:`（可能带消息 id）；其后文本块为正文。
+ * 结构化读取，不 import 实验包类型。返回 0..N 条（一次 splice 可含多条）。
+ */
+export function relayMessagesFrom(event: ProjectionEvent): SwarmChatMessage[] {
+  if (event.type !== 'agent/inbox/spliced') return []
+  const data = event.data
+  if (!isRecord(data)) return []
+  const inserted = data['inserted']
+  if (!Array.isArray(inserted)) return []
+  const out: SwarmChatMessage[] = []
+  for (const item of inserted) {
+    if (!isRecord(item)) continue
+    const source = item['source']
+    if (!isRecord(source) || source['kind'] !== 'agent-message' || source['form'] !== 'relay') continue
+    const id = item['id']
+    if (typeof id !== 'string') continue
+    const content = item['content']
+    if (!Array.isArray(content)) continue
+    const texts = content
+      .filter(
+        (b): b is Record<string, unknown> =>
+          isRecord(b) && b['type'] === 'text' && typeof b['text'] === 'string',
+      )
+      .map((b) => b['text'] as string)
+    const frame = /^Team message(?: [0-9a-fA-F-]+)? from (.+?):\s*$/.exec(texts[0] ?? '')
+    const senderId =
+      typeof source['senderSessionId'] === 'string' ? source['senderSessionId'] : 'unknown'
+    const senderName = frame?.[1]?.trim() ?? senderId
+    const body = frame !== null ? texts.slice(1) : texts
+    out.push({
+      id,
+      kind: 'relay',
+      senderId,
+      senderName,
+      content: body.map((text) => ({ type: 'text', text })),
+      seq: event.seq,
+      ts: event.time,
+    })
+  }
+  return out
+}
+
+/**
+ * Lead 自己发出的消息：Lead 会话日志里的 `tool/call` 且 `name='send_message'`，
+ * 参数 `{ target, message }`（`arguments` 为 JSON 串）。标 `kind:'outbound'`，
+ * 与收到的 relay 区分展示；`targets` 记目标名。
+ */
+export function outboundMessageFrom(event: ProjectionEvent): SwarmChatMessage | undefined {
+  if (event.type !== 'tool/call') return undefined
+  const data = event.data
+  if (!isRecord(data) || data['name'] !== 'send_message') return undefined
+  const args = data['arguments']
+  if (typeof args !== 'string') return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(args)
+  } catch {
+    return undefined
+  }
+  if (!isRecord(parsed)) return undefined
+  const target = parsed['target']
+  const message = parsed['message']
+  if (typeof target !== 'string' || typeof message !== 'string') return undefined
+  const callId = data['callId']
+  const id = typeof callId === 'string' ? `out-${callId}` : `out-seq-${event.seq}`
+  return {
+    id,
+    kind: 'outbound',
+    senderId: 'lead',
+    senderName: 'lead',
+    content: [{ type: 'text', text: message }],
+    targets: [target],
+    seq: event.seq,
+    ts: event.time,
+  }
+}
+
+/** 追加一条消息（去重 + 上限裁剪）；无变化时返回原引用。 */function appended(
   messages: readonly SwarmChatMessage[],
   message: SwarmChatMessage,
 ): readonly SwarmChatMessage[] {
@@ -197,19 +276,22 @@ export const swarmBusProjectionDefinition = {
   stateSchema,
   init: (header: { id: string }): SwarmBusState => ({ id: header.id, messages: [] }),
   apply: (state: SwarmBusState, event: ProjectionEvent): SwarmBusState => {
+    const candidates: SwarmChatMessage[] = []
     const snap = busSnapshot(event)
     if (snap !== undefined) {
       const message = busMessageFrom(snap, event)
-      if (message === undefined) return state
-      const messages = appended(state.messages, message)
-      return messages === state.messages ? state : { ...state, messages }
+      if (message !== undefined) candidates.push(message)
+    } else {
+      candidates.push(...relayMessagesFrom(event))
+      const out = outboundMessageFrom(event)
+      if (out !== undefined) candidates.push(out)
+      const dm = dmMessageFrom(event, state.id)
+      if (dm !== undefined) candidates.push(dm)
     }
-    const dm = dmMessageFrom(event, state.id)
-    if (dm !== undefined) {
-      const messages = appended(state.messages, dm)
-      return messages === state.messages ? state : { ...state, messages }
-    }
-    return state
+    if (candidates.length === 0) return state
+    let messages = state.messages
+    for (const candidate of candidates) messages = appended(messages, candidate)
+    return messages === state.messages ? state : { ...state, messages }
   },
   wire: { viewSchema, view: (state: SwarmBusState): SwarmBusView => buildView(state.messages) },
 }

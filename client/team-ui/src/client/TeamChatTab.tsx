@@ -29,7 +29,7 @@ interface MemberRow {
 
 interface ChatMessage {
   id: string
-  kind: 'broadcast' | 'multicast' | 'dm'
+  kind: 'broadcast' | 'multicast' | 'dm' | 'relay' | 'outbound'
   senderName?: string
   topic?: string
   content?: ReadonlyArray<{ type?: string; text?: string }>
@@ -143,9 +143,10 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
                 }}
               >
                 <div style={{ fontSize: 11, color: '#666' }}>
+                  {m.kind === 'outbound' ? '我 → ' : ''}
                   {m.senderName}
                   {m.topic === undefined ? '' : ` · ${m.topic}`}
-                  {m.kind === 'multicast' && m.targets !== undefined
+                  {(m.kind === 'multicast' || m.kind === 'outbound') && m.targets !== undefined
                     ? ` → ${m.targets.join(', ')}`
                     : ''}
                 </div>

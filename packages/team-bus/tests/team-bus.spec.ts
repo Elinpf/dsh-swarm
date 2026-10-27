@@ -279,4 +279,75 @@ describe('@elinpf/dsh-swarm-team-bus', () => {
     expect(registered[0]).toBe(swarmBusProjectionDefinition)
     expect(disposers.length).toBeGreaterThanOrEqual(0)
   })
+
+  it('P61：swarmBus 折叠原生 relay（agent/inbox/spliced）+ lead outbound（tool/call send_message）', () => {
+    const def = swarmBusProjectionDefinition
+    let s = def.init({ id: 'lead' } as never, 0 as never)
+    s = def.apply(
+      s,
+      ({
+        type: 'agent/inbox/spliced',
+        seq: 1,
+        time: 1001,
+        data: {
+          inserted: [
+            {
+              id: 'm1',
+              content: [
+                { type: 'text', text: 'Team message from synthesizer:' },
+                { type: 'text', text: 'synthesizer 已就绪' },
+              ],
+              source: { kind: 'agent-message', form: 'relay', senderSessionId: 'sess-syn' },
+              role: 'user',
+            },
+          ],
+        },
+      }) as never,
+    )
+    s = def.apply(
+      s,
+      ({
+        type: 'tool/call',
+        seq: 2,
+        time: 1002,
+        data: {
+          name: 'send_message',
+          callId: 'call_1',
+          arguments: JSON.stringify({ target: 'researcher-a', message: '请核查' }),
+        },
+      }) as never,
+    )
+    // 非 relay 的 spliced（model/tool）→ 原状态引用不变
+    const same = def.apply(
+      s,
+      ({
+        type: 'agent/inbox/spliced',
+        seq: 3,
+        time: 1003,
+        data: {
+          inserted: [{ id: 'x', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model' } }],
+        },
+      }) as never,
+    )
+    expect(same).toBe(s)
+    // 其它工具调用不误收
+    expect(
+      def.apply(
+        s,
+        ({
+          type: 'tool/call',
+          seq: 4,
+          time: 1004,
+          data: { name: 'list_agents', callId: 'c2', arguments: '{}' },
+        }) as never,
+      ),
+    ).toBe(s)
+
+    const view = def.wire.view(s)
+    expect(view.messages.map((m) => [m.kind, m.senderName])).toEqual([
+      ['relay', 'synthesizer'],
+      ['outbound', 'lead'],
+    ])
+    expect(view.messages[1]!.targets).toEqual(['researcher-a'])
+  })
 })

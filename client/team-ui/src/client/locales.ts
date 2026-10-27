@@ -11,7 +11,7 @@ export interface TeamKey {
 export const zh: TeamKey = {
   title: '群聊',
   roster: '成员',
-  messages: '消息（广播 / 多播）',
+  messages: '消息（广播 / 私信）',
   empty: '暂无消息',
 }
 
