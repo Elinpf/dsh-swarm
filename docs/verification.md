@@ -1514,11 +1514,40 @@ $ node scripts/verify-e2e.mjs              # ✅ 集成冒烟通过
 $ bash scripts/e2e-profile.sh --no-model   # PASS=7 FAIL=0
 ```
 
-### E. 行为级探针（真实模型）——待批预算
+### E. 行为级探针（真实模型 profile）— 先红后绿
 
-- 目标：P46 风格探针验证「团队模式下 leader **先 spawn 成员**，而非自己干」（对齐用户截图的反例）。
-- 状态：**pending 预算批准**（先报 team-leader，未经批准不跑真实模型）。
-- 预算：见团队汇报（本次未消耗真实模型 token）。
+**【真实 profile 级 已验证】**（预算已批 ≤0.3M / 上限 0.5M）
+
+- **场景（复刻用户截图）**：纯用户请求，无任何团队指令：
+  `收集一下最近最新的 AI 相关近况，给我一份简报。`
+- **环境**：`DSH_PROFILE=headless`（该 profile 装有 `@elinpf/dsh-swarm-bundle` → **含新 `team:leader` 段**，
+  及原生 `agent-team`/`tool-agent-team`）；真实模型（DeepSeek-Flash，经 `run-headless.sh` overlay）。
+  证据：`.runtime/probe/p54-behavior-headless.json`。
+  > 说明：headless **未激活** `preset-swarm`（等待 `agentPresets` 服务；见 `.err`），故本次**不含** web 集群 preset 的
+  > 「You are a coding agent…」persona。**⇒ persona-vs-section 张力本次未覆盖**（见下方「未覆盖项」）。
+- **断言落在实际 tool_call 序列上**（非文本措辞）——leader 的工具调用顺序：
+  ```
+  [0] bash(env) [1] list_agents [2] todo_write
+  [3] spawn_teammate  [4] spawn_teammate  [5] spawn_teammate  [6] spawn_teammate
+  [7] team_task_create [8] ...[11] team_task_create
+  [12] send_message ... [15]
+  [16] todo_write [17] wait_agent ... （随后 wait/task_list/list_agents 轮询）
+  [44] web_fetch [45] web_fetch   ← 在派发之后（由被派的调研成员执行）
+  ```
+- **判定（先红后绿）**：
+  - ✅ **先派成员**：`spawn_teammate` 首现于 idx **3**；全程**从未调用 `web_search`**（`first==None`）。
+  - ✅ **成员先于任务存在**：`spawn_teammate`(3–6) **先于** `team_task_create`(7–11)。
+  - ✅ 4 名成员（researcher-models / researcher-industry / researcher-policy / writer-briefing）+ 5 个共享任务 + 定向消息。
+  - 「**先红**」反例 = 用户截图（改前：leader 先自己 `web_search`，被追问才建看板派成员）；本次「改后」已不再出现该反例。
+- **预算（如实登记，超上限）**：本探针 **1 次会话**，按 `status.usage` 累计
+  `sum(inputTokens)=834,057 / sum(outputTokens)=11,901 / total≈846k` —— **超过 0.5M 上限**，
+  触发「near-cap 停手」：已**终止探针**（未跑到最终简报；delegation-first 结论在终止前已充分成立）。
+- **未覆盖项 / 建议**：
+  1. **persona 张力未测**：本次 headless 未加载 swarm preset 的「coding agent」persona。
+     若要验证「`team:leader` 段能否压过 web 集群 preset 的 coding-agent persona」，需在 **web profile**
+     跑探针——但 web app **不支持 `--json`**（无 tool_call 流），需另找取证路径，**建议另立任务 + 单列预算**。
+  2. **leader 仍高频 `wait_agent`**（idx 17 起）：疑为 P45/P46 的阻塞等待倾向（`team:dispatch` event-wake 本应抑制），
+     属既有问题，**非 P54 范围**，建议 P46 跟进。
 
 
 ## N. P51 消息兜底（未读闸 + 超时重投/升级）

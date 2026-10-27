@@ -51,6 +51,11 @@ cache-safe context（不进前缀）：`team:identity` / `team:roster` / `team:i
 - 单测 `tests/team-prompt.spec.ts`（含新段存在/内容、**不被渐进披露过滤**、英文变体）。
 - 集成测 `tests/team-prompt.integration.spec.ts`：用**真实 `@deepseek-ai/dsh-system-prompt`**
   装配 + `renderPrompt`，断言 `team:leader` 确实进入渲染后的提示词、且团队未建时不被过滤。
+- **真实 profile 行为探针（headless + 真实模型，先红后绿）**：纯用户请求
+  「收集一下最近最新的 AI 相关近况，给我一份简报。」下，leader 的工具序列为
+  `... list_agents → spawn_teammate×4 → team_task_create×5 → send_message...`，
+  **先派成员、成员先于任务、全程未调用 `web_search`**（对齐并修复用户截图反例）。
+  详见 `docs/verification.md` §P54-E。
 
 ```console
 $ pnpm --filter @elinpf/dsh-swarm-team-prompt test
