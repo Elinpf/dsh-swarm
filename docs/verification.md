@@ -1152,3 +1152,45 @@ $ (cd packages/team-completion   && corepack pnpm exec vitest run)   # Tests  8 
 ## E. 全链路
 
 `build / test / verify / verify:e2e / lint / format:check` + `scripts/e2e-profile.sh --no-model` 全绿（见提交 `docs(plan-gate)` 的原始输出）。
+
+
+## M. P1 解锁主动推送 + 定向可观测事件（P31 / dev-2）
+
+P30（计划闸 `42cf5f9`）落地后填空完成。
+
+### M.1 落地事件（贴近源语义；通知型，非 durable —— 同 `swarm/team/completed`）
+
+| 事件 | 触发点 | 测试 |
+|---|---|---|
+| `swarm/task/released` | `team-core.updateTask` action=`release` 后 | team-core ✅ |
+| `swarm/task/revoked` | `reassign` 且 owner 变化 → **向原 owner 定向 DM「你不用做了」** | team-core ✅ |
+| `swarm/task/terminal` | `updateTask` 后状态 `completed/deleted`（内部信号，不对外承诺） | team-core ✅ |
+| `swarm/task/unblocked` | `team-scheduler` 收到 terminal 或扫描发现**新就绪** → 定向 nudge 下游归属人 | team-scheduler ✅ |
+| `swarm/task/list-drained` | 扫描发现「全任务终态」上升沿 | team-scheduler ✅ |
+| `swarm/member/status-changed` | 扫描 diff 成员状态变化（边沿） | team-scheduler ✅ |
+
+命名与 P30 的 `swarm/task/plan-*`/`revision-requested` **不撞**（落地前再 grep 确认）。新增均为**通知型**（未引入新 durable 状态）→ 不涉 ADR-0002 折叠/恢复测试。
+
+### M.2 解锁→唤醒延迟（真实 team-scheduler，两档 + push 对比）
+
+```console
+$ node scripts/verify-unblock-latency.mjs
+| poll 档位 | pollMs | 就绪→首次 nudge 延迟 |
+| 测试档     | 200ms   | ≈ 201ms   |
+| 生产默认档 | 30000ms | ≈ 30000ms |
+[结论] 延迟上界 = 一个 poll 周期（随配置变化，非固定 200ms）
+[调度器不存活] 未 arm() → 观察窗内 nudge 数 = 0（P1 实质风险）
+[push] 终态→nudge 延迟 ≈ 0ms  → push 显著快于 poll
+```
+- **push 前**：解锁到唤醒 = 一个 poll 周期（生产默认 **30s**），且**调度器不存活则根本不发生**。
+- **push 后**：终态事件驱动 → **≈0ms**；轮询**作为兜底保留**（两者不互斥）。
+
+### M.3 单测（先红后绿）
+
+- `team-core`：release→released、reassign→revoked+定向 DM 原 owner、complete→terminal（+3，共 25 条）。
+- `team-scheduler`：`onTaskTerminal` 定向 nudge+unblocked、订阅 `swarm/task/terminal` 事件驱动推送、`member/status-changed` 边沿、`list-drained` 上升沿（+4，共 12 条）。
+
+### M.4 边界
+
+- 通知型事件**不 durable**（无新状态）；若后续要把「解锁」当状态，再按 ADR-0002 增补。
+- push 依赖**同进程** `swarm/task/terminal`（`ctx.on`）；跨进程的终态传播仍靠 transport（见 §K/§L），未在本轮打通跨进程 unlock 推送。

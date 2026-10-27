@@ -1,7 +1,7 @@
 # P31 设计：依赖解锁主动推送 + 定向可观测事件（待 P30 落地后填空）
 
 > 产出人：dsh-plugin-dev-2 ｜ 任务：P31-unblock-push-events
-> 状态：**设计与探针先行；代码填空待 dev-1 的 P30（计划闸/返工反馈）落地后**（共享工作树，避免与 `team-core`/`team-scheduler` 的 P30 改动互相覆盖）。
+> 状态：**已落地**（P30 `42cf5f9` 后填空完成）：`team-core` released/revoked/terminal + `team-scheduler` 订阅推送 + P3 两事件；探针实测 push ≈0ms vs poll 200/30000ms。
 > 权威输入：`docs/event-alignment.md`（P28 审计，P1/P2/P3 条目）。
 
 ---

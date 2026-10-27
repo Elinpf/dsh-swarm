@@ -11,7 +11,11 @@ const task = {
   ready: true,
 }
 
-function makeCtx(withSeam: boolean) {
+function makeCtx(
+  withSeam: boolean,
+  opts: { updateResult?: (r: any) => any; getTaskResult?: () => any } = {},
+) {
+  const emissions: Array<{ type: string; payload: any }> = []
   const sendCalls: any[] = []
   const updateCalls: any[] = []
   const seam = {
@@ -29,11 +33,11 @@ function makeCtx(withSeam: boolean) {
       return { messageId: 'm1' }
     },
     createTask: async () => task,
-    getTask: () => task,
-    listTasks: () => [task],
+    getTask: () => (opts.getTaskResult ? opts.getTaskResult() : task),
+    listTasks: () => [opts.getTaskResult ? opts.getTaskResult() : task],
     updateTask: async (_c: unknown, r: any) => {
       updateCalls.push(r)
-      return { ...task, status: 'in_progress' }
+      return opts.updateResult ? opts.updateResult(r) : { ...task, status: 'in_progress' }
     },
     waitForChange: async () => ({ timedOut: false }),
     interrupt: () => ({ previousStatus: 'running' as const }),
@@ -54,10 +58,12 @@ function makeCtx(withSeam: boolean) {
       services[name] = v
       for (const cb of injectors) cb({ get: (n: string) => services[n] })
     },
+    emit: (t: string, pay: unknown) => emissions.push({ type: t, payload: pay }),
     _sendCalls: sendCalls,
     _updateCalls: updateCalls,
+    _emissions: emissions,
   }
-  return { ctx, sendCalls, updateCalls }
+  return { ctx, sendCalls, updateCalls, emissions }
 }
 
 const agent = { id: 'lead' } as never
@@ -467,5 +473,40 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
     expect(core2.getTask(agent, 't1').status).toBe('planned') // 恢复
     expect(core2.planOf('t1')).toBe('do X')
     expect(core2.planFeedbackOf('t1')).toBe('补测试')
+  })
+  it('P31：release → swarm/task/released', async () => {
+    const { ctx, emissions } = makeCtx(true, {
+      updateResult: () => ({ ...task, status: 'pending', ownerName: undefined }),
+    })
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'release' })
+    expect(emissions.some((e) => e.type === 'swarm/task/released')).toBe(true)
+  })
+
+  it('P31：reassign → swarm/task/revoked + 向原 owner 定向 DM', async () => {
+    const { ctx, emissions, sendCalls } = makeCtx(true, {
+      getTaskResult: () => ({ ...task, status: 'in_progress', ownerName: 'old' }),
+      updateResult: () => ({ ...task, status: 'in_progress', ownerName: 'w' }),
+    })
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'assign',
+      owner: 'w',
+    })
+    const revoked = emissions.find((e) => e.type === 'swarm/task/revoked')
+    expect(revoked?.payload).toMatchObject({ taskId: 't1', fromOwner: 'old' })
+    expect(sendCalls.some((c) => c.target === 'old')).toBe(true) // 原 owner 收到「你不用做了」
+  })
+
+  it('P31：complete → swarm/task/terminal（触发解锁推送）', async () => {
+    const { ctx, emissions } = makeCtx(true, {
+      getTaskResult: () => ({ ...task, status: 'in_progress', ownerName: 'w' }),
+      updateResult: () => ({ ...task, status: 'completed', ownerName: 'w' }),
+    })
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'complete' })
+    expect(emissions.some((e) => e.type === 'swarm/task/terminal')).toBe(true)
   })
 })

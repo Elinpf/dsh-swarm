@@ -88,11 +88,23 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
   private readonly reviewSince = new Map<string, number>()
   /** 已因评审卡住升级过的 taskId（每次卡住只升一次）。 */
   private readonly reviewEscalated = new Set<string>()
+  /** 已推过「解锁就绪」nudge 的 taskId（离开就绪后清除，允许再次解锁再推）。 */
+  private readonly readyNudged = new Set<string>()
+  /** 成员状态快照（diff → `swarm/member/status-changed`）。 */
+  private readonly memberStatus = new Map<string, string>()
+  /** 看板全终态的上/下升沿（→ `swarm/task/list-drained`）。 */
+  private drained = false
 
   constructor(ctx: Context, config: Config = defaultConfig()) {
     super(ctx, 'teamScheduler')
     this.config = config
     this._mode = config.mode
+    // P1 依赖解锁**主动推送**：订阅任务终态事件 → 立即重算 newly-ready（轮询兜底仍在）。
+    // cordis 事件名走宽松签名（同 team-core emit 的做法），避免与已知事件签名冲突。
+    const on = (ctx as unknown as { on?: (n: string, h: () => void) => () => void }).on
+    on?.call(ctx, 'swarm/task/terminal', () => {
+      if (this.armedAgent) void this.onTaskTerminal(this.armedAgent).catch(() => {})
+    })
     ctx.effect(() => () => this.dispose(), 'teamScheduler.lifecycle()')
   }
 
@@ -121,6 +133,10 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
 
       await this.staleSweep(agent, members, tasks, report)
       await this.reviewStallSweep(agent, tasks, report)
+      // P3：成员状态变更 + 看板排空（边沿）；并清理已推标记
+      this.memberStatusSweep(members)
+      this.drainSweep(tasks)
+      this.pruneReadyNudged(tasks)
       report.converged = true
       this.failures = 0
       return report
@@ -147,6 +163,85 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     })
   }
 
+  /**
+   * P1：上游终态 → 重算 newly-ready → **定向 nudge** 下游归属人（无 owner 时 nudge 空闲成员）+
+   * 发 `swarm/task/unblocked`。由 `swarm/task/terminal` 驱动（不依赖 poll）；轮询兜底仍在。
+   */
+  async onTaskTerminal(agent: Agent): Promise<number> {
+    const tasks = this.ctx.teamCore.listTasks(agent)
+    const members = this.ctx.teamCore.listMembers(agent)
+    const active = new Set(
+      tasks.filter((t) => this.isBusy(t.status) && t.ownerName).map((t) => t.ownerName as string),
+    )
+    const idle = members.filter((m) => m.role !== 'lead' && !active.has(m.name)).map((m) => m.name)
+
+    let pushed = 0
+    for (const t of tasks) {
+      if (!t.ready || t.status !== 'pending') continue
+      if (this.readyNudged.has(t.id)) continue // 每次就绪只推一次
+      this.readyNudged.add(t.id)
+      const targets = t.ownerName ? [t.ownerName] : idle
+      for (const name of targets) {
+        await this.nudge(agent, name, `任务 ${t.id} 已解锁就绪，请认领/推进。`)
+      }
+      this.emitEvent('swarm/task/unblocked', { taskId: t.id, targets })
+      pushed += 1
+    }
+    return pushed
+  }
+
+  /** 就绪集合变化时清除已推标记（再次阻塞→再解锁可重推）。 */
+  private pruneReadyNudged(tasks: TaskView[]): void {
+    for (const id of [...this.readyNudged]) {
+      if (!tasks.some((t) => t.id === id && t.ready && t.status === 'pending')) {
+        this.readyNudged.delete(id)
+      }
+    }
+  }
+
+  /** P3：成员状态变更（边沿，diff 快照）。 */
+  private memberStatusSweep(members: MemberView[]): void {
+    for (const m of members) {
+      const prev = this.memberStatus.get(m.id)
+      if (prev !== m.status) {
+        this.memberStatus.set(m.id, m.status)
+        if (prev !== undefined) {
+          this.emitEvent('swarm/member/status-changed', {
+            memberId: m.id,
+            name: m.name,
+            status: m.status,
+            previous: prev,
+          })
+        }
+      }
+    }
+  }
+
+  /** P3：看板排空（全任务终态的上/下升沿）。 */
+  private drainSweep(tasks: TaskView[]): void {
+    const allTerminal =
+      tasks.length > 0 && tasks.every((t) => t.status === 'completed' || t.status === 'deleted')
+    if (allTerminal && !this.drained) {
+      this.drained = true
+      this.emitEvent('swarm/task/list-drained', { count: tasks.length })
+    } else if (!allTerminal) {
+      this.drained = false
+    }
+  }
+
+  /** 发一条通知型事件（非 durable）。 */
+  private emitEvent(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, payload)
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-scheduler: emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
+  }
+
   arm(agent: Agent): () => void {
     this.armedAgent = agent
     if (this.timer !== undefined) clearInterval(this.timer)
@@ -168,6 +263,9 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     this.streak.clear()
     this.reviewSince.clear()
     this.reviewEscalated.clear()
+    this.readyNudged.clear()
+    this.memberStatus.clear()
+    this.drained = false
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────────────

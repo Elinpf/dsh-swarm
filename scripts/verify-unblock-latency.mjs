@@ -144,5 +144,5 @@ console.log(okTest && okProd ? '[OK]   两档均 ≤ 一个 poll 周期' : '[WAR
   }
 }
 
-console.log('\n✅ 延迟探针完成（两档 poll 上界 + 调度器不存活风险；push 待 P30 后自动对比）')
+console.log('\n✅ 延迟探针完成（两档 poll 上界 + 调度器不存活风险 + push 对比）')
 process.exit(0)

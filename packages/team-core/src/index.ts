@@ -466,6 +466,8 @@ export class TeamCoreService extends Service implements TeamCore {
     }
     // 端口动作名 'assign' → 原生 'reassign'
     const action = req.action === 'assign' ? 'reassign' : req.action
+    // 变更前快照：reassign 要定向通知**原** owner；终态要触发依赖解锁推送（P31）
+    const before = this.require().getTask(caller, req.taskId)
     const updated = await this.require().updateTask(caller, {
       taskId: req.taskId,
       expectedRevision: req.expectedRevision,
@@ -475,7 +477,49 @@ export class TeamCoreService extends Service implements TeamCore {
       blockedBy: req.blockedBy,
       owner: req.owner,
     })
-    return this.overlay(updated)
+    const after = this.overlay(updated)
+    this.afterTaskChange(caller, action, before, after)
+    return after
+  }
+
+  /**
+   * 任务变更后的**定向可观测/通知**（P28 event-alignment P1/P2，贴近源语义）：
+   * - `release` → `swarm/task/released`（回池）
+   * - `reassign` 且 owner 变化 → 向**原 owner** 定向 DM「你不用做了」+ `swarm/task/revoked`
+   * - 终态（completed/cancelled/deleted）→ `swarm/task/terminal`（供 team-scheduler 立即重算 unlock，替代纯轮询）
+   */
+  private afterTaskChange(caller: Agent, action: string, before: TaskView, after: TaskView): void {
+    if (action === 'release') {
+      this.emitEvent('swarm/task/released', {
+        taskId: after.id,
+        previousOwner: before.ownerName,
+      })
+    }
+    if (action === 'reassign' && before.ownerName && before.ownerName !== after.ownerName) {
+      this.emitEvent('swarm/task/revoked', { taskId: after.id, fromOwner: before.ownerName })
+      void this.send(caller, {
+        range: { kind: 'dm', to: before.ownerName },
+        content: [
+          {
+            type: 'text',
+            text: `任务 ${after.id} 已被改派给 ${after.ownerName ?? '他人'}，你不用再做这件事。`,
+          },
+        ],
+        delivery: 'wakeup',
+      }).catch(() => {})
+    }
+    if (after.status === 'completed' || after.status === 'deleted') {
+      this.emitEvent('swarm/task/terminal', { taskId: after.id, status: after.status })
+    }
+  }
+
+  /** 发一条**通知型**事件（非 durable：仅广播，不参与 ADR-0002 折叠）。 */
+  private emitEvent(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, payload)
+    } catch (e) {
+      this.ctx.logger?.warn?.('team-core: emit %s failed: %s', type, String((e as Error)?.message))
+    }
   }
 
   async waitForChange(

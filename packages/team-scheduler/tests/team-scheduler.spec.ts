@@ -18,6 +18,8 @@ function makeCtx(opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean }
     },
   ]
   const sent: Array<{ from: string; to: string; text: string }> = []
+  const emissions: Array<{ type: string; payload: any }> = []
+  const onHandlers: Record<string, Array<() => void>> = {}
   const disposers: Array<() => void> = []
   const services: Record<string, unknown> = {}
   const teamCore = {
@@ -57,9 +59,14 @@ function makeCtx(opts: { members?: any[]; tasks?: any[]; throwOnList?: boolean }
     },
     _sent: sent,
     _tasks: tasks,
+    emit: (t: string, pay: unknown) => emissions.push({ type: t, payload: pay }),
+    on: (name: string, h: () => void) => {
+      ;(onHandlers[name] ??= []).push(h)
+      return () => {}
+    },
     _disposeAll: () => disposers.forEach((d) => d()),
   }
-  return { ctx, sent, tasks, teamCore }
+  return { ctx, sent, tasks, teamCore, emissions, onHandlers }
 }
 
 const agent = { id: 'lead', name: 'lead' } as never
@@ -212,5 +219,82 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     const r = await sch.scan(agent)
     expect(r.started).toBe(0)
     expect(sent.filter((s) => s.text.includes('启动')).length).toBe(0)
+  })
+  it('P1：onTaskTerminal 定向 nudge 下游归属人 + emit swarm/task/unblocked', async () => {
+    const { ctx, sent, emissions } = makeCtx({
+      tasks: [
+        {
+          id: 't2',
+          revision: 0,
+          subject: 'downstream',
+          description: '',
+          status: 'pending',
+          blockedBy: [],
+          ready: true,
+          ownerName: 'w',
+        },
+      ],
+    })
+    const sch = new TeamSchedulerService(ctx, cfg())
+    const pushed = await sch.onTaskTerminal(agent)
+    expect(pushed).toBe(1)
+    expect(sent.some((s) => s.to === 'w' && /解锁/.test(s.text))).toBe(true)
+    expect(emissions.some((e) => e.type === 'swarm/task/unblocked')).toBe(true)
+  })
+
+  it('P1：订阅 swarm/task/terminal → 事件驱动推送（不依赖 poll）', async () => {
+    const { ctx, sent, onHandlers } = makeCtx({
+      tasks: [
+        {
+          id: 't3',
+          revision: 0,
+          subject: 'd',
+          description: '',
+          status: 'pending',
+          blockedBy: [],
+          ready: true,
+          ownerName: 'w',
+        },
+      ],
+    })
+    const sch = new TeamSchedulerService(ctx, cfg({ pollMs: 999999 })) // poll 极慢，排除轮询
+    const dispose = sch.arm(agent)
+    expect(onHandlers['swarm/task/terminal']?.length).toBe(1)
+    sent.length = 0
+    onHandlers['swarm/task/terminal']![0]!()
+    await new Promise((r) => setTimeout(r, 20))
+    expect(sent.some((s) => s.to === 'w' && /解锁/.test(s.text))).toBe(true)
+    dispose()
+  })
+
+  it('P3：成员状态变更 → swarm/member/status-changed（边沿，仅变化时发）', async () => {
+    const { ctx, emissions } = makeCtx()
+    const sch = new TeamSchedulerService(ctx, cfg())
+    await sch.scan(agent) // 首次建立快照，不发
+    expect(emissions.some((e) => e.type === 'swarm/member/status-changed')).toBe(false)
+    const w = (ctx.teamCore.listMembers(agent) as any[]).find((m) => m.name === 'w')
+    w.status = 'running'
+    await sch.scan(agent)
+    expect(emissions.some((e) => e.type === 'swarm/member/status-changed')).toBe(true)
+  })
+
+  it('P3：看板排空 → swarm/task/list-drained（上升沿一次）', async () => {
+    const { ctx, emissions } = makeCtx({
+      tasks: [
+        {
+          id: 't9',
+          revision: 1,
+          subject: 'done',
+          description: '',
+          status: 'completed',
+          blockedBy: [],
+          ready: false,
+        },
+      ],
+    })
+    const sch = new TeamSchedulerService(ctx, cfg())
+    await sch.scan(agent)
+    await sch.scan(agent)
+    expect(emissions.filter((e) => e.type === 'swarm/task/list-drained').length).toBe(1)
   })
 })
