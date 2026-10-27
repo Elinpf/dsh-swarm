@@ -982,6 +982,7 @@ $ npm view @deepseek-ai/dsh-subprocess-ssh dist-tags --json → next 0.2.1-rc.4
   | carol          | 1     | **0**  | 0          |
 
   → 唤醒数 **1/3**，root+teammate 合计 **115,816 token（2.32% / 5M）**。与源系统「直接消息只唤醒收件人」**已对齐**。原始：`.runtime/bench/p27-dm-one/`。
+  **第二次独立取数**（复核，bench-qa-engineer）：同命令重跑得**同一结果**（1/3；106,807 token，`.runtime/bench/exp-p27-dm-one/`）→ 两次独立样本一致，结论稳健。
 
 - **无关 topic 订阅者**：`team-bus.notifySubscribers` 仅对 `sub.topic === snap.topic` 的**收件人**回调，且回调在本进程内（不产生 LLM 轮）——源码 `packages/team-bus/src/index.ts:286-296`。无空唤醒。
 - **任务看板 churn**：`team-scheduler` 仅在「成员空闲且无活跃任务」时 nudge（有意的派发/自愈），与源系统一致。
@@ -1000,7 +1001,7 @@ $ corepack pnpm build / test / verify / verify:e2e / lint / format:check   # 全
 $ bash scripts/e2e-profile.sh --no-model                                   # PASS，dump/wiring 断言全过
 ```
 
-> token 消耗：本轮真实模型 **115,816 / 5,000,000（2.32%）**。
+> token 消耗：本轮真实模型 **115,816 / 5,000,000（2.32%）**；复核第二次 **106,807** → 两次合计 **222,623 / 5,000,000（4.45%）**。
 
 
 ## K. 对端入站 attach：性质判定、补齐与回归固化（P29-peer-inbound-attach / dev-2）

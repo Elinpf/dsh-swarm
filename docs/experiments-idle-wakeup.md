@@ -362,6 +362,10 @@ $ bash scripts/bench/exp-idle-wakeup.sh --arm dm_one --members alice,bob,carol \
 
 → **DM 给 A 不唤醒 B/C（1/3）**：与源系统「直接消息只唤醒收件人」**已对齐**。root+teammate 合计 **115,816 token（2.32% / 5M）**。
 
+> **第二次独立取数（P27 复核，bench-qa-engineer，2026-10-27）**：同命令同规模重跑一次，结果一致——
+> alice `turns=2/额外=1/relay=1`、bob `1/0/0`、carol `1/0/0`，唤醒仍 **1/3**；root+teammate **106,807 token（2.14%）**。
+> 原始：`.runtime/bench/exp-p27-dm-one/`。两次**独立样本**均得「唤醒 1/3」→ 结论稳健（仍未做 `--repeat≥3`，属残余局限）。
+
 另两项对齐点（确定性核实，无模型）：
 - **无关 topic 订阅者**：`team-bus.notifySubscribers` 仅对 `sub.topic === snap.topic` 的**收件人**回调，且回调在**本进程内**（不产生 LLM 轮）——无空唤醒。源码 `packages/team-bus/src/index.ts:286-296`。
 - **任务看板 churn**：`team-scheduler` 仅在「成员空闲且无活跃任务」时 nudge（有意的派发/自愈），与源系统「看板变更唤醒空闲成员去认领」一致。
