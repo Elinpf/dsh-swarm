@@ -1,6 +1,7 @@
 # #5/#6 真实 profile 重测结论（experiments-retest-p24 / P33）
 
 > P33 ｜ 负责人：bench-qa-engineer ｜ 时间：2026-10-27 ｜ 项目 `dsh-swarm` @ `main 31bc72a`
+> ⚠️ **P33 范围变更**：#5（scheduler 三臂）已移交 **P39-rerun-sched-arms**；本任务**只做 #6**。第 1 节保留为「#5 未 arm 历史记录」（**不作结论**）。
 > 承接：`docs/experiments-stage1.md §9`（#5/#6 标「未重测/不可判定」）+ `team-workspace/retest-plan-p24-scheduler-review.md`（方案）。
 > 口径：判定表每条标 **【成立】/【推翻】/【仍不可判定 + 原因 + 解锁条件】**，并**按时序标注**
 > （【no-op 时代】=P22 前；【P22 后】；【P30·P31 后】=本次）。原始数字一律保留、不篡改。
@@ -11,18 +12,21 @@
 
 | 项 | 结果 |
 |---|---|
-| **#5 scheduler 三臂** | **真实 profile 三臂完全无差异**：`scheduled`/`autonomous`/`off` 下 ready 任务**恒为 `pending`**、teammate **0 nudge**。根因：**`teamScheduler` 在真实 profile 从未被 `arm()`**（源码级：`packages/*` 内无任何 `.arm(`/`onTeamEdge` 调用点）。→ 原桩结论**被推翻（前置缺失）**。 |
+| **#5 scheduler 三臂（仅存档，不作结论）** | 真实 profile 三臂无差异（任务恒 `pending`、0 nudge），根因 **`teamScheduler` 从未被 `arm()`**。**该数据为 no-op 时代采集，不得作为结论**；**#5 已移交 `P39-rerun-sched-arms`（依赖 `P38b` 补 arming）**。 |
 | **#6 计划闸** | 真实 profile **无工具入口**：`team_task_update action='open_plan'` 被原生工具 enum 直接拒绝（`must be one of [claim,release,edit,set_dependencies,complete,reopen,reassign,delete]`）。→ **仍不可判定（前置缺失）**。 |
 | **#6 评审闸** | 可 `review_submit`→任务进 `in_review`✅；但 **`settle()` 无调用入口**（无工具、无自动触发），且 lead 认领导致自验被拒。→ **仍不可判定（前置缺失）**。 |
 | **#6 stale 自愈** | 依赖 `teamScheduler.scan` → 因 **未 arm** 而不运行。→ **仍不可判定（前置缺失，同 #5）**。 |
 | **解锁→唤醒延迟** | 机制级探针（零成本）**成立**：延迟上界=1 个 poll 周期（测试档≈201ms／生产默认 30000ms）；**不 arm() ⇒ nudge=0**；pull 对比 push（`onTaskTerminal`）≈0ms。 |
 | **本轮消耗** | 真实模型 **≈ 329,684 ≈ 6.59% / 5M**（#5 237,714 + #6 91,970）；桩/探针 0。 |
 
-> **一句话**：`scheduled`/`autonomous` 默认值之争**当前在真实 profile 不可判**——不是「哪个更好」，而是**两个模式都未接通**（无 arming、无工具入口）。这是 P19b 定默认值前必须先补的前置。
+> **一句话**：#6 的计划闸/评审闸在真实 profile **缺触发入口 → 仍不可判定（前置缺失）**；#5 的三臂数据因 **`teamScheduler` 未 arm**（no-op 时代）**只作历史存档、不作结论**，移交 P39。
 
 ---
 
-## 1. #5 scheduler 三臂（真实 profile）
+## 1. #5 scheduler 三臂（真实 profile）——**【仅供存档 · 不作结论；结论移交 P39】**
+
+> ⚠️ 本节数据采于 **`teamScheduler` 从未 `arm()`** 的状态（no-op 时代）：三臂「无差异」**不是模式差异，而是都没跑起来**。
+> **不得作为任何结论**；`#5` 对比改由 **P39-rerun-sched-arms**（依赖 `P38b` 补 arming 后）承接。本节仅保留「未 arm 的历史记录」与根因定位。
 
 **复现**（自带 scheduler 配置 overlay；`scripts/bench/exp-sched.sh`）：
 
@@ -124,16 +128,17 @@ stale 由 `teamScheduler.scan` 的 `staleSweep` 产生；#5 已证 **scheduler �
 
 | # | 结论（出处） | 原结论（时序） | 真实 profile 重测（【P30·P31 后】） | 判定 |
 |---|---|---|---|---|
-| 1 | scheduler `scheduled` 自动派发（P13 §2 AB2/§3 Ab2） | 桩 `scan.started=2`【stub/no-op 时代】 | 三臂任务恒 `pending`、0 nudge；scheduler 未 arm | **推翻（前置缺失）** |
-| 2 | scheduler `autonomous` 只 nudge | 桩 `scan.started=0`【stub】 | 同样 0 nudge（未 arm） | **仍不可判定（前置缺失）** |
+| 1 | scheduler `scheduled` 自动派发（P13 §2 AB2/§3 Ab2） | 桩 `scan.started=2`【stub/no-op 时代】 | 三臂恒 `pending`、0 nudge；scheduler 未 arm | **【不作结论 → 移交 P39】**受 **P38b arming 缺口**影响 |
+| 2 | scheduler `autonomous` 只 nudge | 桩 `scan.started=0`【stub】 | 同样 0 nudge（未 arm） | **【不作结论 → 移交 P39】**受 **P38b arming 缺口**影响 |
 | 3 | 解锁→唤醒延迟上界 + 不存活风险 + push | 未采集 | 机制级：测试档≈201ms／生产 30000ms；不 arm()⇒0；push≈0ms | **成立（机制级）**；真实 profile 未触发 |
 | 4 | 计划闸合法性 + 「未批不能执行」（P30 新） | 桩 S8：`open_plan→planned…approve→pending`；`illegalRejected=1`【stub】 | 真实：`action='open_plan'` 被 enum 拒绝 → **无工具入口** | **仍不可判定（前置缺失）** |
 | 5 | 评审闸 `in_review` + 裁决（P18/P30） | 桩 `reviewRounds=2`【stub】 | 真实：`review_submit→in_review`✅；`settle` 无入口 + 自验拒绝 | **仍不可判定（前置缺失）** |
-| 6 | stale 自愈（P13 §2 AB3/§3 Ab1） | 桩 `staleNudged=2`/`escalations=1`【stub】 | 真实：scheduler 未 arm ⇒ 不运行 | **仍不可判定（前置缺失）** |
+| 6 | stale 自愈（P13 §2 AB3/§3 Ab1） | 桩 `staleNudged=2`/`escalations=1`【stub】 | 真实：scheduler 未 arm ⇒ 不运行 | **仍不可判定（前置缺失）** ⚠️ 受 **P38b arming 缺口**影响 |
 | 7 | 广播 ≡ N DM（P13 §2 AB1） | 桩零差异【no-op 时代】 | 已由 P24 真实重测（见 `experiments-idle-wakeup.md §7`） | **仍成立**（等价，3=3） |
 | 8 | bench model `messageDeliveries`（广播按 1 次计） | 口径限制 | 未变 | **仍成立**（口径限制） |
 
-**小计**：**推翻 1**（#1）；**仍不可判定=前置缺失 4**（#2/#4/#5/#6）；**成立 3**（#3/#7/#8）。
+**小计**：#6 定论 → **计划闸/评审闸 = 仍不可判定（前置缺失）**；**stale = 仍不可判定（受 P38b arming 缺口影响）**。
+#1/#2（scheduler 派发）**不作结论，移交 P39**；#3（延迟，机制级）**成立**；#7/#8 **仍成立**。
 
 ---
 
