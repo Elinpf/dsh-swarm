@@ -1514,3 +1514,19 @@ $ bash scripts/e2e-profile.sh --no-model   # PASS=7 FAIL=0
 - 目标：P46 风格探针验证「团队模式下 leader **先 spawn 成员**，而非自己干」（对齐用户截图的反例）。
 - 状态：**pending 预算批准**（先报 team-leader，未经批准不跑真实模型）。
 - 预算：见团队汇报（本次未消耗真实模型 token）。
+
+
+## N. P51 消息兜底（未读闸 + 超时重投/升级）
+
+### N.1 已实现（先红后绿，确定性单测）
+- **① 未读闸 + override**（`team-completion`）：`evaluate(agent,{overrideUnread})` + `Config.allowUnreadOverride`（默认 false）；未读>0 且其它条件满足 → **不完成** + emit `swarm/completion/unread-blocked{unread,overridden:false}`（上升沿）；leader 显式 override（需开关）→ 完成 + 事件标 `overridden:true`。**11 测试**（新增 3）。
+- **② 超时重投/升级**（`team-core.send` 单点）：DM → `pendingMessages` 台账 + durable `swarm/message/pending`（通道 A）；周期 `sweepPending` → 逾时**重投≤1**（幂等 messageId）→ 仍无 → `swarm/message/undelivered` + **升级 leader**（经 seam，事件唤醒不阻塞）。**28 测试**（新增 3）。
+- **③ 防风暴**：重投**上限=1**、幂等 `messageId`、`sweepPending` 处理即出队；单测覆盖「重投恰好一次 → undelivered」。
+- **广播豁免反例**：确认 `team-bus` 扇出**经 `team-core.send`（DM）** ⇒ 若不分来源，**广播会进 pending 台账、让任务永久无法完成**（正是要防的停滞）。修法：`team-core.send` 增 `origin:'broadcast'|'directed'`，`'broadcast'` **不计入** pending；`team-bus` 广播扇出传 `'broadcast'`、多播传 `'directed'`。**core 28 / bus 14 测试绿 + verify-load PASS**。
+
+### N.2 证据分级（宁降不升）
+- **【单测级 已验证】**：①②③ 与广播豁免的**行为不变量**（确定性、先红后绿）。
+- **【profile 级 端到端 未验】**：**默认工具集的 `send_message` 走原生 `tool-agent-team` → 直接 native `sendMessage`，不经过 `ctx.teamCore.send`** ⇒ 真实 profile 下 `plugin:swarm/message/pending` **不产生**（实测：跑一次 `spawn+send_message` 后解压会话日志 `pending=0`）。故 **profile 级不可达**；需 **P49 后 tool-swarm 可达触发**，或在原生工具路径挂 hook（非本仓）。
+
+### N.3 行为变更说明
+- `blockOnUnread`（默认 true）现把「**定向消息未读**」纳入完成判定：**未读>0 不得完成**；仅 **leader 显式 `overrideUnread`（需 `allowUnreadOverride=true`）** 可越过，且事件标 `overridden`。**公告类广播不计入**。轮询与（已落 team-bus 的）投递语义不变。

@@ -216,17 +216,24 @@ export class TeamCoreService extends Service implements TeamCore {
       }
     })
 
-    ctx.effect(
-      () => () => {
+    ctx.effect(() => {
+      // P51②：周期扫描「限时未处理」的定向消息（重投/升级）。unref 不阻进程退出。
+      const t = setInterval(
+        () => void this.sweepPending().catch(() => {}),
+        Math.max(50, Math.floor(this.config.messageAckTimeoutMs / 2)),
+      )
+      ;(t as { unref?: () => void }).unref?.()
+      return () => {
+        clearInterval(t)
         // 无自有资源需要释放；保留生命周期钩子以便未来 owned 后端挂恢复折叠。
         this.reviewing.clear()
         this.planning.clear()
         this.plans.clear()
         this.planFeedback.clear()
         this.revisionFeedback.clear()
-      },
-      'teamCore.lifecycle()',
-    )
+        this.pendingMessages.clear()
+      }
+    }, 'teamCore.lifecycle()')
   }
 
   /** 当前是否处于可用（native）状态；no-op 模式返回 false。 */
