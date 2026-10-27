@@ -19,7 +19,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MemberView, TaskView } from '@elinpf/dsh-swarm-team-core-contract'
-import { DURABLE_VERSION, foldDurableEvents } from '@elinpf/dsh-swarm-team-durable'
+import {
+  DURABLE_VERSION,
+  emitDurable as appendDurable,
+  durableRecordOf,
+  foldDurableEvents,
+} from '@elinpf/dsh-swarm-team-durable'
 import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 declare module '@deepseek-ai/cordis' {
@@ -63,15 +68,19 @@ export class TeamCompletionService extends Service implements TeamCompletion {
     ctx.effect(() => {
       // 未读台账：入队 +1、投递 -1（不小于 0）。真源是上游 `team/message/*` durable 事件；
       // 本包同时发 `swarm/completion/unread`（ADR-0002）供恢复折叠。
-      const off = ctx.on('session/event', (_session: unknown, ev: unknown) => {
+      const off = ctx.on('session/event', (session: unknown, ev: unknown) => {
         const type = String((ev as { type?: string })?.type ?? '')
         if (type === 'team/message/queued') {
           this.unread += 1
-          this.emitDurable('swarm/completion/unread', { delta: 1 })
+          this.emitDurable(session, 'swarm/completion/unread', { delta: 1 })
         } else if (type === 'team/message/delivered') {
           this.unread = Math.max(0, this.unread - 1)
-          this.emitDurable('swarm/completion/unread', { delta: -1 })
+          this.emitDurable(session, 'swarm/completion/unread', { delta: -1 })
         }
+        // P52：跨重启 replay —— 真落盘记录类型为 `plugin:swarm/…`
+        const rec = durableRecordOf(ev)
+        if (rec?.name === 'swarm/completion/unread')
+          this.recover([{ type: rec.name, payload: rec.payload }])
       })
       return () => {
         off()
@@ -127,12 +136,14 @@ export class TeamCompletionService extends Service implements TeamCompletion {
     )
   }
 
-  private emitDurable(type: string, payload: Record<string, unknown>): void {
+  /** durable 发射：进程内 `ctx.emit`（供 fold）**且** 真 append 会话日志（P52 通道 A，供跨重启 replay）。 */
+  private emitDurable(session: unknown, type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
         version: DURABLE_VERSION,
         ...payload,
       })
+      appendDurable(session, type, payload)
     } catch (e) {
       this.ctx.logger?.warn?.(
         'team-completion: durable emit %s failed: %s',
