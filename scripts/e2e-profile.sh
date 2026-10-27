@@ -54,6 +54,18 @@ DUMP="$PROBE/e2e-dump-config.yml"
 sec=$(awk '/^# == @elinpf\/dsh-swarm-bundle/{f=1} f&&/^# ==/&&!/@elinpf\/dsh-swarm-bundle/{if(f>1)exit} f{print} f&&/^# == @elinpf\/dsh-swarm-bundle/{f=2}' "$DUMP")
 rows=$(printf '%s\n' "$sec" | grep -cE "^- id: (team-core|team-prompt|team-bus|team-review|team-scheduler|team-completion|tool-swarm|team-workspace|team-skills|team-memory|team-compaction|team-transport|team-distributed|team-human)$")
 ck $([ "$rows" -eq 14 ] && echo 1 || echo 0) "@elinpf/dsh-swarm-bundle 自身插入行数 = $rows (期望 14；阶段3 追加 transport/distributed/human)"
+# 阶段 3 三行**逐个点名**（防计数正则漏配）
+s3=0
+for id in team-transport team-distributed team-human; do
+  printf '%s\n' "$sec" | grep -qE "^- id: $id$" && s3=$((s3+1))
+done
+ck $([ "$s3" -eq 3 ] && echo 1 || echo 0) "阶段3 新增插件行逐一存在 = $s3 (期望 3: transport/distributed/human)"
+# 真实 profile 的服务可用性（决定哪些跨进程后端在此 profile 可验）
+sub=$(grep -qE "^- id: subprocess$" "$DUMP" && echo 1 || echo 0)
+ssh=$(grep -qE "^- id: ssh$" "$DUMP" && echo 1 || echo 0)
+uq=$(grep -qE "^- id: user-questions$" "$DUMP" && echo 1 || echo 0)
+echo "  profile 服务可用性: subprocess=$sub ssh=$ssh user-questions=$uq"
+ck $([ "$sub" -eq 1 ] && echo 1 || echo 0) "profile 提供 ctx.subprocess（local-child 后端前置） = $sub (期望 1)"
 # 原生团队域由 agent-team-profile 提供（bundle 不再重复插入）：确认它们在 dump 中确实存在
 nat=0
 grep -qE "^- id: agent-team$" "$DUMP" && nat=$((nat+1))
