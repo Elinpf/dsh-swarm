@@ -42,7 +42,16 @@ describe('@elinpf/dsh-swarm-bundle', () => {
     expect(swarm).toContain("name: '集群模式'")
     expect(swarm).toMatch(/^\s*order:\s*0\s*$/m)
     expect(swarm).toMatch(/^\s*plugins:\s*$/m)
-    for (const k of ['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-skill', 'tool-todo', 'tool-web', 'present']) {
+    for (const k of [
+      'persona',
+      'agent-instructions',
+      'tool-bash',
+      'tool-fs',
+      'tool-skill',
+      'tool-todo',
+      'tool-web',
+      'present',
+    ]) {
       expect(swarm).toMatch(new RegExp(`- id:\\s*${k}\\b`))
     }
   })

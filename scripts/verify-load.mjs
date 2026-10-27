@@ -256,7 +256,10 @@ for (const p of PACKAGES) {
       yml.includes('- insert:') && yml.includes("name: '@elinpf/dsh-swarm-team-core'"),
       'insert 了团队插件行',
     )
-    const swarmPreset = readFileSync(resolve(root, 'packages/bundle/presets/swarm.patch.yml'), 'utf8')
+    const swarmPreset = readFileSync(
+      resolve(root, 'packages/bundle/presets/swarm.patch.yml'),
+      'utf8',
+    )
     assert(
       swarmPreset.includes('id: swarm') && swarmPreset.includes("name: '集群模式'"),
       'swarm preset（集群模式）声明存在',

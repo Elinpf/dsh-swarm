@@ -55,7 +55,10 @@ function scanDisk(dir, needle) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name)
       if (e.isDirectory()) walk(p)
-      else if (e.name.includes('session') && (e.name.endsWith('.jsonl') || e.name.endsWith('.json'))) {
+      else if (
+        e.name.includes('session') &&
+        (e.name.endsWith('.jsonl') || e.name.endsWith('.json'))
+      ) {
         const txt = readFileSync(p, 'utf8')
         for (const line of txt.split('\n')) if (line.includes(needle)) hits.push(line)
       }
@@ -80,7 +83,11 @@ const REC = `plugin:${NAME}`
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   await ctx.sessions.flush(session)
   const events = await readEvents(ctx, session.id)
-  const swarm = events.filter((e) => typeof pluginRecordOf(e)?.type === 'string' && pluginRecordOf(e).type.startsWith('plugin:swarm/'))
+  const swarm = events.filter(
+    (e) =>
+      typeof pluginRecordOf(e)?.type === 'string' &&
+      pluginRecordOf(e).type.startsWith('plugin:swarm/'),
+  )
   const disk = scanDisk(dir, REC)
   assert(swarm.length === 0, `RED：未 emit 时日志无 plugin:swarm/…（events=${events.length}）`)
   assert(disk.length === 0, 'RED：落盘文件无 plugin:swarm/…')
@@ -122,7 +129,10 @@ let greenDir
   const replayed = await readEvents(ctx2, SessionId('p52-green'))
   const one2 = replayed.find((e) => pluginRecordOf(e)?.type === REC)
   const got2 = one2 ? durableRecordOf(one2) : undefined
-  assert(got2?.name === NAME && got2?.payload?.taskId === 't-1', 'GREEN③：重启后重读仍能 durableRecordOf 取回（跨重启 replay 成立）')
+  assert(
+    got2?.name === NAME && got2?.payload?.taskId === 't-1',
+    'GREEN③：重启后重读仍能 durableRecordOf 取回（跨重启 replay 成立）',
+  )
   await ctx2.stop?.()
 }
 if (greenDir) rmSync(greenDir, { recursive: true, force: true })
