@@ -117,8 +117,10 @@ export class TeamCoreService extends Service implements TeamCore {
   })
 
   private readonly config: Config
-  private readonly seam: AgentTeamsSeam | undefined
-  private readonly _backend: 'native' | 'owned'
+  private seam: AgentTeamsSeam | undefined
+  private _backend: 'native' | 'owned'
+  /** 「不可用」告警是否已发过（只告警一次，避免刷屏）。 */
+  private warnedUnavailable = false
   /**
    * 处于评审态（`in_review`）的任务集。原生 `ctx.agentTeams` 只有
    * `pending|in_progress|completed|deleted`，**没有评审态**，故评审态由本端口自行维持，
@@ -141,21 +143,22 @@ export class TeamCoreService extends Service implements TeamCore {
       )
     }
 
-    const available = ctx.get('agentTeams') as AgentTeamsSeam | undefined
-    if (available) {
-      this.seam = available
-      this._backend = 'native'
-    } else {
-      this.seam = undefined
-      this._backend = 'native' // 名义后端；实际走 no-op（见 isActive）
-      if (config.backend === 'native') {
-        ctx.logger?.warn?.(
-          'team-core: native backend unavailable (ctx.agentTeams missing); entering no-op mode',
-        )
-      } else {
-        ctx.logger?.warn?.('team-core: native backend unavailable; entering no-op mode')
+    this._backend = 'native'
+    // 立即尝试一次（agentTeams 可能已就绪）；否则进入可观测的 no-op（见 warnUnavailableOnce）。
+    const now = ctx.get('agentTeams') as AgentTeamsSeam | undefined
+    if (now) this.attach(now)
+    else this.warnUnavailableOnce()
+    // 响应式挂接：真实 profile 下 agentTeams（原生 TeamService，额外依赖 sessionPersistence/
+    // sessionProjections）常**晚于** team-core 就绪；一次性 ctx.get 会永久漏接（P22 实测）。
+    // 用 ctx.inject 在 agentTeams 可用/更换时重新挂接，让「服务可用性驱动」真正生效。
+    ctx.inject(['agentTeams'], (sctx) => {
+      const svc = sctx.get('agentTeams') as AgentTeamsSeam | undefined
+      if (!svc) return
+      this.attach(svc)
+      return () => {
+        if (this.seam === svc) this.seam = undefined
       }
-    }
+    })
 
     ctx.effect(
       () => () => {
@@ -358,6 +361,24 @@ export class TeamCoreService extends Service implements TeamCore {
   ): Promise<{ previousStatus: MemberView['status'] }> {
     const res = this.require().interrupt(caller, targetName)
     return { previousStatus: res.previousStatus === 'running' ? 'running' : 'inactive' }
+  }
+
+  /** 挂接原生 seam（可观测：首次成功挂接记 info）。 */
+  private attach(seam: AgentTeamsSeam): void {
+    if (this.seam === seam) return
+    this.seam = seam
+    this.ctx.logger?.info?.('team-core: attached native ctx.agentTeams')
+  }
+
+  /** 不可用时的可观测降级告警（只发一次）；明确「读返回空、写抛 TEAMCORE_UNAVAILABLE」，避免静默。 */
+  private warnUnavailableOnce(): void {
+    if (this.warnedUnavailable) return
+    this.warnedUnavailable = true
+    this.ctx.logger?.warn?.(
+      this.config.backend === 'native'
+        ? 'team-core: native backend unavailable (ctx.agentTeams missing); entering no-op mode (reads empty / writes throw)'
+        : 'team-core: native backend unavailable; entering no-op mode (reads empty / writes throw TEAMCORE_UNAVAILABLE)',
+    )
   }
 
   /** 把评审叠加态套到原生任务视图上：在评审集内 → `in_review`，否则原样。 */

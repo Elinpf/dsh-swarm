@@ -39,11 +39,21 @@ function makeCtx(withSeam: boolean) {
     interrupt: () => ({ previousStatus: 'running' as const }),
   }
   const services: Record<string, unknown> = withSeam ? { agentTeams: seam } : {}
+  const injectors: Array<(c: any) => unknown> = []
   const ctx: any = {
     get: (n: string) => services[n],
-    logger: { warn() {}, debug() {} },
+    logger: { warn() {}, debug() {}, info() {} },
     reflect: { provide() {} },
     effect: (fn: () => unknown) => fn(),
+    inject: (_deps: string[], cb: (c: any) => unknown) => {
+      injectors.push(cb)
+      return () => {}
+    },
+    // 测试助手：模拟「稍后提供某服务」→ 通知所有 ctx.inject 回调
+    _provide: (name: string, v: unknown) => {
+      services[name] = v
+      for (const cb of injectors) cb({ get: (n: string) => services[n] })
+    },
     _sendCalls: sendCalls,
     _updateCalls: updateCalls,
   }
@@ -127,6 +137,22 @@ describe('@elinpf/dsh-swarm-team-core', () => {
     )
   })
 
+  it('响应式接通（P22 回归）：agentTeams 晚于 team-core 提供时也能挂接', () => {
+    const { ctx } = makeCtx(false)
+    const core = new TeamCoreService(ctx, cfg())
+    expect(core.active).toBe(false) // 构造时 agentTeams 尚未提供 → no-op
+    // 稍后提供 agentTeams（复现真实 profile：agent-team 的额外依赖 sessionPersistence/
+    // sessionProjections 晚就绪 → agentTeams 晚于 team-core 发布）
+    ctx._provide('agentTeams', {
+      membership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      tryMembership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      listMembers: () => [{ id: 'alice', name: 'alice', role: 'teammate', status: 'running' }],
+      listTasks: () => [],
+    })
+    expect(core.active).toBe(true) // 响应式挂接生效
+    expect(core.listMembers(agent).map((m) => m.name)).toEqual(['alice'])
+  })
+
   it('backend=owned（未实现）→ 构造即抛 TEAMCORE_BACKEND_UNAVAILABLE', () => {
     const { ctx } = makeCtx(true)
     expect(() => new TeamCoreService(ctx, cfg({ backend: 'owned' }))).toThrow(
@@ -180,9 +206,10 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
     }
     const ctx: any = {
       get: (n: string) => (n === 'agentTeams' ? seam : undefined),
-      logger: { warn() {}, debug() {} },
+      logger: { warn() {}, debug() {}, info() {} },
       reflect: { provide() {} },
       effect: (fn: () => unknown) => fn(),
+      inject: () => () => {},
     }
     return { ctx, state, calls }
   }
