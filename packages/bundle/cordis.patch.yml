@@ -25,6 +25,7 @@
         maxMembers: 8
         maxTasks: 256
         maxMessageBytes: 65536
+        planGate: false
 
     - id: team-prompt
       name: '@elinpf/dsh-swarm-team-prompt'
