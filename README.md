@@ -149,6 +149,8 @@ corepack pnpm format:check
 
 **`team-skills` 能力边界**：成员级技能可见性已**真实生效**——可见集被落到每个成员的 `ctx.skills` scope 层（注册经 `agent.ctx.get('skills')`），因此 A 成员看不到 B 成员的私有技能、未授权技能不出现在模型能力目录与 `skill` 工具中；`reconcile()` 幂等、随成员 scope 释放自动回滚。边界：`team-skills` 只拥有**可见性**、不拥有技能正文（虚拟技能为正例占位体，正文由团队技能包承载）；实时落层依赖 `visibleTo`/`grant`/`declare` 被消费方调用。细节与源码依据见 `docs/verification.md` §H。
 
+**任务状态机与 `in_review` 能力边界**：`ctx.teamCore` 的任务状态在原生 `pending|in_progress|completed|deleted` 之上**叠加显式评审态 `in_review`**（对齐 JiuwenSwarm 的 `in_progress → in_review → completed`）：提交评审 → 进入；裁决 `pass` → 完成；`fail` → 返工回 `in_progress`；非法转换（如 `pending → in_review`）被拒（`TEAMCORE_INVALID_TRANSITION`）。`in_review` 期间**团队完成判定不判完成**、**调度器不重复派发**，并对其做 `review_stall` 超时升级。**已知限制（如实登记）**：`in_review` 是 `team-core` 的**进程内叠加态、未持久化**——进程重启 / 跨进程 / 崩溃恢复后，卡在评审的任务会**退化为 `in_progress`**，后果为：可能被**重复派发**、可能**绕过验证闸**直接被完成、`review_stall` 计时归零后会**再升级一次**；`reviewSince`/`reviewEscalated` 同类。持久化修复见 P23（内存态审计）。细节见 `docs/verification.md` P18 节。
+
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）

@@ -598,3 +598,81 @@ lint/format 的两处真实修复：
 - `scripts/bench/jsfw/` 的两份 `*.log` 为**桩模式**证据；真实模型路径见 `docs/jsfw-comparison-fixture.md §3`（未做）。
 - **推送传输（如实记录）**：收口时沙箱**出站 HTTPS(443) 全线不可达**（`github.com` 与 `registry.npmjs.org` 均 `SSL_ERROR_SYSCALL`/`gnutls_handshake` 失败，重试 ~10 次不恢复），故指定的 `git -c credential.helper=… push`（HTTPS）路径不可用；改用磁盘上既有、指向同一 owner 的 `~/.ssh/id_github` 经 SSH(22) 推送（`GIT_SSH_COMMAND='ssh -i /root/.ssh/id_github' git push git@github.com:Elinpf/dsh-swarm.git HEAD:main`），**未改动 remote 配置、未写任何 token**。远端 `main` 已确认 = 本地 HEAD。待 HTTPS 恢复后，普通 `git push origin main` 即为 fast-forward 空操作。
 - **复核时的并发 WIP（如实记录）**：§D 的全链路复验是在**本批提交的干净树**上跑的（本即全绿）。复核完成后，同树的 P15（阶段 3 包）与 P17（空窗唤醒实验）又落入了**未提交**文件，使**当前工作树**的 `lint`/`format:check`/`test` 转红：`scripts/bench/exp-idle-wakeup.mjs`（9× `no-unused-expressions`/`no-unused-vars` + 格式）、`packages/team-transport/src/index.ts`（格式）、`packages/team-transport`（11 例中 2 例失败）。这些均**不在本批提交内**，属他人 WIP，按约束**未改动**。本批提交 `5d5c226` 的树本身为绿（`build` 亦仍绿）。
+
+---
+
+# P18-in-review-state：引入显式 in_review 任务状态（对齐 JiuwenSwarm）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 项目 `dsh-swarm`
+> 目标：对齐 `in_progress → in_review → completed`。原生任务枚举**无评审态**，故在 `ctx.teamCore` 上做**叠加态**。
+
+## A. 设计依据（原生无 in_review）
+
+原生 `ctx.agentTeams` 任务状态仅 `pending|in_progress|completed|deleted`，**无 `in_review`**（源码：`node_modules/@deepseek-ai/dsh-experimental-agent-team/lib/index.js:464,667` 的状态清单；`:1298`/`:1324` 的 `TEAM_TASK_INVALID_TRANSITION` 校验）。故评审态由 `team-core` 侧维持：契约 `TaskView.status += 'in_review'`，`updateTask.action += 'submit_review' | 'reject_review'`（`packages/team-core-contract/src/index.ts`）；实现持 `reviewing: Set<taskId>`，所有读/写出口经 `overlay()` 呈现 `in_review`，**原生任务在评审期间仍为 `in_progress`**。
+
+## B. 改动面（逐个）
+
+| 面 | 改动 |
+|---|---|
+| team-core-contract | `status` union += `in_review`；`updateTask.action` += `submit_review`/`reject_review` |
+| team-core | `reviewing` 集 + `overlay()`（create/get/list/update 出口）；`submit_review` 仅 `in_progress` 合法、revision 不符抛 `TEAMCORE_REVISION_MISMATCH`；`reject_review` 仅 `in_review` 合法；评审中仅 `complete`/`reopen`/`delete` 可离场，`claim`/`release`/`edit`/`set_dependencies`/`assign` 被拒（均 `TEAMCORE_INVALID_TRANSITION`）；dispose 清 `reviewing` |
+| team-review | `submitForReview(pools>0)` → `submit_review`；`settle` pass → `complete`；fail（未超轮）→ `reject_review` 返工；`undecided` 保持 `in_review`；`maxRounds` 保持 `in_review` 等 Lead |
+| team-scheduler | `busyTaskStatuses` 默认 += `in_review`（维持「一人一活跃任务」）；常规 stale 排除 `in_review`；新增 `reviewStallMs`（默认 1800000）+ `reviewStallSweep` → `[review_stall]` 升级 Lead（每次卡住只升一次）；`ScanReport` 增 `reviewStalled` |
+| team-completion | 无需改逻辑（本就只认 `completed`/`deleted` 为终态）；补断言 |
+| tool-swarm | `review_submit` 输出 `status=<view.status>`（现为 `in_review`）；`team_summary` 按 status 计数自然含 `in_review`（无需改代码，行为已覆盖） |
+
+## C. 行为级单测（全绿）
+
+```console
+$ (cd packages/team-core && corepack pnpm exec vitest run)          # 15 passed（原 7 + 新 8）
+$ (cd packages/team-review && corepack pnpm exec vitest run)        # 12 passed（原 10 + 新 2）
+$ (cd packages/team-scheduler && corepack pnpm exec vitest run)     # 7 passed（原 6 + 新 1）
+$ (cd packages/team-completion && corepack pnpm exec vitest run)    # 6 passed（原 5 + 新 1）
+$ (cd packages/team-core-contract && corepack pnpm exec vitest run) # 2 passed
+$ (cd packages/tool-swarm && corepack pnpm exec vitest run)         # 8 passed
+```
+
+覆盖的合法/非法转换：`in_progress→in_review`；`pending→in_review` **被拒**；revision 不符 → `TEAMCORE_REVISION_MISMATCH`；`in_review→completed`（pass）；`in_review→in_progress`（reject 返工 + round 递增）；reject 非 `in_review` **被拒**；评审中 `claim`/`release` **被拒**、`reopen` 允许；`undecided` 保持 `in_review`（未过评审不完成）；`in_review` 不被完成判定误判；`review_stall` 超时升级且**只升一次**；无 seam → `TEAMCORE_UNAVAILABLE`。
+
+集成冒烟 `pnpm verify:e2e`（真实 cordis + 端口 mock）新增断言：
+```console
+[OK]   提交评审 → 任务 in_review（显式评审态）
+[OK]   in_review 期间不判团队完成
+[OK]   评审通过 → 任务 completed
+```
+
+## D. 向后兼容
+
+- **无评审池（`pools: []`）路径不变**：仍直接 `complete`（无门）。
+- 旧「评审期保持 `in_progress`」的语义已变：评审期现为 `in_review`。对 `status` 做等值判断的消费方需补 `in_review` 分支；本仓 `team-completion`/`team-scheduler`/`tool-swarm` 已同步。
+- 原生 DSH 自带任务工具（经 `ctx.agentTeams` 读）评审期仍显示 `in_progress`——叠加态只经 `ctx.teamCore` 暴露（见 §E）。
+- **无数据迁移**：叠加态不落库（下一条即其代价）。
+
+## E. 已知限制（如实登记，不弱化）
+
+- **`in_review` 未持久化**：`reviewing` 是 `team-core` 的**进程内内存态**（`team-core` 的 `inject` 无 storage/durable，`packages/team-core/src/index.ts`）。**进程重启 / 跨进程（阶段 3）/ 崩溃恢复后，卡在 `in_review` 的任务会退化为 `in_progress`**，后果为：可能被**重复派发**、可能**绕过验证闸**直接被完成、`review_stall` 计时归零后**再升级一次**。`reviewSince`/`reviewEscalated` 同类。持久化修复另立 P23（内存态审计）。
+- **原生读侧不一致**：DSH 原生 `team_task_*` 工具看不到 `in_review`（读原生态=in_progress）；`in_review` 仅经 `ctx.teamCore`（含 `tool-swarm` 的 `team_summary`/`review_submit`）暴露。
+
+## F. 全链路复验（P18 收口后，真实输出）
+
+```console
+$ corepack pnpm build        # 全包 Done
+$ corepack pnpm test         # 受影响 6 包全绿（见 §C）；其余包不变
+$ corepack pnpm verify       # 真实 cordis 加载全部插件，✅
+$ corepack pnpm verify:e2e   # 阶段1/2 链路 + 本次 in_review 断言，✅
+$ corepack pnpm lint         # 0 error（含对 P17/P15 已提交文件的机械 lint 修复，见 §G）
+$ corepack pnpm format:check # All matched files use Prettier code style!
+$ bash scripts/e2e-profile.sh --no-model
+  [PASS] bundle 自身插入行数 = 11 (期望 11)
+  [PASS] 原生 agent-team / tool-agent-team 行 = 2 (期望 2)
+  [PASS] legacy tool-subagent* disabled 行 = 4 (期望 4)
+  [PASS] dump-config 无禁用/不兼容告警
+  结果：PASS=4 FAIL=0
+```
+
+## G. 顺带的机械修复（授权范围内，单独 commit）
+
+为满足发布门禁「全链路必须绿」，对**他人已提交**文件做**纯机械**修复（不改语义/逻辑/重构）：
+- `scripts/bench/exp-idle-wakeup.mjs`（P17）：7 处 `(a.x=v), i++` 逗号表达式 → 花括号；`jsonl`/`args` 未用 → `_jsonl`/`_args`。
+- `packages/team-transport/src/index.ts`、`packages/team-transport/tests/team-transport.spec.ts`（dev-2）：`prettier --write` 格式化。
+- `eslint.config.mjs`：把「下划线前缀=有意未使用」的 `no-unused-vars` 约定从 `**/*.ts` 扩到 `**/*.mjs`（与既有约定一致，`@typescript-eslint/no-unused-vars` 本已覆盖 .mjs）。
