@@ -787,8 +787,7 @@ $ bash scripts/e2e-profile.sh --no-model
 # P23-state-durability：内存态持久化审计（一类缺陷）
 
 > 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 项目 `dsh-swarm`
-> 结论：审计清单完成（`docs/state-durability.md`，逐字段 + 行号 + 分类）；「必须持久」**6 项全部未持久化**（缺陷），已如实登记（本文件 + README「跨重启状态」表）。
-> 修复涉及**跨包 durable 事件契约**（接口层）——按任务约束「改变接口设计先问 Leader」，已 `send_message` 请示机制后再实施。
+> 结论：审计清单完成（`docs/state-durability.md`，逐字段 + 行号 + 分类）；「必须持久」**6 项**已按 **ADR-0002（durable 事件 + fold）** 修复，各配恢复测试（未恢复失败 / 恢复成功）；能力边界表更新为「保持」。
 
 ## A. 缺陷清单（「必须持久」，丢了会导致错误行为）
 
@@ -803,25 +802,34 @@ $ bash scripts/e2e-profile.sh --no-model
 
 > 「天然短暂/可接受」项（TTL 锁、`review_stall` 计时、上升沿 `emitted`、stale 计数、后端 seam 等）逐条理由见 `docs/state-durability.md §1`。
 
-## B. 可执行诊断（先红 —— 证明缺陷真实存在）
+## B. 恢复测试与诊断（先红 → 后绿）
 
+**修复前（红）** —— 缺陷真实存在：
 ```console
 $ pnpm verify:durability         # 非发布门禁；模拟「置态 → 重建服务」
 [durability] team-core in_review: before-restart=in_review after-restart=in_progress
-❌ in_review 重启丢失（退化为 in_progress）——内存态未持久化，见 docs/state-durability.md §2
+❌ in_review 重启丢失（退化为 in_progress）
 ```
 
-即 **P18 登记的 `in_review` 实例已被真实复现**：置入 `in_review` → 重建服务 → 退化为 `in_progress`。修复后本诊断应变绿（`after-restart=in_review`）。
+**修复后（绿）** —— 按 ADR-0002 emit durable + `recover` fold：
+```console
+$ pnpm verify:durability
+[durability] team-core in_review: before=in_review | after-restart(no-recover)=in_progress | after-recover=in_review
+[durability] captured durable events = swarm/core/review-entered
+✅ 内存态经 durable 事件折叠后跨重启保持（ADR-0002）
+```
+
+每个「必须持久」项都配了**恢复测试**（重建服务 + `recover(捕获的 durable 事件)` → 状态仍在；未 `recover` 则丢），覆盖：team-core `reviewing`、team-review `states`、team-bus `durable/history`、team-skills 可见性/授权、team-memory shared/private、team-completion `unread`。对应单测数见 §D。
 
 ## C. 能力边界表（哪些状态跨重启保持）
 
-见 `README.md`「跨重启状态（持久化边界，P23 审计）」段：缺陷 6 项 =「不保持」；TTL 锁等 =「不保持（有意/可接受）」；`team-core` 后端挂接 =「响应式自动重挂」。
+见 `README.md`「跨重启状态（持久化边界，P23 审计）」段：6 项缺陷 =「**保持**（ADR-0002）」；TTL 锁等 =「不保持（有意/可接受）」；`team-core` 后端挂接 =「响应式自动重挂」。
 
-## D. 上报（接口决策）/ 未决
+## D. 机制（已采纳 ADR-0002）与遗留
 
-统一机制建议（复用既有约定、不另造存储层）：对齐 `team-distributed.recover()` —— 每个「必须持久」变更 `emit('swarm/<domain>/*')`（durable）+ 包内 `fold` 折叠回内存态。此方案**新增跨包事件契约**（事件名/schema），属接口层变更，**已上报 Leader 确认后实施**；若确认，将按「每项 + 一条未修复时会失败、修复后转绿的恢复测试」落地。
+统一机制（复用既有约定，不另造存储层）：每个「必须持久」变更 `emit('swarm/<domain>/*')`（durable，带 `version`）+ 包内 `recover(events)` 用统一助手 `foldDurableEvents`（新包 `@elinpf/dsh-swarm-team-durable`）折叠回内存态；运行时经 `ctx.on('session/event')` 叠加。事件名/schema 冻结在 `docs/adr/0002-durable-state-convention.md`。
 
-> 说明：本条与 P18 §E 的旧判断衔接——`review_stall`「重启后再升一次」的结论基于**未持久化**现状；本项一旦持久化，该行为将随之改变，届时同步更新 P18 §E 与 README 能力边界描述。
+> 说明：`review_stall`「重启后再升一次」的旧判断基于**未持久化**现状；`reviewSince/reviewEscalated` 属**有意不持久**（可接受），故该结论**仍成立**（P18 §E 无需改）。
 
 
 ## I. 从内存 mock 推到真实子进程（P25-real-crossprocess / dev-2）

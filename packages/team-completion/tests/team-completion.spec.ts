@@ -3,6 +3,7 @@ import TeamCompletionService from '../src/index.ts'
 
 function makeCtx(state: { tasks: any[]; members: any[] }) {
   const emitted: string[] = []
+  const durable: Array<{ type: string; payload: unknown }> = []
   const handlers: Record<string, Array<(...a: any[]) => unknown>> = {}
   const disposers: Array<() => void> = []
   const teamCore = {
@@ -15,7 +16,7 @@ function makeCtx(state: { tasks: any[]; members: any[] }) {
     teamCore,
     teamBus: {},
     sessions: {},
-    logger: { warn() {}, debug() {} },
+    logger: { warn() {}, debug() {}, info() {} },
     reflect: { provide() {} },
     effect: (fn: () => unknown) => {
       const d = fn()
@@ -30,12 +31,16 @@ function makeCtx(state: { tasks: any[]; members: any[] }) {
         if (i >= 0) a.splice(i, 1)
       }
     },
-    emit: (n: string) => void emitted.push(n),
+    emit: (n: string, p?: unknown) => {
+      emitted.push(n)
+      durable.push({ type: n, payload: p })
+    },
     _emitted: emitted,
+    _durable: durable,
     _handlers: handlers,
     _disposeAll: () => disposers.forEach((d) => d()),
   }
-  return { ctx, emitted, handlers }
+  return { ctx, emitted, handlers, durable }
 }
 
 const lead = { id: 'lead' } as never
@@ -79,7 +84,7 @@ describe('@elinpf/dsh-swarm-team-completion', () => {
     handlers['session/event']![0]!({}, { type: 'team/message/delivered' })
     expect(c.unreadCount).toBe(0)
     expect((await c.evaluate(lead)).completed).toBe(true)
-    expect(emitted).toHaveLength(2) // 两次上升沿
+    expect(emitted.filter((n) => n === 'swarm/team/completed')).toHaveLength(2) // 两次上升沿（忽略 durable unread 事件）
   })
 
   it('无任务 / 有 running 成员 → 不完成', async () => {
@@ -110,5 +115,19 @@ describe('@elinpf/dsh-swarm-team-completion', () => {
     ;(ctx.teamCore as { listTasks: () => unknown }).listTasks = () => [{ ...doneTask }]
     expect((await c.evaluate(lead)).completed).toBe(true)
     expect(emitted).toEqual(['swarm/team/completed'])
+  })
+
+  it('恢复（ADR-0002）：重建服务 + recover(durable) → unread 台账重建；未恢复则 0（可能提前判完成）', () => {
+    const a = makeCtx({ tasks: [doneTask], members: [idleMember] })
+    const c = new TeamCompletionService(a.ctx, { blockOnUnread: true })
+    a.handlers['session/event']![0]!({}, { type: 'team/message/queued' })
+    a.handlers['session/event']![0]!({}, { type: 'team/message/queued' })
+    expect(c.unreadCount).toBe(2)
+
+    const b = makeCtx({ tasks: [doneTask], members: [idleMember] })
+    const c2 = new TeamCompletionService(b.ctx, { blockOnUnread: true })
+    expect(c2.unreadCount).toBe(0) // 未恢复 → 0（缺陷）
+    c2.recover(a.durable)
+    expect(c2.unreadCount).toBe(2) // 恢复 → 台账重建
   })
 })

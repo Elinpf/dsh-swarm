@@ -19,6 +19,8 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强（type-only import 即可生效）。
 import type { TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
+import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -112,7 +114,44 @@ export class TeamBusService extends Service implements TeamBus {
     super(ctx, 'teamBus')
     this.config = config
     ctx.effect(() => () => this.dispose(), 'teamBus.lifecycle()')
+    // 恢复（ADR-0002）：把历史 durable 广播事件折叠回 durable + seq。
+    ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
+      if (isDurableEvent(ev) && ev.type.startsWith('swarm/bus/')) this.recover([ev])
+    })
     ctx.logger?.debug?.('team-bus: ready (backend=%s)', this.ctx.teamCore?.backend ?? 'none')
+  }
+
+  /** 恢复：折叠 `swarm/bus/broadcast` durable 事件到 durable + seq（ADR-0002；幂等去重）。 */
+  recover(events: Iterable<DurableEvent>): void {
+    foldDurableEvents(
+      undefined,
+      events,
+      {
+        'swarm/bus/broadcast': (_s, p) => {
+          const snap = p.snapshot as BroadcastSnapshot | undefined
+          if (!snap || typeof snap.id !== 'string') return
+          if (!this.durable.some((d) => d.id === snap.id)) this.durable.push(snap)
+          const n = Number(snap.id.split('-').pop())
+          if (Number.isFinite(n)) this.seq = Math.max(this.seq, n)
+        },
+      },
+      { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
+    )
+  }
+
+  private emitDurable(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
+        version: DURABLE_VERSION,
+        ...payload,
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-bus: durable emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
   }
 
   /** 观测用：当前落库条数（供测试与诊断）。 */
@@ -163,6 +202,7 @@ export class TeamBusService extends Service implements TeamBus {
       delivery: req.delivery,
     }
     this.durable.push(snap)
+    this.emitDurable('swarm/bus/broadcast', { snapshot: snap })
     const targetIds = targets.map((m) => m.id)
     if ((req.fanout ?? 'dm') === 'record-only') {
       // 仅落库 + 通知本进程订阅者；不逐人 DM（成员按需 history 拉取）。
@@ -206,6 +246,7 @@ export class TeamBusService extends Service implements TeamBus {
       for (const r of records) {
         this.durable.push(r)
         written.push(r)
+        this.emitDurable('swarm/bus/broadcast', { snapshot: r })
       }
     } catch (e) {
       this.rollback(written)

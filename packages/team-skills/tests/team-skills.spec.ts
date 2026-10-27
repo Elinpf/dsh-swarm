@@ -16,6 +16,7 @@ function makeCtx() {
     teamCore: { tryMembership: (ag: { id?: string }) => members.find((m) => m.id === ag?.id) },
   }
   const cleanups: Array<() => void> = []
+  const emitted: Array<{ type: string; payload: unknown }> = []
   const ctx: any = {
     get: (n: string) => services[n],
     effect: (fn: () => unknown) => {
@@ -23,10 +24,13 @@ function makeCtx() {
       if (typeof off === 'function') cleanups.push(off)
       return off
     },
-    logger: { warn() {}, debug() {} },
+    logger: { warn() {}, debug() {}, info() {} },
     reflect: { provide() {} },
+    on: () => () => {},
+    emit: (n: string, p: unknown) => emitted.push({ type: n, payload: p }),
   }
   ctx._cleanup = () => cleanups.splice(0).forEach((f) => f())
+  ctx._emitted = emitted
   return ctx
 }
 
@@ -95,5 +99,22 @@ describe('@elinpf/dsh-swarm-team-skills（声明层）', () => {
     expect(s.visibleTo(A)).toEqual(['arch-design'])
     ctx._cleanup()
     expect(s.visibleTo(A)).toBe('unrestricted')
+  })
+
+  it('恢复（ADR-0002）：重建服务 + recover(durable) → 可见性文档/授权仍在；未恢复则 unrestricted（越权风险）', () => {
+    const ctx = makeCtx()
+    const s = new TeamSkillsService(ctx, cfg)
+    s.declare('t1', { a: ['arch-design'], b: [] })
+    s.grant(B, ['extra']) // B 追加授权
+    const emitted = ctx._emitted as Array<{ type: string; payload: unknown }>
+    expect(emitted.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['swarm/skills/visibility', 'swarm/skills/grant']),
+    )
+
+    const s2 = new TeamSkillsService(makeCtx(), cfg) // 重建（模拟重启）
+    expect(s2.visibleTo(A)).toBe('unrestricted') // 未恢复 → 无文档=unrestricted（缺陷：可能越权可见）
+    s2.recover(emitted)
+    expect(s2.visibleTo(A)).toEqual(['arch-design'])
+    expect(s2.visibleTo(B)).toEqual(['extra'])
   })
 })

@@ -19,6 +19,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MemberView, TaskView } from '@elinpf/dsh-swarm-team-core-contract'
+import { DURABLE_VERSION, foldDurableEvents } from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -59,11 +61,17 @@ export class TeamCompletionService extends Service implements TeamCompletion {
     this.config = config
 
     ctx.effect(() => {
-      // 未读台账：入队 +1、投递 -1（不小于 0）。真实 durable 事件落地见包 README。
+      // 未读台账：入队 +1、投递 -1（不小于 0）。真源是上游 `team/message/*` durable 事件；
+      // 本包同时发 `swarm/completion/unread`（ADR-0002）供恢复折叠。
       const off = ctx.on('session/event', (_session: unknown, ev: unknown) => {
         const type = String((ev as { type?: string })?.type ?? '')
-        if (type === 'team/message/queued') this.unread += 1
-        else if (type === 'team/message/delivered') this.unread = Math.max(0, this.unread - 1)
+        if (type === 'team/message/queued') {
+          this.unread += 1
+          this.emitDurable('swarm/completion/unread', { delta: 1 })
+        } else if (type === 'team/message/delivered') {
+          this.unread = Math.max(0, this.unread - 1)
+          this.emitDurable('swarm/completion/unread', { delta: -1 })
+        }
       })
       return () => {
         off()
@@ -102,6 +110,36 @@ export class TeamCompletionService extends Service implements TeamCompletion {
       this.emitCompleted(me?.id ?? 'team', snapshot)
     }
     return { completed: true, snapshot: this.lastSnapshot ?? snapshot }
+  }
+
+  /** 恢复：折叠 `swarm/completion/unread` delta 到 unread（ADR-0002；clamp ≥0）。 */
+  recover(events: Iterable<DurableEvent>): void {
+    foldDurableEvents(
+      undefined,
+      events,
+      {
+        'swarm/completion/unread': (_s, p) => {
+          const d = typeof p.delta === 'number' ? p.delta : 0
+          this.unread = Math.max(0, this.unread + d)
+        },
+      },
+      { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
+    )
+  }
+
+  private emitDurable(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
+        version: DURABLE_VERSION,
+        ...payload,
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-completion: durable emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
   }
 
   onEdge(agent: Agent): void {

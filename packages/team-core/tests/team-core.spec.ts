@@ -306,4 +306,57 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
       core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' }),
     ).rejects.toThrow(/TEAMCORE_UNAVAILABLE/)
   })
+
+  it('恢复（ADR-0002）：重建服务后 recover(durable 事件) → in_review 仍在；未 recover 则丢', async () => {
+    // 原生任务存储跨「重启」保留（模拟 durable 的原生 session）；内存的 reviewing 不保留
+    const store: any = {
+      t1: {
+        id: 't1',
+        revision: 0,
+        subject: 's',
+        description: '',
+        status: 'in_progress',
+        blockedBy: [],
+        ready: false,
+        ownerName: 'w',
+      },
+    }
+    const seam = {
+      membership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      tryMembership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      listMembers: () => [],
+      spawnTeammate: async () => ({ member: {} }),
+      sendMessage: async () => ({ messageId: 'm1' }),
+      createTask: async () => ({ ...store.t1 }),
+      getTask: () => ({ ...store.t1 }),
+      listTasks: () => [{ ...store.t1 }],
+      updateTask: async (_c: unknown, r: any) => {
+        if (r.action === 'complete') store.t1.status = 'completed'
+        return { ...store.t1 }
+      },
+      waitForChange: async () => ({ timedOut: false }),
+      interrupt: () => ({ previousStatus: 'running' as const }),
+    }
+    const emitted: Array<{ type: string; payload: unknown }> = []
+    const mk = (): any => ({
+      get: (n: string) => (n === 'agentTeams' ? seam : undefined),
+      logger: { warn() {}, debug() {}, info() {} },
+      reflect: { provide() {} },
+      effect: (fn: () => unknown) => fn(),
+      inject: () => () => {},
+      on: () => () => {},
+      emit: (n: string, p: unknown) => emitted.push({ type: n, payload: p }),
+    })
+
+    const c1 = new TeamCoreService(mk(), cfg())
+    await c1.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
+    expect(c1.getTask(agent, 't1').status).toBe('in_review')
+    expect(emitted.map((e) => e.type)).toContain('swarm/core/review-entered')
+
+    // 模拟重启：同一原生 store，新服务实例
+    const c2 = new TeamCoreService(mk(), cfg())
+    expect(c2.getTask(agent, 't1').status).toBe('in_progress') // 未恢复 → 丢失（缺陷）
+    c2.recover(emitted) // 折叠 durable 事件
+    expect(c2.getTask(agent, 't1').status).toBe('in_review') // 恢复 → 仍在
+  })
 })

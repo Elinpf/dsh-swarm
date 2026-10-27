@@ -22,7 +22,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@elinpf/dsh-swarm-team-core-contract": "workspace:*"
+    "@elinpf/dsh-swarm-team-core-contract": "workspace:*",
+    "@elinpf/dsh-swarm-team-durable": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

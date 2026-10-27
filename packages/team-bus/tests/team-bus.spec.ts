@@ -20,6 +20,7 @@ function makeCtx() {
       return { messageId: `m-${sent.length}`, status: 'accepted' as const }
     },
   }
+  const emitted: Array<{ type: string; payload: unknown }> = []
   const ctx: any = {
     teamCore,
     sessions: {},
@@ -31,10 +32,13 @@ function makeCtx() {
       if (typeof d === 'function') disposers.push(d as () => void)
       return d
     },
+    on: () => () => {},
+    emit: (n: string, p: unknown) => emitted.push({ type: n, payload: p }),
     _disposeAll: () => disposers.forEach((d) => d()),
     _services: services,
+    _emitted: emitted,
   }
-  return { ctx, sent, teamCore, disposers }
+  return { ctx, sent, teamCore, disposers, emitted }
 }
 
 const caller = { id: 'lead', name: 'lead' } as never
@@ -161,5 +165,19 @@ describe('@elinpf/dsh-swarm-team-bus', () => {
     expect(bus.history(asMember, { sinceId: first.id }).map((s) => s.topic)).toEqual(['task'])
     // 发送者自己拉取 → 不回投自己发的
     expect(bus.history(caller)).toHaveLength(0)
+  })
+
+  it('恢复（ADR-0002）：重建 bus + recover(durable) → durable/history 仍在；未恢复则空', async () => {
+    const { ctx, emitted } = makeCtx()
+    const bus = new TeamBusService(ctx, { maxFanout: 64, maxMessageBytes: 65536 })
+    await bus.broadcast(caller, { topic: 'announce', content: text('one'), delivery: 'quiet' })
+    expect(bus.durableCount).toBe(1)
+    expect(emitted.map((e) => e.type)).toContain('swarm/bus/broadcast')
+
+    const bus2 = new TeamBusService(ctx, { maxFanout: 64, maxMessageBytes: 65536 })
+    expect(bus2.durableCount).toBe(0) // 未恢复 → 空（缺陷）
+    bus2.recover(emitted)
+    expect(bus2.durableCount).toBe(1) // 恢复 → 仍在
+    expect(bus2.history({ id: 'a', name: 'a' } as never).map((s) => s.topic)).toEqual(['announce'])
   })
 })

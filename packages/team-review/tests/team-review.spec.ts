@@ -40,23 +40,26 @@ function makeCtx(ownerName = 'w') {
       return { messageId: 'm', status: 'accepted' as const }
     },
   }
+  const emitted: Array<{ type: string; payload: unknown }> = []
   const ctx: any = {
     teamCore,
     teamBus: {},
     agents: {},
     subagents: {},
     tools: {},
-    logger: { warn() {}, debug() {} },
+    logger: { warn() {}, debug() {}, info() {} },
     reflect: { provide() {} },
     effect: (fn: () => unknown) => {
       const d = fn()
       if (typeof d === 'function') disposers.push(d as () => void)
       return d
     },
+    emit: (n: string, p: unknown) => emitted.push({ type: n, payload: p }),
     _task: task,
     _sent: sent,
+    _emitted: emitted,
   }
-  return { ctx, task, sent }
+  return { ctx, task, sent, emitted }
 }
 
 const binaryPools = [
@@ -279,5 +282,32 @@ describe('@elinpf/dsh-swarm-team-review', () => {
     expect(v.kind).toBe('fail')
     expect(task.status).toBe('in_progress')
     expect(rv.inspect('t1')?.round).toBe(2)
+  })
+
+  it('恢复（ADR-0002）：重建服务 + recover(durable) → 评审轮次/票仍在；未恢复则空', async () => {
+    const { ctx, emitted } = makeCtx()
+    const cfg = { pools: binaryPools, maxRounds: 3, stallTimeoutMs: 1000 }
+    const rv = new TeamReviewService(ctx, cfg)
+    await rv.submitForReview(asCaller('w'), 't1')
+    await rv.vote(asCaller('verifier'), 't1', {
+      kind: 'binary',
+      decision: 'pass',
+      role: 'verifier',
+    })
+    await rv.vote(asCaller('challenger'), 't1', {
+      kind: 'binary',
+      decision: 'fail',
+      role: 'challenger',
+    })
+    expect(emitted.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['swarm/review/submitted', 'swarm/review/vote']),
+    )
+
+    const rv2 = new TeamReviewService(ctx, cfg) // 重建（模拟重启）
+    expect(rv2.inspect('t1')).toBeUndefined() // 未恢复 → 空（缺陷）
+    rv2.recover(emitted)
+    const s = rv2.inspect('t1')
+    expect(s?.round).toBe(1)
+    expect(s?.votes.length).toBe(2)
   })
 })

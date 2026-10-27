@@ -16,6 +16,8 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MemoryRecord, TeamMemory } from '@elinpf/dsh-swarm-team-capability-contract'
 import type { TeamCore as _TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
+import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 export interface Config {
   /** 共享记忆的写权限：'lead' 仅 Lead，'any' 任意成员。 */
@@ -45,6 +47,10 @@ export class TeamMemoryService extends Service implements TeamMemory {
     super(ctx, 'teamMemory')
     this.config = config
 
+    // 恢复（ADR-0002）：把历史 durable 记忆事件折叠回 shared/private。
+    ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
+      if (isDurableEvent(ev) && ev.type.startsWith('swarm/memory/')) this.recover([ev])
+    })
     ctx.effect(() => {
       // context（非 section）：保 system-prompt 前缀稳定（cache-safe）。
       const off = ctx.systemPrompt.context({
@@ -70,6 +76,7 @@ export class TeamMemoryService extends Service implements TeamMemory {
     }
     const rec = this.record('shared', text)
     this.shared.push(rec)
+    this.emitDurable('swarm/memory/shared', { record: rec })
     return rec
   }
 
@@ -79,12 +86,58 @@ export class TeamMemoryService extends Service implements TeamMemory {
     const list = this.private.get(id) ?? []
     list.push(rec)
     this.private.set(id, list)
+    this.emitDurable('swarm/memory/private', { memberId: id, record: rec })
     return rec
   }
 
   recall(agent: Agent): MemoryRecord[] {
     const id = this.memberId(agent)
     return [...this.shared, ...(this.private.get(id) ?? [])]
+  }
+
+  /** 恢复：折叠 `swarm/memory/*` durable 事件到 shared/private（ADR-0002；幂等去重）。 */
+  recover(events: Iterable<DurableEvent>): void {
+    foldDurableEvents(
+      undefined,
+      events,
+      {
+        'swarm/memory/shared': (_s, p) => {
+          const rec = p.record as MemoryRecord | undefined
+          if (!rec?.id) return
+          if (!this.shared.some((r) => r.id === rec.id)) this.shared.push(rec)
+          this.bumpSeq(rec.id)
+        },
+        'swarm/memory/private': (_s, p) => {
+          const rec = p.record as MemoryRecord | undefined
+          if (!rec?.id || typeof p.memberId !== 'string') return
+          const list = this.private.get(p.memberId) ?? []
+          if (!list.some((r) => r.id === rec.id)) list.push(rec)
+          this.private.set(p.memberId, list)
+          this.bumpSeq(rec.id)
+        },
+      },
+      { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
+    )
+  }
+
+  private bumpSeq(id: string): void {
+    const n = Number(id.split('-').pop())
+    if (Number.isFinite(n)) this.seq = Math.max(this.seq, n)
+  }
+
+  private emitDurable(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
+        version: DURABLE_VERSION,
+        ...payload,
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-memory: durable emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
   }
 
   // ── 内部 ───────────────────────────────────────────────────────────────────

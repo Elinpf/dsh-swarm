@@ -20,6 +20,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TaskView } from '@elinpf/dsh-swarm-team-core-contract'
+import { DURABLE_VERSION, foldDurableEvents } from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -121,6 +123,7 @@ export class TeamReviewService extends Service implements TeamReview {
       action: 'submit_review',
     })
     this.states.set(taskId, { round: 1, votes: new Map() })
+    this.emitDurable('swarm/review/submitted', { taskId, round: 1 })
     return view
   }
 
@@ -137,6 +140,7 @@ export class TeamReviewService extends Service implements TeamReview {
       )
     }
     state.votes.set(callerName, v) // 同一 reviewer 后写覆盖
+    this.emitDurable('swarm/review/vote', { taskId, reviewer: callerName, vote: v })
   }
 
   async settle(caller: Agent, taskId: string): Promise<ReviewVerdict> {
@@ -146,6 +150,7 @@ export class TeamReviewService extends Service implements TeamReview {
 
     const verdict = this.adjudicate(state)
     state.verdict = verdict
+    this.emitDurable('swarm/review/settled', { taskId, verdict })
 
     if (verdict.kind === 'pass') {
       const task = this.ctx.teamCore.getTask(caller, taskId)
@@ -171,6 +176,7 @@ export class TeamReviewService extends Service implements TeamReview {
         action: 'reject_review',
       })
       state.round += 1
+      this.emitDurable('swarm/review/round', { taskId, round: state.round })
       return verdict
     }
     return verdict
@@ -182,6 +188,50 @@ export class TeamReviewService extends Service implements TeamReview {
     const s = this.states.get(taskId)
     if (!s) return undefined
     return { round: s.round, votes: [...s.votes.values()], verdict: s.verdict }
+  }
+
+  /** 恢复：折叠 `swarm/review/*` durable 事件到 states（ADR-0002；幂等可重放）。 */
+  recover(events: Iterable<DurableEvent>): void {
+    foldDurableEvents(
+      undefined,
+      events,
+      {
+        'swarm/review/submitted': (_s, p) => {
+          if (typeof p.taskId === 'string') {
+            const round = typeof p.round === 'number' ? p.round : 1
+            this.states.set(p.taskId, { round, votes: new Map() })
+          }
+        },
+        'swarm/review/vote': (_s, p) => {
+          const st = typeof p.taskId === 'string' ? this.states.get(p.taskId) : undefined
+          if (st && typeof p.reviewer === 'string') st.votes.set(p.reviewer, p.vote as ReviewVote)
+        },
+        'swarm/review/round': (_s, p) => {
+          const st = typeof p.taskId === 'string' ? this.states.get(p.taskId) : undefined
+          if (st && typeof p.round === 'number') st.round = p.round
+        },
+        'swarm/review/settled': (_s, p) => {
+          const st = typeof p.taskId === 'string' ? this.states.get(p.taskId) : undefined
+          if (st && p.verdict) st.verdict = p.verdict as ReviewVerdict
+        },
+      },
+      { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
+    )
+  }
+
+  private emitDurable(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
+        version: DURABLE_VERSION,
+        ...payload,
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-review: durable emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────────────

@@ -29,6 +29,8 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SkillVisibility, TeamSkills } from '@elinpf/dsh-swarm-team-capability-contract'
 import type { TeamCore as _TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
+import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 export interface Config {
   /** 无文档时是否视为无限制（对齐迁移设计）。 */
@@ -78,6 +80,10 @@ export class TeamSkillsService extends Service implements TeamSkills {
   constructor(ctx: Context, config: Config = { unrestrictedWhenUndeclared: true }) {
     super(ctx, 'teamSkills')
     this.config = config
+    // 恢复（ADR-0002）：把历史 durable 可见性/授权事件折叠回 docs/grants。
+    ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
+      if (isDurableEvent(ev) && ev.type.startsWith('swarm/skills/')) this.recover([ev])
+    })
     ctx.effect(
       () => () => {
         this.disposed = true
@@ -90,8 +96,48 @@ export class TeamSkillsService extends Service implements TeamSkills {
     )
   }
 
+  /** 恢复：折叠 `swarm/skills/*` durable 事件到 docs/grants（ADR-0002；幂等）。 */
+  recover(events: Iterable<DurableEvent>): void {
+    foldDurableEvents(
+      undefined,
+      events,
+      {
+        'swarm/skills/visibility': (_s, p) => {
+          if (typeof p.teamId === 'string' && p.map)
+            this.docs.set(p.teamId, p.map as SkillVisibility)
+        },
+        'swarm/skills/grant': (_s, p) => {
+          if (typeof p.memberId !== 'string' || !Array.isArray(p.names)) return
+          let set = this.grants.get(p.memberId)
+          if (!set) {
+            set = new Set()
+            this.grants.set(p.memberId, set)
+          }
+          for (const n of p.names) if (typeof n === 'string') set.add(n)
+        },
+      },
+      { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
+    )
+  }
+
+  private emitDurable(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
+        version: DURABLE_VERSION,
+        ...payload,
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-skills: durable emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
+  }
+
   declare(teamId: string, map: SkillVisibility): () => void {
     this.docs.set(teamId, map)
+    this.emitDurable('swarm/skills/visibility', { teamId, map })
     this.reconcileKnown()
     return () => {
       if (this.docs.get(teamId) === map) this.docs.delete(teamId)
@@ -108,6 +154,7 @@ export class TeamSkillsService extends Service implements TeamSkills {
     }
     const added = skillNames.filter((n) => !set!.has(n))
     added.forEach((n) => set!.add(n))
+    if (added.length > 0) this.emitDurable('swarm/skills/grant', { memberId: id, names: added })
     void this.reconcile(agent)
     return () => {
       added.forEach((n) => set!.delete(n))

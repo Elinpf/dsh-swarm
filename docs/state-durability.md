@@ -12,6 +12,8 @@
 
 ## 1. 内存态清单与分类（带文件行号）
 
+> 备注：下表为**审计时（修复前）**的状态分类；「必须持久」6 项已于 P23 按 ADR-0002 修复（见 §3/§4）。
+
 | 包 | 字段（行号） | 内容 | 分类 | 理由 |
 |---|---|---|---|---|
 | **team-core** | `reviewing: Set<taskId>`（`src/index.ts:129`） | 评审中任务集（`in_review` 叠加态） | **必须持久（缺陷）** | 丢 → `in_review` 退化为 `in_progress`：可能被**重复派发**、**绕过验证闸**直接被完成 |
@@ -36,7 +38,7 @@
 
 （阶段 3 的 `team-transport` / `team-distributed` / `team-human` 由 `dsh-plugin-dev-2` 负责；`team-distributed` 已有 `recover()` 雏形，本表未越界审计。）
 
-## 2. 「必须持久」项汇总（缺陷）
+## 2. 「必须持久」项汇总（**已修复**：ADR-0002 emit durable + recover fold）
 
 1. team-core `reviewing`（`in_review` 叠加态）—— P18 已登记。
 2. team-review `states`（评审轮次/票/verdict）。
@@ -45,18 +47,19 @@
 5. team-memory `shared` + `private` + `seq`（团队/成员记忆）。
 6. team-completion `unread`（未读台账）。
 
-## 3. 建议的统一机制（复用既有约定，不另造存储层）
+## 3. 统一机制（**已采纳**，见 ADR-0002）
 
-对齐 `team-distributed.recover()` 的做法：
+对齐既有约定「durable 事件即真相」：
 - **emit**：每个「必须持久」变更发一条 `swarm/<domain>/*`（带 `version`）durable 事件；
-- **fold**：包 `ctx.effect` 内订阅启动时的 session replay（或 `ctx.on('session/event')`），把历史事件折叠回内存态；
+- **fold**：包 `recover(events)` 用统一折叠助手 `foldDurableEvents`（`@elinpf/dsh-swarm-team-durable`）把历史事件折叠回内存态；运行时经 `ctx.on('session/event')` 叠加；
 - **幂等**：折叠 + 实时事件共用同一 reducer，重复折叠安全。
 
-> ⚠ 该机制会**新增跨包的事件契约**（事件名/schema），属**接口层面**变更 —— 按任务约束「若发现需要改变接口设计，先 send_message 问 Leader」，**已上报待确认**（见 `docs/verification.md` P23 §D）。
+> ✅ 该机制新增的跨包事件契约（事件名/schema）已由 **ADR-0002** 冻结并采纳（Leader 裁定方案 A + 四条护栏）。
 
-## 4. 现状与已交付
+## 4. 交付（全部落地）
 
-- 本审计（清单 + 分类 + 行号）✅
-- 能力边界表（README「跨重启状态」段）✅
-- 可执行诊断 `scripts/verify-durability.mjs`（`pnpm verify:durability`，**非发布门禁**）：构造各态 → 重建服务 → 报告哪些态丢失；当前对 §2 各项为**红**（见 `docs/verification.md` P23 §C）。
-- 「必须持久」项的**真正修复**（§3 机制）待 Leader 确认接口后实施（或拆分为后续任务）。
+- 审计（清单 + 分类 + 行号）✅
+- **ADR-0002**（`docs/adr/0002-durable-state-convention.md`）+ 统一折叠助手包 `@elinpf/dsh-swarm-team-durable` ✅
+- 6 个包逐个 emit durable + `recover` fold + **恢复测试**（未恢复失败、恢复成功）✅
+- 能力边界表（README「跨重启状态」段）= 6 项「保持」✅
+- 可执行诊断 `scripts/verify-durability.mjs`（`pnpm verify:durability`，**非发布门禁**）：置态 → 重建 → `recover` → 恢复，**绿**（见 `docs/verification.md` P23）。

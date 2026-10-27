@@ -17,6 +17,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 import type {
   MemberView,
   MessageRange,
@@ -158,6 +160,12 @@ export class TeamCoreService extends Service implements TeamCore {
       return () => {
         if (this.seam === svc) this.seam = undefined
       }
+    })
+
+    // 恢复（ADR-0002）：把历史 durable 事件折叠回 reviewing。session replay 时经 session/event 到达；
+    // 折叠幂等（add/delete），重复应用安全。
+    ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
+      if (isDurableEvent(ev) && ev.type.startsWith('swarm/core/')) this.recover([ev])
     })
 
     ctx.effect(
@@ -310,6 +318,7 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.reviewing.add(req.taskId)
+      this.emitDurable('swarm/core/review-entered', { taskId: req.taskId })
       return this.overlay(cur)
     }
     if (req.action === 'reject_review') {
@@ -320,6 +329,7 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.reviewing.delete(req.taskId)
+      this.emitDurable('swarm/core/review-left', { taskId: req.taskId, outcome: 'reopened' })
       return this.overlay(this.require().getTask(caller, req.taskId))
     }
     // 评审中：只允许「离场」动作（complete=通过、reopen=返工、delete=撤销）；
@@ -332,6 +342,15 @@ export class TeamCoreService extends Service implements TeamCore {
         )
       }
       this.reviewing.delete(req.taskId)
+      this.emitDurable('swarm/core/review-left', {
+        taskId: req.taskId,
+        outcome:
+          req.action === 'complete'
+            ? 'completed'
+            : req.action === 'delete'
+            ? 'deleted'
+            : 'reopened',
+      })
     }
     // 端口动作名 'assign' → 原生 'reassign'
     const action = req.action === 'assign' ? 'reassign' : req.action
@@ -361,6 +380,39 @@ export class TeamCoreService extends Service implements TeamCore {
   ): Promise<{ previousStatus: MemberView['status'] }> {
     const res = this.require().interrupt(caller, targetName)
     return { previousStatus: res.previousStatus === 'running' ? 'running' : 'inactive' }
+  }
+
+  /** 恢复：折叠 `swarm/core/*` durable 事件到 `reviewing`（ADR-0002；幂等）。 */
+  recover(events: Iterable<DurableEvent>): void {
+    foldDurableEvents(
+      undefined,
+      events,
+      {
+        'swarm/core/review-entered': (_s, p) => {
+          if (typeof p.taskId === 'string') this.reviewing.add(p.taskId)
+        },
+        'swarm/core/review-left': (_s, p) => {
+          if (typeof p.taskId === 'string') this.reviewing.delete(p.taskId)
+        },
+      },
+      { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
+    )
+  }
+
+  /** 发一条 durable 事件（ADR-0002）；失败不阻断（仅告警）。 */
+  private emitDurable(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
+        version: DURABLE_VERSION,
+        ...payload,
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-core: durable emit %s failed: %s',
+        type,
+        String((e as Error)?.message),
+      )
+    }
   }
 
   /** 挂接原生 seam（可观测：首次成功挂接记 info）。 */

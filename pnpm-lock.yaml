@@ -189,6 +189,9 @@ importers:
       '@elinpf/dsh-swarm-team-core-contract':
         specifier: workspace:*
         version: link:../team-core-contract
+      '@elinpf/dsh-swarm-team-durable':
+        specifier: workspace:*
+        version: link:../team-durable
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.5

@@ -13,6 +13,7 @@ function makeCtx() {
     teamCore: { tryMembership: (ag: { id?: string }) => members.find((m) => m.id === ag?.id) },
     sessions: {},
   }
+  const emitted: Array<{ type: string; payload: unknown }> = []
   const ctx: any = {
     get: (n: string) => services[n],
     systemPrompt: {
@@ -33,10 +34,13 @@ function makeCtx() {
       ;(ctx as any)._cleanup = d
       return d
     },
-    logger: { warn() {}, debug() {} },
+    logger: { warn() {}, debug() {}, info() {} },
     reflect: { provide() {} },
+    on: () => () => {},
+    emit: (n: string, p: unknown) => emitted.push({ type: n, payload: p }),
     _sections: sections,
     _contexts: contexts,
+    _emitted: emitted,
   }
   return ctx
 }
@@ -87,5 +91,23 @@ describe('@elinpf/dsh-swarm-team-memory', () => {
     ctx._cleanup()
     expect(ctx._contexts).toHaveLength(0)
     expect(m.readShared(A)).toHaveLength(0)
+  })
+
+  it('恢复（ADR-0002）：重建服务 + recover(durable) → 共享 & 成员私有记忆仍在；未恢复则空', async () => {
+    const ctx = makeCtx()
+    const m = new TeamMemoryService(ctx, cfg)
+    await m.appendShared(LEAD, 'shared-1')
+    await m.memberNote(A, 'a-secret')
+    const emitted = ctx._emitted as Array<{ type: string; payload: unknown }>
+    expect(emitted.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['swarm/memory/shared', 'swarm/memory/private']),
+    )
+
+    const m2 = new TeamMemoryService(makeCtx(), cfg) // 重建（模拟重启）
+    expect(m2.readShared(A)).toHaveLength(0) // 未恢复 → 空（缺陷）
+    m2.recover(emitted)
+    expect(m2.readShared(A).map((r) => r.text)).toEqual(['shared-1'])
+    expect(m2.recall(A).map((r) => r.text)).toEqual(['shared-1', 'a-secret'])
+    expect(m2.recall(A).some((r) => r.text === 'b-secret')).toBe(false)
   })
 })
