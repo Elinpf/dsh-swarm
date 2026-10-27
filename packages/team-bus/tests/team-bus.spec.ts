@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import TeamBusService, { TeamBusError } from '../src/index.ts'
+import { swarmBusProjectionDefinition } from '../src/projection.ts'
 
 /** 最小假 ctx：只提供 Service 构造与 teamBus 逻辑需要的东西。 */
 function makeCtx() {
@@ -179,5 +180,52 @@ describe('@elinpf/dsh-swarm-team-bus', () => {
     bus2.recover(emitted)
     expect(bus2.durableCount).toBe(1) // 恢复 → 仍在
     expect(bus2.history({ id: 'a', name: 'a' } as never).map((s) => s.topic)).toEqual(['announce'])
+  })
+
+  // ── P47 读取侧：swarmBus 投影折叠 + 可见范围 + 注册 ─────────────────────────
+
+  it('P47-B：swarmBus 投影折叠 bus 广播/多播全显示 + 仅保留与 Lead 相关的 DM', () => {
+    const def = swarmBusProjectionDefinition
+    // 合成事件：`plugin:swarm/bus/broadcast` 记录（durableRecordOf 依赖 type=plugin:swarm/… + data）
+    const busEv = (snapshot: Record<string, unknown>, seq: number) => ({
+      type: 'plugin:swarm/bus/broadcast', ignorable: true, seq, time: 1000 + seq,
+      data: { version: 1, name: 'swarm/bus/broadcast', snapshot },
+    }) as never
+    const dmEv = (message: Record<string, unknown>, seq: number) => ({
+      type: 'team/message/queued', seq, time: 1000 + seq,
+      data: { version: 2, teamId: 'lead', message },
+    }) as never
+    let s = def.init({ id: 'lead' })
+    // 全体广播（无 targets）→ 显示
+    s = def.apply(s, busEv({ id: 'bcast-1', senderId: 'lead', senderName: 'lead', topic: 'team', content: [{ type: 'text', text: 'hi' }], delivery: 'quiet' }, 1))
+    // 多播 → 显示
+    s = def.apply(s, busEv({ id: 'mcast-1', senderId: 'a', senderName: 'a', topic: 'message', content: [{ type: 'text', text: 'yo' }], delivery: 'quiet', targets: ['lead'] }, 2))
+    // 与 Lead 相关的 DM（a→lead）→ 显示
+    s = def.apply(s, dmEv({ id: 'm-keep', senderId: 'a', senderName: 'a', targetId: 'lead', content: [] }, 3))
+    // 与 Lead 无关的 DM（a→b）→ 丢弃（不泄露）
+    s = def.apply(s, dmEv({ id: 'm-drop', senderId: 'a', senderName: 'a', targetId: 'b', content: [] }, 4))
+    // 无关事件 → 原状态引用不变（零下游工作）
+    const same = def.apply(s, ({ type: 'turn/start', seq: 5, time: 5, data: {} }) as never)
+    expect(same).toBe(s)
+
+    const view = def.wire.view(s)
+    expect(view.messages.map((m) => m.id)).toEqual(['bcast-1', 'mcast-1', 'm-keep'])
+    expect(view.messages.map((m) => m.kind)).toEqual(['broadcast', 'multicast', 'dm'])
+    // wire 视图引用稳定（同状态 → 同对象）
+    expect(def.wire.view(s)).toBe(view)
+  })
+
+  it('P47-B：sessionProjections 可用时构造函数注册 swarmBus 投影；缺席时不注册也不报错', () => {
+    const { ctx, disposers } = makeCtx()
+    const registered: unknown[] = []
+    const injected: Array<(sctx: unknown) => unknown> = []
+    ctx.inject = (_deps: string[], cb: (sctx: unknown) => unknown) => { injected.push(cb); return () => {} }
+    ctx.sessionProjections = { register: (d: unknown) => { registered.push(d); return () => {} } }
+    // eslint-disable-next-line no-new
+    new TeamBusService(ctx, { maxFanout: 64, maxMessageBytes: 65536 })
+    expect(injected).toHaveLength(1)
+    injected[0]!({ sessionProjections: ctx.sessionProjections, effect: (fn: () => unknown) => fn() })
+    expect(registered[0]).toBe(swarmBusProjectionDefinition)
+    expect(disposers.length).toBeGreaterThanOrEqual(0)
   })
 })

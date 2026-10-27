@@ -23,7 +23,8 @@
   },
   "dependencies": {
     "@elinpf/dsh-swarm-team-core-contract": "workspace:*",
-    "@elinpf/dsh-swarm-team-durable": "workspace:*"
+    "@elinpf/dsh-swarm-team-durable": "workspace:*",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

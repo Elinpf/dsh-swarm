@@ -27,6 +27,7 @@ import {
   isDurableEvent,
 } from '@elinpf/dsh-swarm-team-durable'
 import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import { swarmBusProjectionDefinition } from './projection.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -120,6 +121,18 @@ export class TeamBusService extends Service implements TeamBus {
     super(ctx, 'teamBus')
     this.config = config
     ctx.effect(() => () => this.dispose(), 'teamBus.lifecycle()')
+    // P47 读取侧：注册 `swarmBus` Session 投影（客户端群聊消息流的数据源）。
+    // 延迟绑定：`sessionProjections` 缺席时 team-bus 仍正常激活（只是暂不提供投影），
+    // 避免把投影设成硬依赖而拖垮最小 ctx 下的加载（verify-load）。
+    ctx.inject?.(['sessionProjections'], (sctx) => {
+      const registrar = (sctx as { sessionProjections?: { register(def: unknown): () => void } })
+        .sessionProjections
+      if (registrar === undefined) return
+      sctx.effect(
+        () => registrar.register(swarmBusProjectionDefinition),
+        'teamBus.swarmBusProjection()',
+      )
+    })
     // 恢复（ADR-0002）：把历史 durable 广播事件折叠回 durable + seq。
     ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
       if (isDurableEvent(ev) && ev.type.startsWith('swarm/bus/')) this.recover([ev])
