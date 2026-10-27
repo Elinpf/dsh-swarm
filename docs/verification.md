@@ -1642,3 +1642,70 @@ $ node scripts/verify-e2e.mjs ; bash scripts/e2e-profile.sh --no-model   # PASS=
 
 - 探针 prompt 为**有界委派**（非简报），规模小；忠实场景由用户实测覆盖（§F）。
 - 首组因 **stale-lib**（修后未 build）出现返工——已如实登记；**教训：改源码后必须 `pnpm -r build` 再跑真实产物探针**。
+
+---
+
+# P62 — 提示词引导协同质量：广播/多播发起 + 收口期追问（team-prompt）
+
+## A. 改动面（只改 `packages/team-prompt`）
+
+- `src/index.ts`：在**常驻段 `team:leader`**（P54/P57 已证不被渐进披露过滤）追加两条**判据式**引导：
+  - **⑤ 按影响面选通道**：全体→`broadcast`（**少而重**、会**唤醒全体非发送者**、不得当刷屏）/ 部分→`multicast(targets=[...])` / 单人→`send_message`；
+    并写明 **DSH 无 `@`/mention 工具**——「点名」落到 `multicast` 的 `targets`，文本里 `@name` 仅人类可读约定。
+  - **⑥ 收口期追问**：结果不完整/需澄清/需第二意见时**向该成员 DM 追问**（`send_message`），不自己重做、不直接收口；
+    含追问模板（「你上一条未覆盖 X，请补充 Y」）。
+- `tests/team-prompt.spec.ts`（+4）、`tests/team-prompt.integration.spec.ts`（+1）：断言新引导在**常驻段**、**团队未建时也渲染**；中英双语覆盖。
+- **未改** `bundle` / `team-bus` / `client/*` / `scripts/bench/*` / `verify-e2e.mjs` / `final-acceptance.md`。
+
+## B. 离线门禁（全绿，无模型）
+
+- team-prompt 单测 + 集成：**24 passed**（20 + 4）。
+- 全仓 `pnpm -r test`：**20 test files 全绿**（exit 0，无 FAIL）。
+- `pnpm run verify`（真实 cordis 加载）、`pnpm run verify:e2e`（进程内链路）：通过。
+- `bash scripts/e2e-profile.sh --no-model`：**PASS=7 FAIL=0**。
+
+## C. 【事实】引导确实进入真实 profile 的 prompt（prompt 落盘；成本 7,361）
+
+用临时探针插件（`/tmp/p62-dump-plugin.mjs` + overlay，**未入库**）在真实 headless profile 落盘每次 `system-prompt/assemble`：
+
+```json
+{"hasMulticastTargets":true,"hasFewHeavy":true,"hasFollowup":true,"hasBroadcastWord":true,"hasTeamLeader":true}
+```
+
+⇒ 堵死 P57「以为加了、实际没进 prompt」的静默失真：**引导真在渲染后的系统提示词里**。
+
+## D. 行为级真实 profile 探针（≥3 轮；headless 隔离；不触碰 demo）
+
+- 环境：`DSH_PROFILE=headless` + `run-headless.sh`（llm-pi-ai overlay，真实模型 **DeepSeek-Flash**），`--json` 捕获真实 tool_call。
+- 3 轮**纯用户请求→小规模委派**（非点名工具、非引导语）：
+  1. research 类：最近一周 AI 进展（三角度）；
+  2. 对比类：Vite vs Webpack 开发体验（两名成员各核实一条）；
+  3. 核实类：Python / Node 版本（各派一名成员）。
+
+| 轮 | tokens | turns | broadcast | multicast | send_message | wait_agent | 要点（来自原始 tool_call） |
+|---|---|---|---|---|---|---|---|
+| 1 | 184,089 | 4 | 0 | **1** | 0 | 0 | `multicast(targets=[oss-researcher,hw-researcher])`：把「本环境 web_search 不可用→改用 web_fetch」的**共享协调结论**点名同步给两名成员——**⑤「点名若干成员」正例** |
+| 2 | 140,778 | 3 | 0 | 0 | 3 | 1 | 2 条派发 DM（建任务）+ **1 条追问**：催促仍在 in_progress 的成员收尾 |
+| 3 | 162,675 | 4 | 0 | 0 | 3 | 0 | 2 条看板派发 DM + **1 条追问**：要求成员按 `nodejs.org/dist/index.json` **补一步加固**（明说「不要重写整份文件」） |
+| **合计** | **487,542** | — | **0** | **1** | **6** | **1** | 轮1 的 multicast 与轮2/3 的追问，均为**引导预期行为** |
+
+## E. 结论（对照验收）
+
+- ✅ **`broadcast`/`multicast` > 0**：`multicast=1`，且用法正是「**点名若干成员 + 共享协调结论**」（⑤ 的原意）。
+- ✅ **至少一次向成员追问（DM）**：轮 2 催收尾、轮 3 要求**补充/加固**——与 ⑥ 的追问模板高度一致。
+- ✅ **噪声权衡（②未变坏）**：三轮 `broadcast=0`，**未把广播变成刷屏源**；与 ⑤「少而重」一致（此类小任务确无「全体公告」语义）。
+- **对照 P59 基线**（单轮 7 成员：broadcast=0 / multicast=2 / send_message=13）：本探针规模更小（2–3 成员/轮），`send_message` 多为**派发**，
+  追问仅 **1 条/轮**。**不夸大**：本次只证明「引导能触发 multicast 与追问**各 ≥1 次**」，**不足以断言「显著提升」**（样本小、方差未消，P46 教训）。
+
+## F. 预算（如实，**超预算登记**）
+
+- 探针 3 轮合计 **487,542**，**超出批准硬上限 0.4M 约 87.5k（+21.9%）**；另 prompt 落盘验证 **+7,361**。
+- **超标根因**：上限仅作为**轮前门禁**——round3 开跑前累计 325k < 400k，但 round3 再 +163k 即越界。**教训**：上限应按**单轮预估**留余量，或对 round1 这类开放式 prompt 先单独设上限。
+- **未影响 demo / 用户实例**：全程隔离 `HOME`/`DSH_HOME` + 独立 `headless` profile，独立进程。
+
+## G. 诚实边界 / 未覆盖
+
+- 3 轮均为**有界小委派**，非忠实「大简报」场景；忠实场景由用户 demo 覆盖。
+- **`broadcast` 未被真实触发**（本轮样本中无「全体公告」语义）——**未验证**「引导是否会诱发**过度广播**」；只能说**本轮未诱发**。
+- 只验证「指引进了 prompt + 预期行为出现 ≥1 次」；**未做统计显著性**，也**未证**相对基线的提升幅度。
+- 证据文件：`.runtime/probe/p62-round{1..3}.json`（探针原始输出）；prompt 落盘 `/tmp/p62-dump.jsonl`（临时，未入库）。
