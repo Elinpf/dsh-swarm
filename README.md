@@ -60,7 +60,11 @@ dsh-swarm/
 ├── scripts/
 │   ├── env.sh              # source 后进入隔离环境（P1-env-setup 产出）
 │   ├── setup-env.sh        # 幂等搭建隔离环境（P1-env-setup 产出）
-│   └── verify-load.mjs     # 真实 cordis 加载验证（pnpm verify 的核心）
+│   ├── verify-load.mjs     # 真实 cordis 加载验证（pnpm verify 的核心）
+│   ├── verify-e2e.mjs      # 集成冒烟（pnpm verify:e2e）
+│   ├── run-headless.sh     # 真实模型 headless 驱动（profile 联调）
+│   ├── e2e-profile.sh      # 真实 profile 回归（bundle patch 断言）
+│   └── bench/              # 可复现基准 harness（场景/成本门禁/JSW 对照夹具；见其 README）
 └── docs/
     ├── plugin-dev-guide.md # 插件/bundle 开发手册（核定版）
     ├── env-setup.md        # 隔离环境方案与实测记录
