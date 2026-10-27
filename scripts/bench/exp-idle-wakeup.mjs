@@ -44,14 +44,28 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i]
     const v = argv[i + 1]
-    if (k === '--arm') (a.arm = v), i++
-    else if (k === '--members') (a.members = v), i++
-    else if (k === '--token-cap') (a.tokenCap = parseInt(v, 10)), i++
-    else if (k === '--turn-cap') (a.turnCap = parseInt(v, 10)), i++
-    else if (k === '--timeout-ms') (a.timeoutMs = parseInt(v, 10)), i++
-    else if (k === '--settle-ms') (a.settleMs = parseInt(v, 10)), i++
-    else if (k === '--out') (a.out = v), i++
-    else if (k === '--self-test') a.selfTest = true
+    if (k === '--arm') {
+      a.arm = v
+      i++
+    } else if (k === '--members') {
+      a.members = v
+      i++
+    } else if (k === '--token-cap') {
+      a.tokenCap = parseInt(v, 10)
+      i++
+    } else if (k === '--turn-cap') {
+      a.turnCap = parseInt(v, 10)
+      i++
+    } else if (k === '--timeout-ms') {
+      a.timeoutMs = parseInt(v, 10)
+      i++
+    } else if (k === '--settle-ms') {
+      a.settleMs = parseInt(v, 10)
+      i++
+    } else if (k === '--out') {
+      a.out = v
+      i++
+    } else if (k === '--self-test') a.selfTest = true
     else if (k === '--list') a.list = true
     else if (k.startsWith('--')) throw new Error(`未知参数：${k}`)
   }
@@ -72,7 +86,7 @@ function selfTest() {
   const mk = (id, events) => {
     const d = join(dir, id)
     mkdirSync(d, { recursive: true })
-    const jsonl =
+    const _jsonl =
       events.map((e, i) => JSON.stringify({ seq: i, time: Date.now() + i, ...e })).join('\n') + '\n'
     const p = join(d, 'session.v4.jsonl.zstd')
     // 多帧 zstd（与真实 durable 一致）：逐行一帧
@@ -173,7 +187,7 @@ function await0Import() {
   return { collectRunSessions: _collect }
 }
 
-function summarizeRun(run, args) {
+function summarizeRun(run, _args) {
   const lines = []
   lines.push(`### Arm \`${run.arm}\` — ${run.metrics.members.length} 成员`)
   lines.push('')

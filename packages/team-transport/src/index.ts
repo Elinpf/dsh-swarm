@@ -30,10 +30,7 @@ import type {
 } from '@elinpf/dsh-swarm-team-scale-contract'
 
 export class TeamTransportError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
+  constructor(readonly code: string, message: string) {
     super(`${code}: ${message}`)
     this.name = 'TeamTransportError'
   }
@@ -81,10 +78,7 @@ class LoopbackEnd implements RawLink {
   /** 建链早于消费者挂 onMessage 时先缓冲，避免丢首帧（in-process 同步投递的必然竞态）。 */
   private pending: WireFrame[] = []
 
-  constructor(
-    private readonly channel: LoopbackChannel,
-    private readonly side: 'left' | 'right',
-  ) {}
+  constructor(private readonly channel: LoopbackChannel, private readonly side: 'left' | 'right') {}
 
   get remoteId(): string {
     return this.side === 'left' ? this.channel.labels.right : this.channel.labels.left
@@ -124,10 +118,7 @@ class LoopbackChannel {
   readonly left: LoopbackEnd
   readonly right: LoopbackEnd
 
-  constructor(
-    private readonly bus: LoopbackBus,
-    readonly labels: { left: string; right: string },
-  ) {
+  constructor(private readonly bus: LoopbackBus, readonly labels: { left: string; right: string }) {
     this.left = new LoopbackEnd(this, 'left')
     this.right = new LoopbackEnd(this, 'right')
   }
@@ -253,10 +244,7 @@ class JsonLink implements RawLink {
   private closeCb: (() => void) | undefined
   private pending: WireFrame[] = []
 
-  constructor(
-    readonly remoteId: string,
-    private readonly duplex: DuplexSeam,
-  ) {
+  constructor(readonly remoteId: string, private readonly duplex: DuplexSeam) {
     duplex.onData((data) => {
       for (const line of data.split('\n')) {
         const trimmed = line.trim()
@@ -318,10 +306,7 @@ class SshLinkFactory implements LinkFactory {
 }
 
 class InProcessLinkFactory implements LinkFactory {
-  constructor(
-    private readonly bus: LoopbackBus,
-    private readonly self: string,
-  ) {}
+  constructor(private readonly bus: LoopbackBus, private readonly self: string) {}
 
   async create(peerId: string, endpoint: string): Promise<RawLink | undefined> {
     void peerId
@@ -453,7 +438,11 @@ export class TeamTransportService extends Service implements TeamTransport {
     if (backend === 'local-child') {
       const seam = this.ctx.get('subprocess') as SubprocessSeam | undefined
       if (!seam?.spawn || !this.config.childCommand) return undefined
-      return new ChildProcessLinkFactory(seam, this.config.childCommand, this.config.childArgs ?? [])
+      return new ChildProcessLinkFactory(
+        seam,
+        this.config.childCommand,
+        this.config.childArgs ?? [],
+      )
     }
     const seam = this.ctx.get('ssh') as SshSeam | undefined
     if (!seam?.openDuplex) return undefined

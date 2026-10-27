@@ -17,7 +17,8 @@ export default tseslint.config(
   },
   {
     // 约定：下划线前缀表示「有意未使用」（占位参数、仅为类型增强的 import）
-    files: ['**/*.ts'],
+    // .mjs 脚本同样适用该约定（@typescript-eslint/no-unused-vars 已覆盖 .mjs）
+    files: ['**/*.ts', '**/*.mjs'],
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',

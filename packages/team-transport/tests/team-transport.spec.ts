@@ -231,7 +231,12 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     const { ctx: ca } = makeCtx({ subprocess: subprocessSeam })
     const a = new TeamTransportService(
       ca,
-      cfg({ backend: 'local-child', endpoint: 'A', childCommand: 'node', childArgs: ['relay.mjs'] }),
+      cfg({
+        backend: 'local-child',
+        endpoint: 'A',
+        childCommand: 'node',
+        childArgs: ['relay.mjs'],
+      }),
     )
     expect(a.backend).toBe('local-child')
     await a.send('child-1', frame('mutation'))
