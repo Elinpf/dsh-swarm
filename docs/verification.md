@@ -530,3 +530,69 @@ $ corepack pnpm lint && corepack pnpm format:check  # 本包（team-bus/tool-swa
 - 复测用**桩模式**（零模型成本）。O1 的结构性收益不需真实模型即可判定；而报告 §4 的「轮次」收益在 headless 单根轮截断下**本就不可证实**，故本轮**不为它烧 token**（真实模型消耗 = 0）。
 - 候选 #3（`in_review`）、#4（默认 scheduled）、#2b（默认改 record-only）均属**可观测行为变更**，已 `send_message` 请示 Leader，未授权前不动。
 - 实测用的 A/B 开关（`--broadcast-fanout`，对 `scripts/bench/` 的**追加式**改动）因 `scripts/bench/` 当前是**他人在研的未跟踪目录**，为避免把别人 WIP 裹进本次提交，暂未随本提交入库；其 diff 已记入 `docs/optimization-log.md §2.2`，可照此复现。
+
+---
+
+# P16-repo-hygiene：收口未入库产出 + 仓库健康度修复
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 项目 `dsh-swarm`（起点 `da032be`）
+> 范围：把 P10/P11/P12/P13 的产出从本地工作区收口上云；判定并清理 bench `jsfw/` 意外产物；确认 `--broadcast-fanout` 复现链闭合；修 lint/format 到全绿；全链路复验。
+
+## A. 收口的产出（分逻辑提交）
+
+| commit | 内容 |
+|---|---|
+| `44edd10` | feat(bench)：入库可复现基准 harness（`scenarios.mjs`/`run.sh`/`bench-run.mjs`/`lib/*` + `jsfw/` 夹具）；`.gitignore` 补例外 `!scripts/bench/lib/`（该 lib 是源码，原被通用 `lib` 规则误排除）；新增 `jsfw/.gitignore` |
+| `510358c` | docs(bench)：`benchmark.md`、`jsfw-comparison-fixture.md`（§1.2 改为「入库边界」）、`optimization-log.md §2.5` 复现链闭合说明 |
+| `c0f3dc8` | docs(exp)：`experiments-stage1.md` |
+| `9fb145e` | docs(spec)：`implementation-spec-stage3.md`、`package-layout.md` |
+| `a0feb1b` | style(bench)：lint/format 修复（见 §D） |
+
+收口后 `git status` 仅剩**他人在研文件**（阶段 3 包 `team-scale/transport/distributed/human`、P17 空转唤醒实验 `exp-idle-wakeup.*` / `lib/longres.mjs`），**未裹入**本批提交。
+
+## B. `scripts/bench/jsfw/` 意外产物判定与清理
+
+- **保留（证据，入库）**：`probe_min_team.py` / `probe_stage2_actions.py`（探针脚本）+ `probe_out.log` / `stage2_out.log`（STAGE-1/2 实跑输出；`docs/jsfw-comparison-fixture.md §2` 逐行引用）。
+- **判定为旁生垃圾（不入库，`jsfw/.gitignore` 排除）**：
+  - `.jsfw-home/`：隔离 `OPENJIUWEN_HOME` 的 sqlite DB（+ WAL 342KB / -SHM）/ 会话消息 / 任务 / 锁文件 —— 跑前 `rm -rf .jsfw-home` 即重建，**非证据**。
+  - `logs/`：框架默认日志（相对进程 CWD 生成，自带无意义的 `logs/logs` 嵌套），其中 3 个为空文件 —— **非证据**。
+- **动作**：物理删除 `logs/` 嵌套目录；新增 `jsfw/.gitignore`（排除上述两类）；`scripts/bench/README.md §7` 补全 `jsfw/` 每个文件的用途与「入库/不入库」边界。
+
+## C. `--broadcast-fanout` 复现链确认（P14 O1）
+
+开关**已存在于入库 harness**：`bench-run.mjs` 解析 `--broadcast-fanout dm|record-only` → `stub-backend.mjs` 透传 → `teamBus.broadcast({ fanout })`，与 `team-bus` 的 `BroadcastFanout = 'dm' | 'record-only'`（`packages/team-bus/src/index.ts:50`）一一对应。实跑（桩 S2，`--repeat 3`，零模型成本）：
+
+| 指标 | `--broadcast-fanout dm` | `record-only` |
+|---|---|---|
+| messageDeliveries | **3** | **0** |
+| broadcasts | 1 | 1 |
+| wakeupsFanout | **3** | **0** |
+| spinWakeups | **3** | **0** |
+
+与 `docs/optimization-log.md §2.3` 的表**逐项一致** ⇒ 复现链闭合（§2.5 已更新为「开关已随 P16 入库，命令可直接复现」）。
+
+## D. 全链路复验（P16 收口后，真实输出）
+
+```console
+$ corepack pnpm build        # 全包 Done（tsc）
+$ corepack pnpm test         # 15 个测试文件全通过（team-bus 11 / team-review 10 / team-skills 14 / tool-swarm 8 / …）
+$ corepack pnpm verify       # 真实 cordis 加载全部包，✅ 通过
+$ corepack pnpm verify:e2e   # 阶段1 链路 + 阶段2「技能隔离（lead 可见 arch-design / bob 不泄露）/记忆授权/写域锁互斥」，✅
+$ corepack pnpm lint         # 0 error
+$ corepack pnpm format:check # All matched files use Prettier code style!
+$ bash scripts/e2e-profile.sh --no-model
+  [PASS] @elinpf/dsh-swarm-bundle 自身插入行数 = 11 (期望 11)
+  [PASS] 原生 agent-team / tool-agent-team 行存在 = 2 (期望 2)
+  [PASS] legacy tool-subagent* 为 disabled 的行数 = 4 (期望 4)
+  [PASS] dump-config 无禁用/不兼容告警
+  结果：PASS=4 FAIL=0
+```
+
+lint/format 的两处真实修复：
+1. `scripts/bench/bench-run.mjs`：`if (k===…) (a.x=v), i++` 逗号表达式 → 带值参数表，消除 12× `no-unused-expressions`（行为不变，`--list`/`--broadcast-fanout` 复测一致）。
+2. `.prettierignore`：显式排除 `scripts/bench/jsfw/.jsfw-home/` 与 `logs/`——Prettier 不读 `.gitignore`，原先会把 sqlite 边车消息 `.md` 当待格式化文件误报。
+
+## E. 边界 / 未决
+
+- 本次**只收口 P16 声明的产出**；阶段 3 包（`dsh-plugin-dev-2`）与 P17 空转唤醒实验（`bench-qa-engineer`）仍在同树在研，其文件**不在**本批提交。
+- `scripts/bench/jsfw/` 的两份 `*.log` 为**桩模式**证据；真实模型路径见 `docs/jsfw-comparison-fixture.md §3`（未做）。
