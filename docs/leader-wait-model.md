@@ -176,3 +176,12 @@ grep -n '唤醒' /root/.jiuwenswarm/.agent_teams/jiuwen_team_web_1a1765709a5_5ff
 ### 8.2 原始输出
 - 改前：`.runtime/probe/p46-nativeWait.json`（阶段1 版本，含 `wait_agent`）
 - 改后：`.runtime/probe/p46-neutralDispatch.json`、`.runtime/probe/p46-nativeWait.json`（阶段2 版本，无 `wait_agent`）
+
+
+### 8.3 断言变更留痕（诚实说明）
+
+- 探针 `scripts/verify-leader-wake.mjs` 的 **R 断言由「期望调用 `wait_agent`」改为「期望不调用 `wait_agent`」**，
+  原因=**默认行为已变更**（P46-B 落地 `event-wake`）。**这是事后改断言**，特此留痕，避免被误读为「先绿后绿」。
+- **改前红态原始输出保留**：`.runtime/probe/p46-nativeWait.json`（阶段1 版本，含 `wait_agent`）。
+- **时序**：红 = **改前**（阶段1，§6：tool_calls 含 `wait_agent`）；绿 = **改后**（阶段2，§8：同提示 tool_calls 不含）。
+- 三条独立信号：①改前红态原始输出；②改后**同一提示**不调；③改后**中立提示**也不调。
