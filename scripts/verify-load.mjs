@@ -120,6 +120,11 @@ const PACKAGES = [
     kind: 'types',
   },
   {
+    name: '@elinpf/dsh-swarm-team-scale-contract',
+    file: 'packages/team-scale-contract/lib/index.js',
+    kind: 'types',
+  },
+  {
     name: '@elinpf/dsh-swarm-team-workspace',
     file: 'packages/team-workspace/lib/index.js',
     config: { defaultTtlMs: 900000, enforceWriteGuard: true, sweepIntervalMs: 30000 },
