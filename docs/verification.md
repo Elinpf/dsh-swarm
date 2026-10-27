@@ -1535,4 +1535,5 @@ $ bash scripts/e2e-profile.sh --no-model   # PASS=7 FAIL=0
 - **P51 覆盖**：经 **`ctx.teamCore.send` / `team-bus`** 的**定向消息**（含 tool-swarm 的 `multicast`、派发类）。
 - **不覆盖**：**模型用原生 `send_message`（`tool-agent-team`）直发**——它**直接调 native `sendMessage`，不经 `ctx.teamCore.send`**（实测：跑 `spawn+send_message` 后解压会话日志 `plugin:swarm/message/pending` = 0）。这是**默认主路径**，故真实 profile 下兜底暂不触发。
 - **解锁选项（写给用户/后续）**：① 集群模式 preset **禁用原生 `send_message`、改用本栈工具**；② 或由**上游 `tool-agent-team` 补 hook**（非本仓）。**本仓不 hook 原生路径。**
+- **处置（用户已确认）**：**该限制已知、经用户拍板暂不处理**（记为已知限制，用户持续观察）。**解锁选项**：① 集群模式 preset **禁用原生 `send_message`、改用本栈工具**；② 或上游 `tool-agent-team` 补 hook。**「已知（暂不处理）」≠「待办（漏做）」**——本条是**经确认的取舍**，非遗漏。
 - **`origin` 字段**：已正式加入 `@elinpf/dsh-swarm-team-core-contract` 的 `TeamCore.send(req)`（`origin?: 'broadcast'|'directed'`）——**非宽断言偏离**；广播豁免据此实现。
