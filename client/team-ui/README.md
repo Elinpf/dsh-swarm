@@ -66,8 +66,15 @@ tab 条**加号** → **guide** 列表里点「**群聊**」胶囊 → 右侧出
 - 该 bundle 直接拉取 **HTTP 200（6648 bytes）**，含标记 `swarmTeamChat` / `swarmBus` / `群聊` / `window.__ModuleLoader__`。
 - ⚠️ **视觉「点开」本机无浏览器，需人工按上面步骤点开确认**（DOM 断言待补）。
 
-## 环境受限待办
+## 已知未验（环境受限待办）
 
-- 自动化浏览器 DOM 断言（点击 → tab 出现 → 列表非空）未做，需在有浏览器的环境补。
+- 自动化浏览器 DOM 断言（点击 → tab 出现 → 列表非空）未做，需在有浏览器的环境补；**当前需人工点开确认**。
 - `TeamChatTab` 读取投影用的 `useSessions/useSession` hook 取自槽位运行时 props；已按上游
   `client-ui-agent-team` 同款写法，**但未在本环境做类型级核对**（tsdown 不做类型检查）。上生产前建议跑一次 `tsc` 类型核对。
+
+## demo 实例接入记录（P55）
+
+- 已接入 demo profile `dsh-swarm-demo`：`node_modules/@elinpf/dsh-swarm-team-ui` 软链 + `cordis.patch.yml` 追加该 row。
+- `systemctl restart dsh-swarm-demo` 后：journal **无 error/fail/warn**；启动页客户端模块表含本插件；
+  其 `client.js` **HTTP 200（6648 bytes）**，含 `swarmTeamChat`/`swarmBus`/`群聊`。
+- 用户看板 URL：`http://127.0.0.1:3099/?token=<journal 里的 token>`（重启会换）。
