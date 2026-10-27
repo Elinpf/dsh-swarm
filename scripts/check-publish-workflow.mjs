@@ -47,7 +47,7 @@ check(doc?.jobs && typeof doc.jobs === 'object', '存在 jobs')
 
 // 触发器
 const onKeys = Object.keys(doc.on ?? {})
-check(onKeys.includes('push'), "触发器含 push（tag 触发）")
+check(onKeys.includes('push'), '触发器含 push（tag 触发）')
 check(onKeys.includes('workflow_dispatch'), '触发器含 workflow_dispatch（手动触发）')
 check(JSON.stringify(doc.on?.push?.tags ?? []).includes('v*'), 'push 由 v* tag 触发')
 
@@ -69,7 +69,10 @@ for (const [i, s] of steps.entries()) {
   const hasUses = typeof s.uses === 'string' && s.uses.trim().length > 0
   check(hasRun !== hasUses, `step「${label}」恰有 run 或 uses 之一`)
   if (hasUses) {
-    check(/@[^/\s]+$/.test(s.uses) && !/@(main|master)$/.test(s.uses), `step「${label}」的 uses 已钉版本（${s.uses}）`)
+    check(
+      /@[^/\s]+$/.test(s.uses) && !/@(main|master)$/.test(s.uses),
+      `step「${label}」的 uses 已钉版本（${s.uses}）`,
+    )
   }
 }
 
@@ -82,17 +85,24 @@ check(!plaintextToken.test(allStepText), 'step 的 run/env 中无明文 token')
 // 门禁顺序：build → test → verify → 发布
 const idx = (pred) => steps.findIndex(pred)
 const iBuild = idx((s) => /run.*\bbuild\b/.test(s.run ?? '') || /门禁.*构建/.test(s.name ?? ''))
-const iTest = idx((s) => /vitest|run.*\btest\b/.test(s.run ?? '') || /门禁.*测试/.test(s.name ?? ''))
+const iTest = idx(
+  (s) => /vitest|run.*\btest\b/.test(s.run ?? '') || /门禁.*测试/.test(s.name ?? ''),
+)
 const iVerify = idx((s) => /verify/.test(s.run ?? '') || /门禁.*verify/.test(s.name ?? ''))
 const iPublish = idx((s) => /pnpm -r publish/.test(s.run ?? '') && !/dry-run/.test(s.run ?? ''))
 check(iBuild >= 0, '存在「构建」门禁 step')
 check(iTest >= 0, '存在「测试」门禁 step')
 check(iVerify >= 0, '存在「verify」门禁 step')
 check(iPublish >= 0, '存在真正发布 step（pnpm -r publish）')
-check(iBuild >= 0 && iTest > iBuild && iVerify > iTest && iPublish > iVerify, '顺序满足 build < test < verify < publish')
+check(
+  iBuild >= 0 && iTest > iBuild && iVerify > iTest && iPublish > iVerify,
+  '顺序满足 build < test < verify < publish',
+)
 
 // secret 显式失败检查
-const tokenGuard = steps.find((s) => /NODE_AUTH_TOKEN|NPM_TOKEN/.test(s.run ?? '') && /exit 1/.test(s.run ?? ''))
+const tokenGuard = steps.find(
+  (s) => /NODE_AUTH_TOKEN|NPM_TOKEN/.test(s.run ?? '') && /exit 1/.test(s.run ?? ''),
+)
 check(tokenGuard != null, '存在 NPM_TOKEN 缺失时显式失败（exit 1）的检查')
 
 // 发布相关参数

@@ -38,16 +38,17 @@ bash scripts/bench/run.sh --list
 
 ## 2. 两种后端
 
-| 后端 | 触发 | 跑什么 | 成本 | 给什么数字 |
-|---|---|---|---|---|
-| **stub**（离线桩） | `--no-model` | 真实 cordis 运行时加载**真实插件产物** + 端口 mock（模拟 `ctx.agentTeams`） | 0（无网络/无模型） | 结构指标**真实**：投递、唤醒、空转唤醒、任务状态停留、重试、CAS、stale 自催、进程/磁盘。**LLM 轮次/token = 未采集**（无 LLM） |
-| **model**（真实模型） | 默认 | 复用 `run-headless.sh` 驱动 `dsh headless --json` | 有（token 门禁保护） | 端到端时延、LLM 轮次、token(in/out/total)、工具调用计数、重试(=error 工具结果)、磁盘增量。**wakeups/空转唤醒/teammate token = 未采集**（见 §5 局限） |
+| 后端                  | 触发         | 跑什么                                                                      | 成本                 | 给什么数字                                                                                                                                           |
+| --------------------- | ------------ | --------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **stub**（离线桩）    | `--no-model` | 真实 cordis 运行时加载**真实插件产物** + 端口 mock（模拟 `ctx.agentTeams`） | 0（无网络/无模型）   | 结构指标**真实**：投递、唤醒、空转唤醒、任务状态停留、重试、CAS、stale 自催、进程/磁盘。**LLM 轮次/token = 未采集**（无 LLM）                        |
+| **model**（真实模型） | 默认         | 复用 `run-headless.sh` 驱动 `dsh headless --json`                           | 有（token 门禁保护） | 端到端时延、LLM 轮次、token(in/out/total)、工具调用计数、重试(=error 工具结果)、磁盘增量。**wakeups/空转唤醒/teammate token = 未采集**（见 §5 局限） |
 
 > stub 与 model **不可直接互相比较轮次/token**：stub 没有 LLM。跨后端只能比「结构量」（如投递次数）在两端是否一致。
 
 ## 3. 指标口径（每个数字到底怎么算）
 
 **通用**
+
 - `e2eMs`：一次场景从开始执行到结束的墙钟毫秒（stub=进程内耗时；model=子进程 `dsh` 启动到退出的耗时，含冷启动）。
 - `messageDeliveries`：底层消息投递次数。
   - stub：`teamCore.send` 被调用次数（广播/多播的**每个收件人各算 1 次**，与真实扇出一致）。
@@ -58,6 +59,7 @@ bash scripts/bench/run.sh --list
   - model：`tool_result.status == "error"` 的次数。
 
 **唤醒（stub 专有，结构性）**
+
 - `wakeups`：`delivery=='wakeup'` 的投递次数。
 - `wakeupsDirect`：由**直接调用**（DM/nudge）产生的唤醒。
 - `wakeupsFanout`：由**广播/多播扇出**产生的唤醒（`teamCore.send` 在 bus fanout 窗口内被调用）。
@@ -67,6 +69,7 @@ bash scripts/bench/run.sh --list
   > LLM 轮侧是否真不耗，须由 model 后端/P13 用真实数据判定（stub 无 LLM）。
 
 **任务**
+
 - `tasks[]`：每任务的最终 `status/ready/owner`。
 - `taskDwellMs`：按状态聚合的停留时长（相邻状态事件时间差），并给每任务的 `#<id>` 序列。
 - `casConflicts`：`expectedRevision` 不匹配被拒的次数（乐观并发冲突）。
@@ -75,12 +78,14 @@ bash scripts/bench/run.sh --list
 - `reviewRounds`：评审裁决次数（`reviewSettle` / model 下 `review_submit`+`review_vote`）。
 
 **LLM（model 专有）**
+
 - `llmTurns`：JSON 流中 `status.turn_start` 的**最大 turn 值**（= root 会话的轮数）。
 - `tokens.input/output/total`：累加每个 `status.step_end.usage`（来自官方 `dsh-headless/json-stream`；
   重试的 attempt usage 已被上游正确累计）。
 - `toolCalls.byName`：`tool_call` 事件按工具名计数。
 
 **teammateActivity（model 专有，来自 durable 会话日志）**
+
 - `teammateCount` / `teammateTurns` / `teammateTokens`：root 会话通过 `subagent/catalog` 显式引用的**子会话**（= teammate）
   的轮次与 token 之和。**这是 `--json` 看不到的部分**——只投影 root。
 - 口径：teammate token = 其 durable 日志 `assistant/message.usage` 累加（重试 attempt 的额外用量**未计**，属轻微低估）。
@@ -88,6 +93,7 @@ bash scripts/bench/run.sh --list
 - **用途**：真实团队总成本 = `tokens.total`(root) + `teammateTokens`；实测 root-only **低估 18–36%**（见 `docs/experiments-stage1.md §4`）。
 
 **开销**
+
 - stub `process.rss*Bytes` / `heapUsed*Bytes`：场景执行前后 `process.memoryUsage()`。
 - `disk`：stub 为沙箱目录字节差；model 为 `DSH_HOME/sessions` 目录字节差（durable 会话写入量）。
 
@@ -109,7 +115,7 @@ bash scripts/bench/run.sh --list
    - `model`：交给 lead 会话的中文指令（要求模型逐步执行并原样回报工具结果）。
    - `modelExpect`：松断言（最少工具调用数、期望出现的工具名）。
 2. stub 步骤 ops：`spawn / dm / broadcast / multicast / taskCreate / taskClaim / taskComplete /
-   taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm / wait`。
+taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm / wait`。
 3. 跑 `--no-model` 验证；确认指标合理后，再用小 `--token-cap` 跑 model 验证。
 4. 在 `docs/benchmark.md` 追加基线行与口径说明。
 
@@ -146,5 +152,6 @@ scripts/bench/
 ```
 
 **`jsfw/` 的两类产物**：
+
 - **入库的证据**：两个 `*.py` 探针脚本 + `probe_out.log` / `stage2_out.log`（P12 验收证据，`docs/jsfw-comparison-fixture.md §2` 逐行引用）。
 - **不入库的运行态**（`jsfw/.gitignore` 排除、由探针重建）：`.jsfw-home/`（隔离 `OPENJIUWEN_HOME`：sqlite DB + WAL/SHM + 会话消息 + 任务 + 锁）与 `logs/`（框架默认日志，相对进程 CWD 生成、自带一层 `logs/logs` 嵌套，属非证据的旁生产物）。复现命令见 `docs/jsfw-comparison-fixture.md §1.3`（跑前 `rm -rf .jsfw-home` 保证冷启动）。

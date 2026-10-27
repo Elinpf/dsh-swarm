@@ -47,24 +47,54 @@ function parseArgs(argv) {
     schedMode: 'autonomous',
     broadcastFanout: 'dm',
   }
+  // 带值参数表：命中后统一消费下一个 argv（i++），避免逗号表达式触发 no-unused-expressions
+  const VALUE_FLAGS = {
+    '--scenario': (a, v) => {
+      a.scenario = v
+    },
+    '--repeat': (a, v) => {
+      a.repeat = Math.max(1, parseInt(v, 10) || 1)
+    },
+    '--token-cap': (a, v) => {
+      a.tokenCap = parseInt(v, 10)
+    },
+    '--turn-cap': (a, v) => {
+      a.turnCap = parseInt(v, 10)
+    },
+    '--timeout-ms': (a, v) => {
+      a.timeoutMs = parseInt(v, 10)
+    },
+    '--out': (a, v) => {
+      a.out = v
+    },
+    '--scheduler': (a, v) => {
+      a.scheduler = v
+    },
+    '--review': (a, v) => {
+      a.review = v
+    },
+    '--delivery': (a, v) => {
+      a.delivery = v
+    },
+    '--stale': (a, v) => {
+      a.stale = v
+    },
+    '--sched-mode': (a, v) => {
+      a.schedMode = v
+    },
+    '--broadcast-fanout': (a, v) => {
+      a.broadcastFanout = v
+    },
+  }
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i]
     const v = argv[i + 1]
-    if (k === '--scenario') (a.scenario = v), i++
-    else if (k === '--repeat') (a.repeat = Math.max(1, parseInt(v, 10) || 1)), i++
-    else if (k === '--no-model') a.noModel = true
-    else if (k === '--token-cap') (a.tokenCap = parseInt(v, 10)), i++
-    else if (k === '--turn-cap') (a.turnCap = parseInt(v, 10)), i++
-    else if (k === '--timeout-ms') (a.timeoutMs = parseInt(v, 10)), i++
-    else if (k === '--out') (a.out = v), i++
+    if (k === '--no-model') a.noModel = true
     else if (k === '--list') a.list = true
-    else if (k === '--scheduler') (a.scheduler = v), i++
-    else if (k === '--review') (a.review = v), i++
-    else if (k === '--delivery') (a.delivery = v), i++
-    else if (k === '--stale') (a.stale = v), i++
-    else if (k === '--sched-mode') (a.schedMode = v), i++
-    else if (k === '--broadcast-fanout') (a.broadcastFanout = v), i++
-    else if (k.startsWith('--')) throw new Error(`未知参数：${k}`)
+    else if (Object.hasOwn(VALUE_FLAGS, k)) {
+      VALUE_FLAGS[k](a, v)
+      i++
+    } else if (k.startsWith('--')) throw new Error(`未知参数：${k}`)
   }
   // 硬顶保护：token 上限绝不能超过 5M
   if (a.tokenCap > HARD_TOKEN_CAP) {

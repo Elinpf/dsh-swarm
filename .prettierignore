@@ -6,3 +6,8 @@ pnpm-lock.yaml
 
 # 团队既有调研/环境文档由各自作者维护，本仓不做格式化改写
 docs/
+
+# bench harness 的运行态与框架旁生日志（已在 jsfw/.gitignore 排除，同样不参与格式检查）：
+# Prettier 默认不读 .gitignore，若不显式排除会把 sqlite 边车消息 .md 也当成待格式化文件
+scripts/bench/jsfw/.jsfw-home/
+scripts/bench/jsfw/logs/

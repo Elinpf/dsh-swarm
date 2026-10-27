@@ -48,10 +48,10 @@ export const SCENARIOS = {
       { op: 'dm', args: { to: 'alice', delivery: 'wakeup', text: 'hello from lead' } },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim: " +
+      'Do these in order and report each raw tool result verbatim: ' +
       "1) spawn_teammate name='alice' description='worker' prompt='Reply with exactly ACK'; " +
       "2) send_message target='alice' message='hello from lead'; " +
-      "3) list_agents.",
+      '3) list_agents.',
     modelExpect: { minToolCalls: 3, tools: ['spawn_teammate', 'send_message'] },
   },
 
@@ -66,12 +66,12 @@ export const SCENARIOS = {
       { op: 'broadcast', args: { topic: 'team', delivery: 'wakeup', text: 'standup in 5' } },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim: " +
+      'Do these in order and report each raw tool result verbatim: ' +
       "1) spawn_teammate name='alice' description='worker-a' prompt='Reply with exactly A'; " +
       "2) spawn_teammate name='bob' description='worker-b' prompt='Reply with exactly B'; " +
       "3) spawn_teammate name='carol' description='worker-c' prompt='Reply with exactly C'; " +
       "4) broadcast content='standup in 5' topic='team'; " +
-      "5) list_agents.",
+      '5) list_agents.',
     modelExpect: { minToolCalls: 5, tools: ['spawn_teammate', 'broadcast'] },
   },
 
@@ -89,13 +89,16 @@ export const SCENARIOS = {
       { op: 'taskComplete', args: { ref: 't2' } },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim: " +
+      'Do these in order and report each raw tool result verbatim: ' +
       "1) spawn_teammate name='alice' description='worker' prompt='Reply with exactly OK'; " +
       "2) team_task_create subject='A: build' description='first'; " +
       "3) team_task_create subject='B: test' description='second' blockedBy=['<taskA id>']; " +
       "4) team_task_list; 5) team_task_get id='<taskB id>'; 6) team_task_update id='<taskA id>' action='claim' owner='alice'; " +
       "7) team_task_update id='<taskA id>' action='complete'; 8) team_task_get id='<taskB id>'.",
-    modelExpect: { minToolCalls: 8, tools: ['team_task_create', 'team_task_list', 'team_task_update'] },
+    modelExpect: {
+      minToolCalls: 8,
+      tools: ['team_task_create', 'team_task_list', 'team_task_update'],
+    },
   },
 
   S4: {
@@ -117,8 +120,8 @@ export const SCENARIOS = {
       { op: 'reviewSettle', args: { ref: 't1' } },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim (this profile may not expose review_* tools; " +
-      "if a tool is missing, say so explicitly and continue): " +
+      'Do these in order and report each raw tool result verbatim (this profile may not expose review_* tools; ' +
+      'if a tool is missing, say so explicitly and continue): ' +
       "1) spawn_teammate name='alice' description='author' prompt='Reply with exactly OK'; " +
       "2) team_task_create subject='review me' description='artifact'; " +
       "3) review_submit task_id='<id>'; 4) review_vote task_id='<id>' role='verifier' decision='fail'; " +
@@ -146,7 +149,7 @@ export const SCENARIOS = {
       { op: 'scan', args: { label: 'stale#2' } },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim: " +
+      'Do these in order and report each raw tool result verbatim: ' +
       "1) spawn_teammate name='alice' description='slow-worker' prompt='Reply with exactly OK'; " +
       "2) team_task_create subject='stuck task' description='do it'; " +
       "3) team_task_update id='<id>' action='claim' owner='alice'; " +
@@ -165,12 +168,12 @@ export const SCENARIOS = {
       { op: 'scan', args: { label: 'dispatch' } },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim: " +
+      'Do these in order and report each raw tool result verbatim: ' +
       "1) spawn_teammate name='alice' description='worker-a' prompt='Reply with exactly A'; " +
       "2) spawn_teammate name='bob' description='worker-b' prompt='Reply with exactly B'; " +
       "3) team_task_create subject='job-1' description='x'; " +
       "4) team_task_create subject='job-2' description='y'; " +
-      "5) team_task_list.",
+      '5) team_task_list.',
     modelExpect: { minToolCalls: 5, tools: ['spawn_teammate', 'team_task_create'] },
   },
   S7: {
@@ -181,16 +184,19 @@ export const SCENARIOS = {
       { op: 'spawn', args: { name: 'alice', desc: 'idle-a' } },
       { op: 'spawn', args: { name: 'bob', desc: 'idle-b' } },
       { op: 'wait', args: { timeoutMs: 50 } },
-      { op: 'broadcast', args: { topic: 'announce', delivery: 'wakeup', text: 'FYI only, no action needed' } },
+      {
+        op: 'broadcast',
+        args: { topic: 'announce', delivery: 'wakeup', text: 'FYI only, no action needed' },
+      },
     ],
     model:
-      "Do these in order and report each raw tool result verbatim. " +
+      'Do these in order and report each raw tool result verbatim. ' +
       "1) spawn_teammate name='alice' description='idle-a' prompt='Reply with exactly A and then stop. Do not do anything else.'; " +
       "2) spawn_teammate name='bob' description='idle-b' prompt='Reply with exactly B and then stop. Do not do anything else.'; " +
-      "3) wait_agent timeout_ms=30000; 4) list_agents; " +
+      '3) wait_agent timeout_ms=30000; 4) list_agents; ' +
       "5) broadcast content='FYI only, no action needed' topic='announce'; " +
-      "6) wait_agent timeout_ms=30000; 7) list_agents. " +
-      "Do NOT send any direct messages to alice or bob.",
+      '6) wait_agent timeout_ms=30000; 7) list_agents. ' +
+      'Do NOT send any direct messages to alice or bob.',
     modelExpect: { minToolCalls: 5, tools: ['spawn_teammate', 'broadcast', 'wait_agent'] },
   },
 }
