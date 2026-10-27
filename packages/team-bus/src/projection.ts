@@ -63,27 +63,33 @@ export interface ProjectionEvent {
   readonly ignorable?: boolean
 }
 
-const messageSchema = z.object({
-  id: z.string(),
-  kind: z.enum(['broadcast', 'multicast', 'dm']),
-  topic: z.string().optional(),
-  senderId: z.string(),
-  senderName: z.string(),
-  content: z.array(z.unknown()),
-  delivery: z.string().optional(),
-  targets: z.array(z.string()).optional(),
-  seq: z.number().int().nonnegative(),
-  ts: z.number().int().nonnegative(),
-}).strict()
+const messageSchema = z
+  .object({
+    id: z.string(),
+    kind: z.enum(['broadcast', 'multicast', 'dm']),
+    topic: z.string().optional(),
+    senderId: z.string(),
+    senderName: z.string(),
+    content: z.array(z.unknown()),
+    delivery: z.string().optional(),
+    targets: z.array(z.string()).optional(),
+    seq: z.number().int().nonnegative(),
+    ts: z.number().int().nonnegative(),
+  })
+  .strict()
 
-const stateSchema = z.object({
-  id: z.string(),
-  messages: z.array(messageSchema),
-}).strict()
+const stateSchema = z
+  .object({
+    id: z.string(),
+    messages: z.array(messageSchema),
+  })
+  .strict()
 
-const viewSchema = z.object({
-  messages: z.array(messageSchema),
-}).strict()
+const viewSchema = z
+  .object({
+    messages: z.array(messageSchema),
+  })
+  .strict()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -108,7 +114,12 @@ export function busMessageFrom(
   const senderId = snap['senderId']
   const senderName = snap['senderName']
   const content = snap['content']
-  if (typeof id !== 'string' || typeof senderId !== 'string' || typeof senderName !== 'string' || !Array.isArray(content)) {
+  if (
+    typeof id !== 'string' ||
+    typeof senderId !== 'string' ||
+    typeof senderName !== 'string' ||
+    !Array.isArray(content)
+  ) {
     return undefined
   }
   const targets = Array.isArray(snap['targets'])
@@ -135,7 +146,10 @@ export function busMessageFrom(
  * 原生 DM 事件 `team/message/queued` → 消息；仅当与 Lead（`leadId`）相关时返回。
  * 结构化读取，不 import 实验包类型。
  */
-export function dmMessageFrom(event: ProjectionEvent, leadId: string): SwarmChatMessage | undefined {
+export function dmMessageFrom(
+  event: ProjectionEvent,
+  leadId: string,
+): SwarmChatMessage | undefined {
   if (event.type !== 'team/message/queued') return undefined
   const data = event.data
   if (!isRecord(data) || data['version'] !== 2 || data['teamId'] !== leadId) return undefined
@@ -149,12 +163,16 @@ export function dmMessageFrom(event: ProjectionEvent, leadId: string): SwarmChat
   const id = msg['id']
   const senderName = msg['senderName']
   const content = msg['content']
-  if (typeof id !== 'string' || typeof senderName !== 'string' || !Array.isArray(content)) return undefined
+  if (typeof id !== 'string' || typeof senderName !== 'string' || !Array.isArray(content))
+    return undefined
   return { id, kind: 'dm', senderId, senderName, content, seq: event.seq, ts: event.time }
 }
 
 /** 追加一条消息（去重 + 上限裁剪）；无变化时返回原引用。 */
-function appended(messages: readonly SwarmChatMessage[], message: SwarmChatMessage): readonly SwarmChatMessage[] {
+function appended(
+  messages: readonly SwarmChatMessage[],
+  message: SwarmChatMessage,
+): readonly SwarmChatMessage[] {
   if (messages.some((m) => m.id === message.id)) return messages
   const next = [...messages, message]
   return next.length > MAX_SWARM_MESSAGES ? next.slice(next.length - MAX_SWARM_MESSAGES) : next
