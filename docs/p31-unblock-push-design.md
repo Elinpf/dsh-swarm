@@ -77,3 +77,7 @@ P30 计划闸预计用 `swarm/task/plan-request|plan-response` / `swarm/task/rev
 - **顺序**：等 dev-1 报 P30 完成 → 我 rebase 到最新 main → 改上述两处 → 再向 Leader 报**实际改动面**。
 - **边界**：`swarm/task/terminal` 是否由 P30 的计划态路径一并发出需合并确认；`onTaskTerminal` 与 P30 对 `onePass` busy 判定的改动需同源（避免两处各判一次）。
 - 通知型事件不参与 ADR-0002 折叠（无新 durable 状态），故**无需**恢复测试；若后续要 durable 化，另立 ADR 增补。
+- **stale 检测风险（移植提醒）**：我们正把 stale 升级语义往 dsh-swarm 移植（P30/P31 均在动任务状态机）。
+  平台现有的 stale 检测会**把「进行中但有意外部约束（等人/等依赖/等协调）」误判为「停滞」**（本任务 P31 就因等 P30 收到误报）。
+  移植时必须**区分「停滞」与「有意停驻」**（源系统「等依赖」= `blocked`，但「等人工协调」无对应态），否则会**误升级**。
+  建议：为「有意停驻/等待外部约束」引入显式标记或状态，stale 升级只针对前者。
