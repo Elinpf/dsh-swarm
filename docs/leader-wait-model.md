@@ -281,3 +281,27 @@ run2: wait_agent 调用=0  ; hasDispatch=true 次数=0
 **含义**：
 - 「leader 默认事件唤醒」**目前既未生效（§9.6）也未被可靠验证（§9.7）**；P46 结论文档需按「未生效/待重做」更正。
 - **修复顺序**：P57 修 `teamBuilt` 判定（让 `team:dispatch` 真正进入 prompt）→ 再**用 `prompt-dump` 断言 `hasDispatch=true`** → 然后**多轮重复**测「长轮询是否被治住」（单次不足，须多采样，防方差假绿）。
+
+
+---
+
+## 10. P57 独立复核（prompt-dump 探针，真实会话 ≥3 轮；预算 ≈0.108M ≤0.3M）
+
+对 P57（`team-prompt` c6bd762：修 `teamBuilt` 判定 + 等待硬约束进常驻 `team:leader`）的**独立复核**（非作者自证；用我新增的 `scripts/xproc/prompt-dump-plugin.mjs`）。
+
+**方法**：`pnpm -r build` 后用真实 headless（含 prompt-dump overlay）跑 **3 轮** `spawn_teammate + send_message`，逐次装配落盘段落名/文本，统计。
+
+**结果**：
+```
+round1: assemblies=7  hasDispatch_true=6  false=1  hasEventWake_true=7  wait_agent_calls=1
+round2: assemblies=8  hasDispatch_true=7  false=1  hasEventWake_true=8  wait_agent_calls=0
+round3: assemblies=7  hasDispatch_true=6  false=1  hasEventWake_true=7  wait_agent_calls=0
+TOTAL ≈ 107,772 tokens（≤0.3M）
+```
+**逐条判定**：
+- ✅ **渐进披露两半环都对**：每轮**恰好第 1 次装配 `hasDispatch=false`（建团队前摘掉），其后全部 `true`（spawn 后释放）**。证据（round1）：line1 无 `team:dispatch`/`team:task-state`；line2+ 都在。**对照修前（§9.6）：恒 false ×6** ⇒ **bug 已修**。
+- ✅ **`team:leader` 常驻**：每轮**全部装配**都含 `team:leader`，且 `hasEventWake=true` 全轮命中（含建团队前）⇒ 等待硬约束**起手即生效**。
+- ✅ **长轮询未再出现**：`wait_agent` 调用 **1 / 0 / 0**；**P54 的「idx17→idx44 多次轮询」不再复现**。**诚实保留**：round1 仍有**单次** `wait_agent`（1 次，非轮询）——属正常方差；**「单次 ≠ 长轮询」**，但说明「彻底不 wait」并非绝对（也与设计一致：允许单次短 wait）。
+- 口径：**【真实 profile 级 已验证】本轮**（修复生效 + 无长轮询）；仍建议在最终回归里保持**多轮采样**。
+
+**P57 结论**：独立复核**通过**。P46 更正（§9.6/§9.7）仍成立——即「曾声称生效实为方差假绿 + 提示从未进 prompt」，**本次 P57 修复后该指引才真正进入 prompt 并抑制长轮询**。
