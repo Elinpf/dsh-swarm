@@ -47,6 +47,8 @@ export interface TeamCompletion {
 export interface Config {
   /** 未读消息是否阻止完成。 */
   blockOnUnread: boolean
+  /** 是否允许 leader 显式 override 未读闸（默认 false；P51）。 */
+  allowUnreadOverride: boolean
 }
 
 export class TeamCompletionService extends Service implements TeamCompletion {
@@ -54,14 +56,16 @@ export class TeamCompletionService extends Service implements TeamCompletion {
 
   static Config: z<Config> = z.object({
     blockOnUnread: z.boolean().default(true),
+    allowUnreadOverride: z.boolean().default(false),
   })
 
   private readonly config: Config
   private unread = 0
   private emitted = false
+  private blockedEmitted = false
   private lastSnapshot: CompletionSnapshot | undefined
 
-  constructor(ctx: Context, config: Config = { blockOnUnread: true }) {
+  constructor(ctx: Context, config: Config = { blockOnUnread: true, allowUnreadOverride: false }) {
     super(ctx, 'teamCompletion')
     this.config = config
 
@@ -91,7 +95,10 @@ export class TeamCompletionService extends Service implements TeamCompletion {
     }, 'teamCompletion.lifecycle()')
   }
 
-  async evaluate(agent: Agent): Promise<{ completed: boolean; snapshot?: CompletionSnapshot }> {
+  async evaluate(
+    agent: Agent,
+    opts?: { overrideUnread?: boolean },
+  ): Promise<{ completed: boolean; snapshot?: CompletionSnapshot }> {
     // 完成是团队级信号：只对 Lead 生效
     const me = this.ctx.teamCore.tryMembership(agent)
     if (me && me.role !== 'lead') {
@@ -104,13 +111,27 @@ export class TeamCompletionService extends Service implements TeamCompletion {
     const tasksDone =
       tasks.length >= 1 && tasks.every((t) => t.status === 'completed' || t.status === 'deleted')
     const membersIdle = members.every((m) => m.status !== 'running')
-    const noUnread = !this.config.blockOnUnread || this.unread === 0
+    const gated = this.config.blockOnUnread && this.unread > 0
+    const overridden = !!(opts?.overrideUnread && this.config.allowUnreadOverride)
+    const noUnread = !gated || overridden
 
     const completed = tasksDone && membersIdle && noUnread
     if (!completed) {
+      // 可观测：因「未读>0」被拦（仅当其它条件都已满足），上升沿发一次
+      if (tasksDone && membersIdle && gated && !overridden && !this.blockedEmitted) {
+        this.blockedEmitted = true
+        this.emitNotify('swarm/completion/unread-blocked', {
+          unread: this.unread,
+          overridden: false,
+        })
+      }
       this.emitted = false // rearm：条件一旦被打破，下次满足时重新算作上升沿
       return { completed: false }
     }
+    if (overridden) {
+      this.emitNotify('swarm/completion/unread-blocked', { unread: this.unread, overridden: true })
+    }
+    this.blockedEmitted = false
 
     const snapshot: CompletionSnapshot = { tasks: tasks.length, members: members.length }
     if (!this.emitted) {
@@ -134,6 +155,15 @@ export class TeamCompletionService extends Service implements TeamCompletion {
       },
       { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
     )
+  }
+
+  /** 通知型事件（非 durable）：仅广播，不参与 fold。 */
+  private emitNotify(type: string, payload: Record<string, unknown>): void {
+    try {
+      ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, payload)
+    } catch {
+      /* ignore */
+    }
   }
 
   /** durable 发射：进程内 `ctx.emit`（供 fold）**且** 真 append 会话日志（P52 通道 A，供跨重启 replay）。 */

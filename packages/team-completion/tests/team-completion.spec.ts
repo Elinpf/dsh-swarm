@@ -139,3 +139,38 @@ describe('@elinpf/dsh-swarm-team-completion', () => {
     expect(emitted).toEqual([])
   })
 })
+
+describe('P51 未读闸 + override 可观测', () => {
+  const idleMembers = [{ id: 'lead', name: 'lead', role: 'lead', status: 'idle' }]
+  function feedUnread(ctx: any, n = 1) {
+    const h = ctx._handlers['session/event']?.[0]
+    for (let i = 0; i < n; i++) h({}, { type: 'team/message/queued' })
+  }
+
+  it('未读>0 ⇒ 不完成 + emit swarm/completion/unread-blocked', async () => {
+    const { ctx } = makeCtx({ tasks: [doneTask], members: idleMembers })
+    const svc = new TeamCompletionService(ctx, { blockOnUnread: true, allowUnreadOverride: false })
+    feedUnread(ctx)
+    const r = await svc.evaluate(lead)
+    expect(r.completed).toBe(false)
+    expect(ctx._emitted).toContain('swarm/completion/unread-blocked')
+  })
+
+  it('leader 显式 override（allowUnreadOverride=true）⇒ 完成 + 事件标 overridden', async () => {
+    const { ctx, durable } = makeCtx({ tasks: [doneTask], members: idleMembers })
+    const svc = new TeamCompletionService(ctx, { blockOnUnread: true, allowUnreadOverride: true })
+    feedUnread(ctx)
+    const r = await svc.evaluate(lead, { overrideUnread: true })
+    expect(r.completed).toBe(true)
+    const ev = durable.find((d) => d.type === 'swarm/completion/unread-blocked')
+    expect((ev?.payload as any)?.overridden).toBe(true)
+  })
+
+  it('allowUnreadOverride=false ⇒ override 被忽略（仍不完成）', async () => {
+    const { ctx } = makeCtx({ tasks: [doneTask], members: idleMembers })
+    const svc = new TeamCompletionService(ctx, { blockOnUnread: true, allowUnreadOverride: false })
+    feedUnread(ctx)
+    const r = await svc.evaluate(lead, { overrideUnread: true })
+    expect(r.completed).toBe(false)
+  })
+})
