@@ -112,8 +112,26 @@ describe('@elinpf/dsh-swarm-team-prompt', () => {
       'team:inbound',
     ])
 
-    // 模拟 teammates 出现（team/member v2，role=teammate）
-    ctx._handlers['session/event']![0]!({}, { type: 'team/member', data: { role: 'teammate' } })
+    // 模拟 teammates 出现：使用**真实** team/member v2 形状
+    // data = { version, teamId, member: { id, name, description, provider, context, phase } }
+    ctx._handlers['session/event']![0]!(
+      {},
+      {
+        type: 'team/member',
+        data: {
+          version: 2,
+          teamId: 'team-1',
+          member: {
+            id: 'm1',
+            name: 'alice',
+            description: '',
+            provider: 'spawn',
+            context: 'fresh',
+            phase: 'active',
+          },
+        },
+      },
+    )
 
     const after = await assemble(assembly(), {}, next)
     expect(after.sections.map((s: any) => s.name)).toEqual([
@@ -246,5 +264,46 @@ describe('P57 等待模型硬约束提升到常驻 team:leader（治 wait_agent 
     expect(leader.text).toContain('long blocking is forbidden by default')
     expect(leader.text).toContain('END YOUR TURN')
     expect(leader.text).toContain('NEVER wait multiple times in a row')
+  })
+})
+
+describe('P57 修 teamBuilt 判定 bug（渐进披露形状错配 → 永久过滤）', () => {
+  /** 用真实 team/member v2 事件驱动装配，返回放出后的 section 名单。 */
+  async function namesAfter(ctx: any, event: unknown): Promise<string[]> {
+    const assemble = ctx._handlers['system-prompt/assemble']![0]!
+    const next = async () => assembly()
+    ctx._handlers['session/event']![0]!({}, event)
+    const result = await assemble(assembly(), {}, next)
+    return result.sections.map((s: any) => s.name)
+  }
+
+  it('真实形状 {version, teamId, member:{...}} → dispatch/task-state 被释放（hasDispatch=true）', async () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const names = await namesAfter(ctx, {
+      type: 'team/member',
+      data: {
+        version: 2,
+        teamId: 'team-1',
+        member: {
+          id: 'm1',
+          name: 'bob',
+          description: '',
+          provider: 'spawn',
+          context: 'fresh',
+          phase: 'provisioning',
+        },
+      },
+    })
+    expect(names).toContain('team:dispatch')
+    expect(names).toContain('team:task-state')
+  })
+
+  it('回归防护：旧错误形状 {data:{role}} 不触发释放（固化 bug 记忆）', async () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const names = await namesAfter(ctx, { type: 'team/member', data: { role: 'teammate' } })
+    // 该形状不是真实事件，故不应释放——若此断言变红，说明判定又被写入错误字段
+    expect(names).not.toContain('team:dispatch')
   })
 })

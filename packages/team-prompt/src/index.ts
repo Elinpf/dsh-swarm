@@ -170,11 +170,19 @@ export function apply(ctx: Context, config: Config): void {
       : builtinSections(config.locales, config.leaderWaitModel)
 
   ctx.effect(() => {
-    // 渐进披露状态：观察到 teammate 成员即视为「团队已建立」。
+    // 渐进披露状态：观察到**真实的** `team/member` 事件即视为「团队已建立」。
+    //
+    // ⚠️ P57 修 bug：原判定 `e.data?.role === 'teammate'` 与实际事件形状不匹配——
+    // 原生 `team/member`（v2）的 data 形状是 `{ version, teamId, member: {...} }`，
+    // `role` **不在** data 顶层（`agent-team/src/types.ts:230`、`projection.ts:101-105`）；
+    // 且 `team/member` **只为被 spawn 的 teammate 发**（lead 是客户端投影 `projection.ts:344`，不发事件，
+    // 见 `roster.ts:255-260` 的 `spawnAdmitted`）。⇒ 旧判定**永不置真**，导致
+    // `DEFERRED_BEFORE_TEAM` 被**永久过滤**（建团队后也不释放）= 典型静默失真。
+    // 现改为：任何携带 `member` 对象的 `team/member` 事件即置真（= 至少一个 teammate 存在）。
     let teamBuilt = false
     const offMember = ctx.on('session/event', (_session: unknown, ev: unknown) => {
-      const e = ev as { type?: string; data?: { role?: string } }
-      if (e?.type === 'team/member' && e.data?.role === 'teammate') teamBuilt = true
+      const e = ev as { type?: string; data?: { member?: { phase?: string } } }
+      if (e?.type === 'team/member' && e.data?.member) teamBuilt = true
     })
 
     const disposers: Array<() => void> = []

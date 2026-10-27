@@ -60,14 +60,35 @@ describe('P54 真实装配：team:leader 进入渲染后的系统提示词', () 
       leaderProgressiveDisclosure: true,
       sections: [],
     } as never)
-    // 模拟 teammate 出现（team/member v2）
-    ctx.emit('session/event', {}, { type: 'team/member', data: { role: 'teammate' } })
+    // 模拟 teammate 出现（真实 team/member v2 形状：data = { version, teamId, member:{...} }）
+    ctx.emit(
+      'session/event',
+      {},
+      {
+        type: 'team/member',
+        data: {
+          version: 2,
+          teamId: 'team-1',
+          member: {
+            id: 'm1',
+            name: 'alice',
+            description: '',
+            provider: 'spawn',
+            context: 'fresh',
+            phase: 'active',
+          },
+        },
+      },
+    )
     const assembly = await ctx.systemPrompt.assemble({})
     const names = assembly.sections.map((s) => s.name)
     expect(names).toContain('team:leader')
     expect(names).toContain('team:dispatch')
+    expect(names).toContain('team:task-state')
     const prompt = renderPrompt(assembly)
     expect(prompt).toContain('不亲自执行任务')
+    // P57：团队建成后，等待硬约束（team:dispatch 的 event-wake 口径）确实在渲染文本里
+    expect(prompt).toContain('结束你的轮次')
   })
 
   it('关闭渐进披露：所有段常驻，team:leader 依旧在', async () => {
