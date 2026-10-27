@@ -67,7 +67,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
   static inject = ['teamCore', 'teamBus', 'agents', 'systemPrompt'] as const
 
   static Config: z<Config> = z.object({
-    mode: z.union([z.const('autonomous'), z.const('scheduled')]).default('autonomous'),
+    mode: z.union([z.const('autonomous'), z.const('scheduled')]).default('scheduled'),
     pollMs: z.number().step(1).min(1).default(30000),
     staleClaimIdleMs: z.number().step(1).min(1).default(600000),
     staleEscalateStreak: z.number().step(1).min(1).default(3),
@@ -516,7 +516,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
 
 function defaultConfig(): Config {
   return {
-    mode: 'autonomous',
+    mode: 'scheduled',
     pollMs: 30000,
     staleClaimIdleMs: 600000,
     staleEscalateStreak: 3,

@@ -1320,3 +1320,41 @@ $ bash scripts/e2e-sched-arm.sh --auto-arm true --expect in_progress --expect-ow
 
 - **P19b 前置成立**：scheduled 派发现**真正指派给成员**（owner=目标成员），可作为默认值切换的依据。
 - autono mous 与 `claim` legacy 语义**未改**。
+
+---
+
+# P19b-default-scheduled：默认派发模式改为 `scheduled`（行为变更）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 基准：**P39**（三臂 arming 后）+ **P43**（P42 归属复核）。
+
+## A. 改动面
+
+| 面 | 改动 |
+|---|---|
+| `team-scheduler` | `Config.mode` 默认 `autonomous → scheduled`（`src/index.ts`）；`defaultConfig().mode='scheduled'` |
+| `bundle` | `cordis.patch.yml` 的 `team-scheduler.config.mode: scheduled`（示例配置同步默认） |
+| README | 新增「任务派发模式（默认 scheduled，⚠️ 破坏性变更）」段：默认值 / 切回 autonomous 的开关 / 两者差别 / 装配条件 |
+| 单测 | 新增「未显式配置 ≡ scheduled；显式 `autonomous` 仍可切换」 |
+
+**未改**：`autonomous` 路径行为（只 nudge、不派发）与 legacy `claim` 语义；`planGate` 维持 `false`；P42 的 `assign` 派发逻辑不动。
+
+## B. 行为级单测
+
+```console
+$ (cd packages/team-scheduler && corepack pnpm exec vitest run)   # Tests 15 passed (15)
+```
+覆盖：默认 `mode==='scheduled'`；显式 `mode:'autonomous'` 生效；scheduled 派发/autonomous nudge 各自路径（既有用例）+ planned 不派发（P30）。
+
+## C. 基准对比（引 P39/P43，真实 profile）
+
+| 模式 | 是否派发 | teammate 开销 | 结论 |
+|---|---|---|---|
+| **`scheduled`（新默认）** | ✅ 真派发（`pending→in_progress`，`ownerName`=被派发成员 `alice`/`bob`，P42 修复后） | **4 轮 / 119.7k token** | 开销更低、无人值守不卡 |
+| `autonomous` | 不派发（成员被 nudge 后自 claim；**反复 nudge**） | **12 轮 / 206.1k token（≈2.4×）** | 供显式切换 |
+| `off` | 静默 | — | — |
+
+依据：`docs/experiments-retest-p24.md` §1.2/§1.3（P39=P38b arming 后重测；P43=P42 归属复核后收口为【成立】）。→ `scheduled` 作默认**有数据支撑**。
+
+## D. 全链路
+
+`build / test / verify / verify:e2e / lint / format:check` + `e2e-profile.sh --no-model` 全绿（见提交原始输出）。

@@ -50,7 +50,7 @@
     - id: team-scheduler
       name: '@elinpf/dsh-swarm-team-scheduler'
       config:
-        mode: autonomous
+        mode: scheduled
         pollMs: 30000
 
     - id: team-completion

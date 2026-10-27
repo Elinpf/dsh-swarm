@@ -407,4 +407,11 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     expect(sent.length).toBe(0)
     sch.dispose()
   })
+
+  it('默认模式（P19b）：未显式配置时 ≡ scheduled；autonomous 仍可显式切换', () => {
+    const a = new TeamSchedulerService(makeCtx().ctx)
+    expect(a.mode).toBe('scheduled') // 默认改为 scheduled
+    const b = new TeamSchedulerService(makeCtx().ctx, cfg({ mode: 'autonomous' }))
+    expect(b.mode).toBe('autonomous') // 显式切换仍有效
+  })
 })

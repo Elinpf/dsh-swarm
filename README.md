@@ -180,6 +180,13 @@ corepack pnpm format:check
 - **返工反馈（定向回流）**：评审 `fail` 时 `settle(caller, taskId, feedback)` 携带 `feedback`；`team-core` 存 `revisionFeedbackOf(taskId)` 并发 `swarm/task/revision-requested`；`team-review` 再把 `[revision-requested] task X: <feedback>` **定向 DM 回原作者**——作者知道「改什么」（不再只知 fail）。
 - 事件 schema（ADR-0002 §3）：`swarm/task/{plan-request, plan-response, revision-requested}`。
 
+### 任务派发模式（**默认 `scheduled`**，P19b —— ⚠️ 破坏性行为变更）
+
+- **默认 `scheduled`（调度派发）**：Leader 侧常驻 `TeamScheduler`，幂等扫描**主动派发**就绪任务（经端口 `assign`→ 原生 `reassign`，owner 落到被派发成员），带超时/重试/卡死升级。**原默认是 `autonomous`，本次改为 `scheduled`，属破坏性默认变更。**
+- **如何切回 `autonomous`（自主认领）**：把 `team-scheduler` 的 `Config.mode` 设为 `'autonomous'`（或 bundle patch 对应行的 `config.mode`）。此时调度器**只 nudge** 空闲成员去自行 `claim`，**不主动派发**——行为与改前一致（未改坏）。
+- **两者差别（真实 profile 数据：【P39/P43】）**：同场景下 `scheduled` **真派发**（任务 `pending→in_progress`、`ownerName` = 被派发成员）、teammate 开销 **4 轮 / 119.7k token**；`autonomous` **不派发**、靠成员被 nudge 后自 claim，且**反复 nudge**，teammate 开销 **12 轮 / 206.1k token（≈2.4×）**。→ 无人值守场景 `scheduled` 开销/信噪更优，故定为默认。
+- 装配条件：`role=LEADER 且 dispatch_mode=scheduled` 时自装配（P38b 自 arming）。
+
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）
