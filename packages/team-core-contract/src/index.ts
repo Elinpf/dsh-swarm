@@ -47,11 +47,10 @@ export interface TaskView {
   subject: string
   description: string
   /**
-   * `in_review` 是本端口在原生 `pending|in_progress|completed|deleted` 之上的**叠加态**：
-   * 原生没有评审态，故由 `team-core` 侧记录（任务在原生仍是 `in_progress`），
-   * 经本端口的读/写一律呈现为 `in_review`（对齐 JiuwenSwarm 的显式评审态）。
+   * `in_review` / `planned` 是本端口在原生 `pending|in_progress|completed|deleted` 之上的**叠加态**：
+   * 原生没有这两个态，故由 `team-core` 侧记录，经本端口的读/写分别呈现为 `in_review`（评审）/ `planned`（计划闸待批）。
    */
-  status: 'pending' | 'in_progress' | 'in_review' | 'completed' | 'deleted'
+  status: 'pending' | 'in_progress' | 'in_review' | 'planned' | 'completed' | 'deleted'
   blockedBy: string[]
   ownerName?: string
   ready: boolean
@@ -121,10 +120,22 @@ export interface TeamCore {
         | 'submit_review'
         /** 评审返工：`in_review → in_progress`（仅 in_review 合法，其余被拒）。 */
         | 'reject_review'
+        /** 计划闸-入闸：`pending → planned`（仅 pending 合法）。 */
+        | 'open_plan'
+        /** 计划闸-提交计划：任务保持 `planned`（承载计划正文 `plan`）。 */
+        | 'submit_plan'
+        /** 计划闸-批准：`planned → pending`（仅 planned 合法；批准后可执行）。 */
+        | 'approve_plan'
+        /** 计划闸-驳回：任务保持 `planned`（仅 planned 合法；携带 `feedback` 供修改）。 */
+        | 'reject_plan'
       subject?: string
       description?: string
       blockedBy?: string[]
       owner?: string
+      /** 计划闸：计划正文（`submit_plan` 用）。 */
+      plan?: string
+      /** 计划闸 / 返工：驳回或返工反馈（`reject_plan` / `reject_review` 用）。 */
+      feedback?: string
     },
   ): Promise<TaskView>
 

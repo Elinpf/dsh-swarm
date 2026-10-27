@@ -57,7 +57,7 @@ export interface ReviewConfig {
 export interface TeamReview {
   submitForReview(caller: Agent, taskId: string): Promise<TaskView>
   vote(caller: Agent, taskId: string, v: ReviewVote): Promise<void>
-  settle(caller: Agent, taskId: string): Promise<ReviewVerdict>
+  settle(caller: Agent, taskId: string, feedback?: string): Promise<ReviewVerdict>
   inspect(
     taskId: string,
   ): { round: number; votes: ReviewVote[]; verdict?: ReviewVerdict } | undefined
@@ -143,7 +143,7 @@ export class TeamReviewService extends Service implements TeamReview {
     this.emitDurable('swarm/review/vote', { taskId, reviewer: callerName, vote: v })
   }
 
-  async settle(caller: Agent, taskId: string): Promise<ReviewVerdict> {
+  async settle(caller: Agent, taskId: string, feedback?: string): Promise<ReviewVerdict> {
     const state = this.states.get(taskId)
     if (!state)
       throw new TeamReviewError('TEAMREVIEW_NOT_SUBMITTED', `task ${taskId} not under review`)
@@ -168,18 +168,44 @@ export class TeamReviewService extends Service implements TeamReview {
         await this.escalate(caller, taskId, `评审连续 ${state.round} 轮未通过，已停止自动返工。`)
         return verdict
       }
-      // 返工：in_review → in_progress
+      // 返工：in_review → in_progress，并**携带 feedback**（P30：作者知道「改什么」）
       const task = this.ctx.teamCore.getTask(caller, taskId)
-      await this.ctx.teamCore.updateTask(caller, {
+      const fb = feedback ?? verdict.reason
+      const view = await this.ctx.teamCore.updateTask(caller, {
         taskId,
         expectedRevision: task.revision,
         action: 'reject_review',
+        feedback: fb,
       })
+      await this.steerAuthor(caller, view, taskId, fb)
       state.round += 1
       this.emitDurable('swarm/review/round', { taskId, round: state.round })
       return verdict
     }
     return verdict
+  }
+
+  /** 定向 steer 作者返工：`[revision-requested] task X: <feedback>` 投给原作者（P30）。 */
+  private async steerAuthor(
+    caller: Agent,
+    view: TaskView,
+    taskId: string,
+    feedback: string,
+  ): Promise<void> {
+    const to = view.ownerName
+    if (!to || !feedback) return
+    try {
+      await this.ctx.teamCore.send(caller, {
+        range: { kind: 'dm', to },
+        content: [{ type: 'text', text: `[revision-requested] task ${taskId}: ${feedback}` }],
+        delivery: 'wakeup',
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-review: steer author failed: %s',
+        String((e as Error)?.message),
+      )
+    }
   }
 
   inspect(
