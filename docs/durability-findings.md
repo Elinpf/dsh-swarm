@@ -63,3 +63,10 @@ GREEN：emitDurable(session,'swarm/core/review-entered',{taskId}) → true；
 - boot 触发下**插件确实在真实 profile 上下文中激活并建了会话**（`sessions/_no-cwd/p52-probe-<pid>/session.v4.jsonl.zstd`），但进程因 `MISSING_CREDENTIAL` **在异步 flush 前退出** ⇒ 日志仅有 session header，**无 `plugin:swarm/probe/durable`**。
 
 **结论：【profile 级 端到端 仍不可判定/未验】**。原因：**dsh 无「免模型完整运行」入口**（`--dump-config` 不跑插件异步；boot 无凭证即快速退出）。**通道本身已由 O2（session 级）证成**；profile 级待 **P49 后 tool-swarm 可达触发**，或上游提供免模型执行入口。探针脚本未入库（避免死代码）。
+
+## 8. team-bus 写入侧/读取侧一致性复核（P52 收尾）
+
+- **写入侧（我）**：`packages/team-bus/src/index.ts` — `broadcast`/`multicast` → `emitDurable(caller.session,'swarm/bus/broadcast',{ snapshot })`；`session/event` 用 `durableRecordOf` 折叠 `plugin:swarm/bus/…`。
+- **读取侧（analyst，`28bd221`）**：`projection.ts` — `durableRecordOf(event)` → `name==='swarm/bus/broadcast'` → `payload['snapshot']`；构造函数 `ctx.inject(['sessionProjections'])` 延迟注册。
+- **一致性结论 ✅**：**同一事件名/命名空间**（`swarm/bus/broadcast` ↔ `plugin:swarm/bus/broadcast`）、**同一 payload**（`{snapshot}`）；**无重复/遗漏**；两侧 `recover` 均经 `durableRecordOf` 识别 `plugin:` 命名空间。证据：`team-bus` 单测 **14/14**、`verify-load` ✅（观察到 `ctx.teamBus`）。
+- **有意偏离（明写，防后人误读为漏做）**：analyst 的读取侧**放弃了任务描述的「`SessionEventMap`/`SessionProjectionMap` declaration merging」**——它引发类型膨胀→`tsc` OOM。改用**结构化类型 + `durableRecordOf` 识别 `plugin:` 命名空间**。**功能等价**（落盘 + replay 已由 O2 证成）；代价=无上游契约编译期绑定（已记入 P47 文档）。**这不是漏做，是经权衡的有意偏离。**
