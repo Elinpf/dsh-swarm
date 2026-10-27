@@ -1370,3 +1370,41 @@ $ (cd packages/team-scheduler && corepack pnpm exec vitest run)   # Tests 15 pas
   - **【profile 级 端到端 未验】**：无可达 swarm emit 触发点，未做；待 P49 后 tool-swarm 可用时顺带补。
 - **`team/message/{queued,delivered}` 非 durable【推翻】** ⇒ P51 未读台账改「自建 durable」。
 - 详见 `docs/durability-findings.md`；文档更正见 ADR-0002 / state-durability.md / final-acceptance.md 的【P52 更正】注记。
+
+---
+
+# P44-bundle-swarm-preset：集群模式 agent preset 转正进 bundle（含默认选中）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 提交 `ab6d2a2`（preset 本体）+ `0d28053`（收尾格式化）
+
+## A. 改动面
+- 新增 `packages/bundle/presets/swarm.patch.yml`：insert `@deepseek-ai/dsh-agent-preset`（`id: swarm` / `name: 集群模式` / `description:…` / `order: 0` / `plugins:` 以 web-app standard preset 为基准完整复制）。
+- `packages/bundle/package.json`：`dsh.bundle.patch` 改为**数组**（`./cordis.patch.yml` + `./presets/swarm.patch.yml`），并把新文件加入 `files` 白名单 + `exports`。
+- `packages/bundle/cordis.patch.yml`：覆盖 `agent-preset-registry.default = swarm`（默认选中集群模式）。
+- `README.md`：新增「集群模式 agent preset（默认）」段 + 切换指引；**S9 修正**（见 §C）。
+
+## B. 验证（`dsh --dump-config` 逐 id）
+
+**关键：preset 归 `web` profile 管（`agent-preset-registry` 是 web-app 行；`headless` 无该行）。** 故在 **web profile** 取证：
+
+```console
+$ dsh --profile web --dump-config | grep -nE 'agent-preset-registry|default:|preset-swarm|集群模式'
+627:- id: agent-preset-registry
+628:  name: '@deepseek-ai/dsh-agent-preset-registry'
+630:    default: swarm                 # ← 默认选中「集群模式」
+1311:- id: preset-swarm
+1315:    name: 集群模式
+1316:    description: swarm 集群模式：多成员协作、共享任务看板、消息总线、评审闸与跨进程传输。
+```
+（`headless` profile 亦能看到 `- id: preset-swarm` / `name: 集群模式`，但不含 registry 行——如实登记。）
+
+## C. S9 文档自相矛盾修正（改前 / 改后）
+- **改前**（README 旧 L260）：「`Config.mode` 当前默认仍是 `autonomous`……P19b 仍未落地」。
+- **改后**（现 L267，保留历史痕迹）：「`Config.mode` **曾默认为 `autonomous`**；**已于 P19b（`2031d44`）改为默认 `scheduled`**……」。
+
+## D. 全链路回归（树恢复后重跑，2026-10-27）
+```console
+$ corepack pnpm build / test / verify / verify:e2e / lint / format:check   # 全绿
+$ bash scripts/e2e-profile.sh --no-model                                   # PASS=7 FAIL=0
+```
+> 过程说明：首轮 `verify` 曾因 **analyst 未提交的 `team-bus` WIP 触发 tsc OOM(134)** 失败（与 P44 无关）；analyst park 后树恢复，重跑全绿。
