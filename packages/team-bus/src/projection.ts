@@ -14,6 +14,9 @@
  * 投影契约以**结构化类型**（`ProjectionDefinition` 形状）满足，注册处在 index.ts 侧做窄类型断言。
  * 运行时行为与契约同构；代价是不具备对上游契约的编译期绑定（已在 P47 文档记明）。
  *
+ * **stateVersion=2（P61）**：折叠语义新增 relay/outbound，故自增版本以**弃用**持久化
+ * 投影缓存里的 v1 状态，使**既有会话**在重启后**整段重折**（无需重跑任务）。
+ *
  * @module @elinpf/dsh-swarm-team-bus/projection
  */
 
@@ -272,7 +275,7 @@ function buildView(messages: readonly SwarmChatMessage[]): SwarmBusView {
 /** `swarmBus` 投影定义（结构化满足 `ProjectionDefinition` 形状）。 */
 export const swarmBusProjectionDefinition = {
   key: 'swarmBus',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema,
   init: (header: { id: string }): SwarmBusState => ({ id: header.id, messages: [] }),
   apply: (state: SwarmBusState, event: ProjectionEvent): SwarmBusState => {
