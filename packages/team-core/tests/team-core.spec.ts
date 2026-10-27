@@ -510,3 +510,38 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
     expect(emissions.some((e) => e.type === 'swarm/task/terminal')).toBe(true)
   })
 })
+
+describe('P51② 定向消息超时重投/升级（防风暴）', () => {
+  const text = [{ type: 'text', text: 'hi' }] as never
+
+  it('send(DM) → 进待处理台账 + emit swarm/message/pending', async () => {
+    const { ctx, emissions } = makeCtx(true)
+    const core = new TeamCoreService(ctx, cfg({ messageAckTimeoutMs: 0, messageMaxRedeliver: 1 }))
+    await core.send(agent, { range: { kind: 'dm', to: 'w' }, content: text, delivery: 'wakeup' })
+    expect(core.pendingMessageCount).toBe(1)
+    expect(emissions.some((e) => e.type === 'swarm/message/pending')).toBe(true)
+  })
+
+  it('逾时未处理 → 重投一次；再逾时 → undelivered + 升级 leader', async () => {
+    const { ctx, sendCalls, emissions } = makeCtx(true)
+    const core = new TeamCoreService(ctx, cfg({ messageAckTimeoutMs: 0, messageMaxRedeliver: 1 }))
+    await core.send(agent, { range: { kind: 'dm', to: 'w' }, content: text, delivery: 'wakeup' })
+    const before = sendCalls.length
+    await core.sweepPending(Date.now() + 1e9)
+    expect(sendCalls.length).toBe(before + 1) // 重投一次
+    expect(emissions.some((e) => e.type === 'swarm/message/redelivered')).toBe(true)
+    await core.sweepPending(Date.now() + 1e9)
+    expect(emissions.some((e) => e.type === 'swarm/message/undelivered')).toBe(true)
+    expect(sendCalls.some((c) => c.target === 'lead')).toBe(true) // 升级 leader
+    expect(core.pendingMessageCount).toBe(0)
+  })
+
+  it('广播不进台账（send 仅接受 DM）', async () => {
+    const { ctx } = makeCtx(true)
+    const core = new TeamCoreService(ctx, cfg())
+    await expect(
+      core.send(agent, { range: { kind: 'broadcast' } as never, content: text, delivery: 'quiet' }),
+    ).rejects.toThrow(/RANGE_UNSUPPORTED/)
+    expect(core.pendingMessageCount).toBe(0)
+  })
+})

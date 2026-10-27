@@ -110,6 +110,10 @@ export interface Config {
   maxMessageBytes: number
   /** 计划闸（执行前审批）：**默认关闭（opt-in）**；开启后 `open_plan` 才可用（对齐源系统 PLANNING 为可选闸门）。 */
   planGate: boolean
+  /** P51②：定向消息「未处理」超时（ms）；到点未 ack → 重投一次。 */
+  messageAckTimeoutMs: number
+  /** P51②：重投次数上限（≤1，防刺激风暴）。 */
+  messageMaxRedeliver: number
 }
 
 export class TeamCoreError extends Error {
@@ -128,9 +132,16 @@ export class TeamCoreService extends Service implements TeamCore {
     maxTasks: z.number().step(1).min(1).default(256),
     maxMessageBytes: z.number().step(1).min(1).default(65536),
     planGate: z.boolean().default(false),
+    messageAckTimeoutMs: z.number().step(1).min(0).default(30000),
+    messageMaxRedeliver: z.number().step(1).min(0).max(1).default(1),
   })
 
   private readonly config: Config
+  /** P51②：定向消息待处理台账（仅 DM；广播不进——见设计口径）。 */
+  private readonly pendingMessages = new Map<
+    string,
+    { caller: Agent; target: string; content: ContentBlock[]; sentAt: number; tries: number }
+  >()
   private seam: AgentTeamsSeam | undefined
   private _backend: 'native' | 'owned'
   /** 「不可用」告警是否已发过（只告警一次，避免刷屏）。 */
@@ -158,6 +169,8 @@ export class TeamCoreService extends Service implements TeamCore {
       maxTasks: 256,
       maxMessageBytes: 65536,
       planGate: false,
+      messageAckTimeoutMs: 30000,
+      messageMaxRedeliver: 1,
     },
   ) {
     super(ctx, 'teamCore')
@@ -299,6 +312,8 @@ export class TeamCoreService extends Service implements TeamCore {
       content: req.content,
       signal: controller.signal,
     })
+    // P51②：定向消息进「待处理」台账（durable，通道 A）；广播**不进**（team-core.send 本就仅接受 DM）
+    this.notePending(caller, res.messageId, req.range.to, req.content)
     return { messageId: res.messageId, status: 'accepted' }
   }
 
@@ -534,6 +549,68 @@ export class TeamCoreService extends Service implements TeamCore {
   }
 
   /** 发一条**通知型**事件（非 durable：仅广播，不参与 ADR-0002 折叠）。 */
+  /** 观测：当前待处理（未 ack）定向消息数。 */
+  get pendingMessageCount(): number {
+    return this.pendingMessages.size
+  }
+
+  private notePending(
+    caller: Agent,
+    messageId: string,
+    target: string,
+    content: ContentBlock[],
+  ): void {
+    if (!messageId) return
+    this.pendingMessages.set(messageId, { caller, target, content, sentAt: Date.now(), tries: 0 })
+    this.emitDurable(caller, 'swarm/message/pending', { messageId, target })
+  }
+
+  /**
+   * P51②：扫描逾时未被处理的定向消息——**重投≤1**（幂等 messageId），仍无处理则
+   * 发 `swarm/message/undelivered` 并**升级 leader**（DM，事件唤醒，不阻塞）。返回本轮处理数。
+   */
+  async sweepPending(now: number = Date.now()): Promise<number> {
+    let acted = 0
+    for (const [id, e] of [...this.pendingMessages]) {
+      if (now - e.sentAt < this.config.messageAckTimeoutMs) continue
+      if (e.tries < this.config.messageMaxRedeliver) {
+        e.tries += 1
+        try {
+          await this.require().sendMessage(e.caller, {
+            target: e.target,
+            content: e.content,
+            signal: new AbortController().signal,
+          })
+          this.emitEvent('swarm/message/redelivered', {
+            messageId: id,
+            target: e.target,
+            attempt: e.tries,
+          })
+        } catch {
+          /* 重投失败：下一轮或升级处理 */
+        }
+        acted += 1
+      } else {
+        this.pendingMessages.delete(id)
+        this.emitEvent('swarm/message/undelivered', { messageId: id, target: e.target })
+        // 升级 leader（直接经 seam，避免再次进入 pending 造成自激）
+        try {
+          await this.require().sendMessage(e.caller, {
+            target: 'lead',
+            content: [
+              { type: 'text', text: `[undelivered] 消息 ${id} → ${e.target} 限时未处理，请介入。` },
+            ],
+            signal: new AbortController().signal,
+          })
+        } catch {
+          /* ignore */
+        }
+        acted += 1
+      }
+    }
+    return acted
+  }
+
   private emitEvent(type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, payload)
