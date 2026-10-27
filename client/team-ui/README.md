@@ -98,3 +98,40 @@ cd <harness>/packages/client/dsh-swarm-team-ui
 - 自证：journal **无 error/fail/warn**；启动页客户端模块表含本插件；其 `client.js` **HTTP 200（6648 bytes）**，含 `swarmTeamChat`/`swarmBus`/`群聊`。
 - 用户看板 URL：`http://127.0.0.1:3099/?token=<journal 里的 token>`（重启会换）。
 - **回滚（移除该 tab）**：删除 `cordis.patch.yml` 里那段 `- insert: … dsh-swarm-team-ui`（或加 `disabled: true`）→ `systemctl restart dsh-swarm-demo`；如需彻底移除再删软链。**一行 patch + 重启即可**。
+
+## 可复跑验证命令（一条条复现当前证据）
+
+设：`H=<harness 绝对路径>`（如 `.runtime/deepseek-harness`）、`PROF=dsh-swarm-demo`、`PORT=3099`、`DSH_HOME=<...>/.runtime/dsh-home`。
+
+```sh
+# 0) 前置：harness 已装依赖（首次）
+cd $H && pnpm install --prefer-offline
+
+# 1) 重建 bundle（先 tsc 出 host 入口 lib/types/index.js，再 tsdown 出 lib/client.js）
+cd $H/packages/client/dsh-swarm-team-ui
+../../../node_modules/.bin/tsc -p tsconfig.json
+../../../node_modules/.bin/tsdown
+
+# 2) 组合树确实含本行
+DSH_HOME=$DSH_HOME node $H/../dsh-cli-npm/node_modules/@deepseek-ai/dsh/lib/bin.js \
+  --profile $PROF --dump-config | grep -n dsh-swarm-team-ui
+
+# 3) 取当前实例 token（重启会变）
+T=$(journalctl -u $PROF --no-pager -n 80 | grep -oE 'token=[A-Za-z0-9_-]+' | tail -1 | cut -d= -f2)
+
+# 4) 拉启动页（带 token）→ 断言 200 且客户端模块表含本插件
+curl -sL -c /tmp/cj -b /tmp/cj -o /tmp/page.html -w "page=%{http_code}\n" \
+  "http://127.0.0.1:$PORT/?token=$T"
+grep -c '@elinpf/dsh-swarm-team-ui' /tmp/page.html          # 期望 >=1
+REV=$(grep -oE "dsh-swarm-team-ui/client\.js&rev=[a-f0-9]+" /tmp/page.html | head -1 | sed 's/.*rev=//')
+
+# 5) 直接拉该客户端 bundle → 断言 200 且含我们的标记
+curl -s -b /tmp/cj -o /tmp/bundle.js -w "bundle=%{http_code} bytes=%{size_download}\n" \
+  "http://127.0.0.1:$PORT/plugins/??@elinpf/dsh-swarm-team-ui/client.js&rev=$REV"
+grep -oE 'swarmTeamChat|swarmBus|群聊|window.__ModuleLoader__' /tmp/bundle.js | sort | uniq -c
+
+# 6) 日志无加载错误
+journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none)'
+```
+
+**判定**：步骤 4 `page=200` 且 grep≥1；步骤 5 `bundle=200` 且打印出 `swarmTeamChat`/`swarmBus`/`群聊`/`__ModuleLoader__`；步骤 6 无 error/fail/warn。**本环境无浏览器**，故「点开看到」需人工按上文「怎么点开看到」操作；DOM 断言待补。
