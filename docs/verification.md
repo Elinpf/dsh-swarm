@@ -1358,3 +1358,15 @@ $ (cd packages/team-scheduler && corepack pnpm exec vitest run)   # Tests 15 pas
 ## D. 全链路
 
 `build / test / verify / verify:e2e / lint / format:check` + `e2e-profile.sh --no-model` 全绿（见提交原始输出）。
+
+
+## M. durable 真持久化修复（P52）
+
+- **背景（P50）**：`swarm/*` 曾只 `ctx.emit`、**从未 append** ⇒ 跨重启不可恢复；`verify-durability.mjs` 为**模拟**。
+- **修复（通道 A）**：`team-durable.emitDurable(session, name, payload)` → **`appendPluginRecord("plugin:swarm/…")`**；`durableRecordOf` 供 replay fold。已接入 `team-core`/`team-completion`/`team-review`/`team-skills`/`team-memory`（`team-bus` 由 analyst 接同一入口，待其 push 后复核）。
+- **正控**：`scripts/verify-durable-channel.mjs`（真实 `dsh-session`+jsonl，免模型）——RED 0 条 / GREEN 直读磁盘有 `plugin:swarm/core/review-entered` + `durableRecordOf` 取回 + **新 Context 重挂载重读仍可取回**。
+- **证据分级（宁降不升）**：
+  - **【session 级 已验证】**：真落盘 + 真重挂载读取（O2 GREEN③）。
+  - **【profile 级 端到端 未验】**：无可达 swarm emit 触发点，未做；待 P49 后 tool-swarm 可用时顺带补。
+- **`team/message/{queued,delivered}` 非 durable【推翻】** ⇒ P51 未读台账改「自建 durable」。
+- 详见 `docs/durability-findings.md`；文档更正见 ADR-0002 / state-durability.md / final-acceptance.md 的【P52 更正】注记。
