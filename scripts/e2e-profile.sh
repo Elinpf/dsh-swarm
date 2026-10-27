@@ -97,7 +97,7 @@ fi
 
 echo ">>> [3/4] 真实模型：最小团队交互（spawn + DM + 任务看板）"
 run-headless() { bash "$REPO_ROOT/scripts/run-headless.sh" --json "$1"; }
-run-headless "Do these in order and report each raw tool result verbatim: 1) spawn_teammate name='alice' description='e2e' prompt='Reply with exactly ACK'; 2) send_message target='alice' message='hello from lead'; 3) team_task_create subject='e2e-task' description='probe'; 4) team_task_list; 5) team_summary; 6) list_agents." \
+run-headless "Do these in order and report each raw tool result verbatim: 1) spawn_teammate name='alice' description='e2e' prompt='Reply with exactly ACK'; 2) send_message target='alice' message='hello from lead'; 3) team_task_create subject='e2e-task' description='probe'; 4) team_task_list; 5) team_summary; 6) list_agents; 7) multicast targets='alice' content='hello multicast'." \
   > "$PROBE/e2e-team-interaction.json" 2>"$PROBE/e2e-team-interaction.err"
 tc=$(grep -c '"type":"tool_call"' "$PROBE/e2e-team-interaction.json")
 ck $([ "$tc" -ge 4 ] && echo 1 || echo 0) "团队交互工具调用数 = $tc (期望 >=4)"
@@ -108,6 +108,9 @@ grep -q 'task-1' "$PROBE/e2e-team-interaction.json" && ck 1 "team_task_create �
 sumline=$(grep -oE 'members=[0-9]+' "$PROBE/e2e-team-interaction.json" | tail -1)
 mnum=${sumline#members=}
 ck $([ -n "$mnum" ] && [ "$mnum" -ge 1 ] && echo 1 || echo 0) "team_summary 成员数 = ${mnum:-未采集} (期望 >=1；P22 native 接通回归)"
+# P49 回归：multicast 工具按「名字」可用（tool 侧 name→id 解析；未修复则报 TEAMBUS_UNKNOWN_TARGET）
+grep -q 'multicast sent' "$PROBE/e2e-team-interaction.json" && ck 1 "multicast 按名字可用（P49 回归）" || ck 0 "multicast 按名字未成功"
+grep -q 'TEAMBUS_UNKNOWN_TARGET' "$PROBE/e2e-team-interaction.json" && ck 0 "出现 TEAMBUS_UNKNOWN_TARGET（P49 回归失败）" || ck 1 "无 TEAMBUS_UNKNOWN_TARGET（P49 回归）"
 
 echo ">>> [4/4] 真实模型：interrupt_agent 探针"
 run-headless "Do these in order and report each raw tool result verbatim: 1) spawn_teammate name='dave' description='interrupt' prompt='Count from 1 to 300, one number per line, then write DONE.' 2) immediately call interrupt_agent target='dave'. 3) list_agents." \

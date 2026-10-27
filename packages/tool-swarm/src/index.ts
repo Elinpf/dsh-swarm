@@ -73,6 +73,37 @@ function callerOf(ctx: Context, exec: unknown): Agent {
   return (first ?? ({} as Agent)) as Agent
 }
 
+/**
+ * 把成员**名字**解析为 **id**。
+ *
+ * 为什么需要：`team-bus` 的 `multicast` 端口按 **id** 校验（`assertTargets` 用 `m.id`），
+ * 而模型工具（`multicast`）的入参是**名字**；真实 profile 下原生 member `id`（子会话 uuid）≠ `name`，
+ * 直接传名字会被拒（`TEAMBUS_UNKNOWN_TARGET`）。故在 tool 侧经团队花名册（`teamCore.listMembers`）
+ * 解析为 id——**保持 `team-bus` 的 id 契约不变**（不弱化底层）。
+ * 未知名字 → 抛出**清晰的工具级错误**（含已知名字列表），而非底层 `TEAMBUS_UNKNOWN_TARGET`。
+ */
+function resolveMemberIds(
+  core: { listMembers?: (...a: unknown[]) => unknown } | undefined,
+  caller: Agent,
+  names: string[],
+): string[] {
+  const raw = core?.listMembers?.(caller)
+  const roster = Array.isArray(raw) ? (raw as Array<{ id: string; name: string }>) : []
+  const byName = new Map(roster.map((m) => [m.name, m.id]))
+  const ids: string[] = []
+  const unknown: string[] = []
+  for (const n of names) {
+    const id = byName.get(n)
+    if (id !== undefined) ids.push(id)
+    else unknown.push(n)
+  }
+  if (unknown.length > 0) {
+    const known = roster.map((m) => m.name).join(', ')
+    throw new Error(`unknown member name(s): ${unknown.join(', ')} (known: ${known || '(none)'})`)
+  }
+  return ids
+}
+
 /** 注册全部可得工具；返回 disposer 列表（外层 effect 负责回滚）。 */
 function installTools(ctx: Context, config: SwarmToolConfig): Array<() => void> {
   const ds: Array<() => void> = []
@@ -146,10 +177,12 @@ function installTools(ctx: Context, config: SwarmToolConfig): Array<() => void> 
           output: textOutput,
           async execute(args, exec) {
             const caller = callerOf(ctx, exec)
-            const targets = String(args.targets)
+            const names = String(args.targets)
               .split(',')
               .map((s) => s.trim())
               .filter(Boolean)
+            // name → id：team-bus 的 multicast 端口按 id 校验；未知名字 → 清晰工具级错误。
+            const targets = resolveMemberIds(core, caller, names)
             const res = (await bus.multicast(caller, {
               targets,
               content: [{ type: 'text', text: String(args.content) }],

@@ -1408,3 +1408,109 @@ $ corepack pnpm build / test / verify / verify:e2e / lint / format:check   # 全
 $ bash scripts/e2e-profile.sh --no-model                                   # PASS=7 FAIL=0
 ```
 > 过程说明：首轮 `verify` 曾因 **analyst 未提交的 `team-bus` WIP 触发 tsc OOM(134)** 失败（与 P44 无关）；analyst park 后树恢复，重跑全绿。
+
+---
+
+# P49-multicast-name-id-bug：修 tool-swarm multicast 的 name/id 契约不一致
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27
+> 结论：**真 bug，已修（tool 侧）**；`team-bus` 的 **id 契约不变**。
+
+## A. 根因与修法
+- 根因：`tool-swarm` 的 `multicast` 工具把**名字**原样传给 `team-bus.multicast`，而 `team-bus.assertTargets` 用 **id**（`m.id`）校验；真实 profile 下原生 `id`（子会话 uuid）≠ `name` → `TEAMBUS_UNKNOWN_TARGET`。
+- 修法（**只改 tool 侧**）：`tool-swarm` 在调 `bus.multicast` 前经团队花名册（`teamCore.listMembers`）把 **name 解析为 id**；**未知名字 → 清晰的工具级错误**（含已知名字列表），不再暴露底层 `TEAMBUS_UNKNOWN_TARGET`。
+
+## B. name/id 契约说明
+- **`team-bus` 端口契约 = id**（`multicast`/`broadcast` 的目标一律 id）；**模型工具的入参 = name**（人可读）。**两者在 tool 层做 name→id 解析**（本 P49）。此后同类工具若新增「按成员」入参，**一律在 tool 层解析、不得改 `team-bus` 的 id 契约**。
+
+## C. 同类审计（tool-swarm 全工具 vs team-bus 入口）
+| 工具 | 目标入参 | 是否经 name/id 解析 | 结论 |
+|---|---|---|---|
+| `multicast` | 成员**名字**（逗号分隔） | ✅ 本 P49 已解析为 id | 修好 |
+| `broadcast` | 无显式目标（`assertTargets` 由 team-bus 内部按 roster 自解析） | 无需 | 无同类问题 |
+| `send_message`（原生工具，非本包） | `target`=名字，原生层解析 | 不在本包 | 无同类问题 |
+| `review_submit/review_vote/skills_visible/memory_recall/workspace_*` | 非成员目标 | 无需 | 无同类问题 |
+→ **仅 `multicast` 一处**存在 name/id 不一致；已修。
+
+## D. 先红后绿
+**红（修复前，原样输出）**：`node scripts/message-integrity-probe.mjs`（P5，tool 层）
+```
+== P5 tool-swarm.multicast 按名字可用（P49：tool 侧 name→id 解析）==
+[OK]   tool-swarm 注册了 multicast 工具
+TeamBusError: TEAMBUS_UNKNOWN_TARGET: unknown target alice
+    at Proxy.multicast (.../team-bus/lib/index.js:147:23)
+    at execute (.../tool-swarm/lib/index.js:105:40)
+RED_EXIT=1
+```
+**绿（修复后）**：
+```
+== P5 tool-swarm.multicast 按名字可用（P49：tool 侧 name→id 解析）==
+[OK]   tool-swarm 注册了 multicast 工具
+[OK]   按名字投递成功（multicast sent: mcast-1）
+[OK]   alice/bob 各收到 —— name→id 解析生效（真实 profile 下 id≠name 亦可）
+[OK]   未知名字 → 清晰工具级错误（unknown member name(s): ghost (known: lead, alice, bob, carol, dave, erin)）
+结果：PASS（全部断言通过）
+```
+
+## E. 单测 + 真实 profile 断言
+- `tool-swarm` 单测 +2（name→id 解析 / 未知名字清晰报错）→ **10 passed**。
+- **真实 profile**（`scripts/e2e-profile.sh` 全量，含真实模型）：新增断言
+  ```
+  [PASS] multicast 按名字可用（P49 回归）
+  [PASS] 无 TEAMBUS_UNKNOWN_TARGET（P49 回归）
+  结果：PASS=15 FAIL=0
+  ```
+
+## F. 全链路（受他人 main 破坏阻塞，如实登记）
+- `tool-swarm` 构建 / 单测 / lint / 探针 / `e2e-profile`（模型）均绿。
+- **`pnpm build` 当前红**：`packages/team-bus/src/index.ts(366,9): error TS2353: 'origin' does not exist in type '{ range: MessageRange; … }'` —— 系 **dev-2 的 P51 提交（HEAD `cb208d9`）** 在 `team-bus` 调 `teamCore.send({…, origin})` 但未在契约 `send` 的 req 上加 `origin?`。**与 P49 无关**（P49 未动 team-bus/契约）。已上报 Leader 协调 dev-2 补契约字段或回退；修好后重跑全链路补记。
+
+---
+
+## P54 — Leader 提示词移植「只调度不干活」（team-prompt）
+
+> 执行人：prompt-engineering-analyst ｜ 时间：2026-10-27 ｜ 依据：`docs/prompt-comparison-team-mode.md`（P53）
+
+### A. 改动面
+
+- `packages/team-prompt/src/index.ts`：新增稳定段 **`team:leader`**（`order 10`，进前缀），承载 Leader 专属行为约束；`STABLE_SECTION_NAMES` 更新；**`team:leader` 刻意不加入 `DEFERRED_BEFORE_TEAM`**。
+- `packages/team-prompt/tests/team-prompt.spec.ts`：更新既有断言（段数 4→5、名单加 `team:leader`）+ 新增 P54 用例。
+- `packages/team-prompt/tests/team-prompt.integration.spec.ts`：新增**真实 system-prompt 装配**集成测。
+- `packages/team-prompt/README.md`：新增（行为变更说明 + P53 中/低优先级待办）。
+
+### B. 单测 + 类型检查（14 passed）
+
+```console
+$ pnpm --filter @elinpf/dsh-swarm-team-prompt typecheck   # 通过
+$ pnpm --filter @elinpf/dsh-swarm-team-prompt test
+ ✓ tests/team-prompt.spec.ts (11 tests)
+ ✓ tests/team-prompt.integration.spec.ts (3 tests)
+ Test Files  2 passed (2)
+      Tests  14 passed (14)
+```
+
+覆盖：新段存在 + 内容覆盖高优先级 3 条（不执行/先建成员/背景不清先调研）+ **不被 `leaderProgressiveDisclosure` 过滤** + 英文变体 + 真实装配。
+
+### C. 真实装配证据（真实 `@deepseek-ai/dsh-system-prompt`，非 mock）
+
+```console
+SECTIONS: ["harness:identity","deployment:persona-prefix","team:leader","team:role","team:inbound","deployment:persona-suffix"]
+HAS_LEADER: true ; HAS_SPAWN: true ; HAS_DISPATCH: false
+```
+> 团队未建时：`team:leader` **在**且已渲染进 prompt 文本；`team:dispatch`/`team:task-state` 被摘（对照组，证明过滤逻辑在工作）。
+
+### D. 全链路无模型回归（全绿）
+
+```console
+$ pnpm -r run build                        # 全包 build 通过
+$ node scripts/verify-load.mjs             # ✅ 加载验证通过
+$ node scripts/verify-native-wiring.mjs    # ✅ 原生接通回归通过
+$ node scripts/verify-e2e.mjs              # ✅ 集成冒烟通过
+$ bash scripts/e2e-profile.sh --no-model   # PASS=7 FAIL=0
+```
+
+### E. 行为级探针（真实模型）——待批预算
+
+- 目标：P46 风格探针验证「团队模式下 leader **先 spawn 成员**，而非自己干」（对齐用户截图的反例）。
+- 状态：**pending 预算批准**（先报 team-leader，未经批准不跑真实模型）。
+- 预算：见团队汇报（本次未消耗真实模型 token）。

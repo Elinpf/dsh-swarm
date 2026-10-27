@@ -145,4 +145,48 @@ describe('@elinpf/dsh-swarm-tool-swarm', () => {
     expect(names).not.toContain('skills_visible')
     expect(names).not.toContain('memory_recall')
   })
+
+  it('P49：multicast 工具把「名字」解析为「id」再投递（team-bus 端口按 id 校验）', async () => {
+    const calls: any[] = []
+    const bus = {
+      broadcast: async () => ({ messageId: 'b1' }),
+      // 模拟 team-bus.multicast 的 **id** 校验：targets 含非 id → 抛 UNKNOWN_TARGET
+      multicast: async (_c: any, req: any) => {
+        calls.push(req)
+        const ids = new Set(['m-alice', 'm-bob'])
+        for (const t of req.targets) if (!ids.has(t)) throw new Error('TEAMBUS_UNKNOWN_TARGET')
+        return { messageId: 'm1' }
+      },
+    }
+    const core = {
+      listTasks: () => [],
+      listMembers: () => [
+        { id: 'm-alice', name: 'alice' },
+        { id: 'm-bob', name: 'bob' },
+      ],
+    }
+    const ctx = makeCtx({ teamBus: bus, teamCore: core })
+    plugin.apply(ctx, { enableBroadcast: true, enableReview: false })
+    const tool = ctx._tools.find((t: any) => t.name === 'multicast')
+    const value = await tool.execute(
+      { targets: 'alice,bob', content: 'hi' },
+      { agent: { id: 'lead' } },
+    )
+    expect(value.text).toContain('m1')
+    expect(calls[0].targets).toEqual(['m-alice', 'm-bob']) // 名字已解析为 id
+  })
+
+  it('P49：multicast 工具遇未知名字 → 清晰工具级错误（非底层 TEAMBUS_UNKNOWN_TARGET）', async () => {
+    const bus = {
+      broadcast: async () => ({ messageId: 'b1' }),
+      multicast: async () => ({ messageId: 'm1' }),
+    }
+    const core = { listTasks: () => [], listMembers: () => [{ id: 'm-alice', name: 'alice' }] }
+    const ctx = makeCtx({ teamBus: bus, teamCore: core })
+    plugin.apply(ctx, { enableBroadcast: true, enableReview: false })
+    const tool = ctx._tools.find((t: any) => t.name === 'multicast')
+    await expect(
+      tool.execute({ targets: 'alice,ghost', content: 'hi' }, { agent: { id: 'lead' } }),
+    ).rejects.toThrow(/unknown member name/)
+  })
 })

@@ -243,5 +243,66 @@ console.log(
   ok('按 id 投递正常 —— 说明是 tool 层 name/id 不一致，而非 bus 并发缺陷')
 }
 
+// ── P5：tool-swarm.multicast 按「名字」→ tool 侧解析为 id → 成功（P49 修复）──────
+console.log('\n== P5 tool-swarm.multicast 按名字可用（P49：tool 侧 name→id 解析）==')
+{
+  const captured = []
+  const ctx2 = new Context()
+  await ctx2.plugin({
+    name: 'mi-host2',
+    apply(ctx) {
+      ctx.provide('tools', {
+        register: (t) => {
+          captured.push(t)
+          return () => {}
+        },
+      })
+      ctx.provide('systemPrompt', { section: () => () => {}, context: () => () => {} })
+      ctx.provide('sessions', {})
+      ctx.provide('agents', { list: () => [] })
+      ctx.provide('subagents', {})
+      ctx.provide('skills', {})
+      // tool-swarm 的 inject 需 teamReview；此处给最小 stub（enableReview=false 时不注册评审工具）
+      ctx.provide('teamReview', { submitForReview: async () => ({}), vote: async () => {} })
+      ctx.provide('agentTeams', seam)
+    },
+  })
+  const core2 = await load('packages/team-core/lib/index.js')
+  const bus2 = await load('packages/team-bus/lib/index.js')
+  await ctx2.plugin(core2.default, {
+    backend: 'auto',
+    maxMembers: 16,
+    maxTasks: 256,
+    maxMessageBytes: 65536,
+  })
+  await ctx2.plugin(bus2.default, { maxFanout: 64, maxMessageBytes: 65536 })
+  const toolSwarm = await load('packages/tool-swarm/lib/index.js')
+  await ctx2.plugin(toolSwarm, { enableBroadcast: true, enableReview: false })
+
+  const mc = captured.find((t) => t.name === 'multicast')
+  assert(mc != null, 'tool-swarm 注册了 multicast 工具')
+  for (const n of NAMES) mailbox.set(n, [])
+
+  // 修复后：工具按「名字」投递 → tool 侧解析为 id → 成功
+  const value = await mc.execute({ targets: 'alice,bob', content: 'hello-names' }, { agent: lead })
+  assert(/multicast sent/.test(String(value.text)), `按名字投递成功（${value.text}）`)
+  assert(
+    (mailbox.get('alice') ?? []).length >= 1 && (mailbox.get('bob') ?? []).length >= 1,
+    'alice/bob 各收到 —— name→id 解析生效（真实 profile 下 id≠name 亦可）',
+  )
+
+  // 未知名字 → 清晰工具级错误（非底层 TEAMBUS_UNKNOWN_TARGET）
+  let e2 = null
+  try {
+    await mc.execute({ targets: 'alice,ghost', content: 'x' }, { agent: lead })
+  } catch (e) {
+    e2 = e
+  }
+  assert(
+    e2 != null && /unknown member name/.test(String(e2.message)),
+    `未知名字 → 清晰工具级错误（${e2 ? e2.message : '未抛错'}）`,
+  )
+}
+
 console.log(`\n结果：${failures === 0 ? 'PASS（全部断言通过）' : `FAIL（${failures} 项未通过）`}`)
 process.exit(failures === 0 ? 0 : 1)
