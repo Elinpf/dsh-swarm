@@ -66,27 +66,53 @@ export function loadSessionEvents(path) {
   return events
 }
 
-/** 统计一个会话的轮次/token/工具调用，并返回其引用的子会话 id。 */
+/** 统计一个会话的轮次/token/工具调用，并返回其引用的子会话 id。
+ *
+ * 额外采集（「空转唤醒」专题用）：
+ * - `relayInboundTurns`：收到 **team 转发消息**（`user/message` 且 `source.kind==='agent-message'`，
+ *   即来自 lead/其他成员的 DM 或广播扇出）的轮次号数组。空 = 该会话从未收到团队转发消息。
+ * - `relayInboundCount`：收到的团队转发消息条数。
+ * - `inboxSpliceInserts`：`agent/inbox/spliced` 中被**插入**（`inserted` 非空）的次数。
+ * - `descriptorLabel`：`subagent/descriptor.label`（spawn 时的 description，辅助归属）。
+ * - `isSubagent` / `parentSession`：从 header 判定归属。
+ */
 export function summarizeSession(path) {
   const evs = loadSessionEvents(path)
   const header = evs.find((e) => e.type === 'session')
   const id = header?.id ?? null
   const createdAt = header?.createdAt ?? null
+  const parentSession = header?.parentSession ?? null
+  const isSubagent = header?.origin === 'subagent' || parentSession != null
   let turns = 0
   let steps = 0
+  let currentTurn = 0
   let tokensIn = 0
   let tokensOut = 0
   let tokensTotal = 0
   let hasUsage = false
+  let inputTokensSeen = false
+  let outputTokensSeen = false
   const toolCalls = {}
   const childIds = []
+  const relayInboundTurns = []
+  let relayInboundCount = 0
+  let inboxSpliceInserts = 0
+  let descriptorLabel = null
 
   for (const e of evs) {
-    if (e.type === 'turn/start') turns = Math.max(turns, e.data?.turn ?? turns)
-    else if (e.type === 'step/start') steps = Math.max(steps, e.data?.step ?? steps)
-    else if (e.type === 'assistant/message' && e.data?.usage) {
+    if (e.type === 'turn/start') {
+      turns = Math.max(turns, e.data?.turn ?? turns)
+      currentTurn = e.data?.turn ?? currentTurn
+    } else if (e.type === 'step/start') steps = Math.max(steps, e.data?.step ?? steps)
+    else if (e.type === 'subagent/descriptor') descriptorLabel = e.data?.label ?? descriptorLabel
+    else if (e.type === 'agent/inbox/spliced') {
+      const inserted = e.data?.inserted
+      if (Array.isArray(inserted) && inserted.length > 0) inboxSpliceInserts += 1
+    } else if (e.type === 'assistant/message' && e.data?.usage) {
       // durable 里用法在 committed 的 assistant/message 上；重试 attempt 的额外用量不计（见 README 局限）
       hasUsage = true
+      if (e.data.usage.inputTokens != null) inputTokensSeen = true
+      if (e.data.usage.outputTokens != null) outputTokensSeen = true
       tokensIn += e.data.usage.inputTokens ?? 0
       tokensOut += e.data.usage.outputTokens ?? 0
       tokensTotal += e.data.usage.totalTokens ?? (e.data.usage.inputTokens ?? 0) + (e.data.usage.outputTokens ?? 0)
@@ -95,18 +121,47 @@ export function summarizeSession(path) {
       toolCalls[name] = (toolCalls[name] ?? 0) + 1
     } else if (e.type === 'subagent/catalog') {
       if (e.data?.childId) childIds.push(e.data.childId)
+    } else if (e.type === 'user/message') {
+      // durable 里 user/message 的 data = { content, source, role, id }
+      const srcKind = e.data?.source?.kind
+      if (srcKind === 'agent-message') {
+        relayInboundCount += 1
+        relayInboundTurns.push(currentTurn || 0)
+      }
     }
   }
   return {
     id,
     createdAt,
+    parentSession,
+    isSubagent,
+    descriptorLabel,
     path,
     turns,
     steps,
     tokens: hasUsage ? { input: tokensIn, output: tokensOut, total: tokensTotal } : { input: null, output: null, total: null },
+    tokensComplete: hasUsage && inputTokensSeen && outputTokensSeen,
     toolCalls,
     childIds: [...new Set(childIds)],
+    relayInboundTurns,
+    relayInboundCount,
+    inboxSpliceInserts,
   }
+}
+
+/**
+ * 从 root 会话事件里提取 `childId → memberName` 映射（`team/member` 事件）。
+ * @param {Array<object>} rootEvents
+ * @returns {Map<string,string>}
+ */
+export function memberNamesFromRootEvents(rootEvents) {
+  const m = new Map()
+  for (const e of rootEvents) {
+    if (e.type === 'team/member' && e.data?.member?.id) {
+      m.set(e.data.member.id, e.data.member.name)
+    }
+  }
+  return m
 }
 
 /**
@@ -127,18 +182,35 @@ export function collectRunSessions(sessionsRoot, sinceMs, rootSessionId, untilMs
   const teammates = root
     ? parsed.filter((p) => childIds.has(p.id))
     : parsed.filter((p) => p.childIds.length === 0)
+  // childId → memberName（来自 root 的 team/member 事件；含 lead 与全部 teammate）
+  const nameMap = root ? memberNamesFromRootEvents(loadSessionEvents(root.path)) : new Map()
   const teammateTurns = teammates.reduce((s, p) => s + (p.turns ?? 0), 0)
   const teammateTokens = teammates.reduce((s, p) => s + (p.tokens.total ?? 0), 0)
   return {
-    root: root ?? null,
+    root: root
+      ? {
+          id: root.id,
+          turns: root.turns,
+          steps: root.steps,
+          tokens: root.tokens,
+          toolCalls: root.toolCalls,
+          bytes: root.bytes,
+        }
+      : null,
     teammates: teammates.map((p) => ({
       id: p.id,
+      name: nameMap.get(p.id) ?? p.descriptorLabel ?? null,
       turns: p.turns,
       steps: p.steps,
       tokens: p.tokens,
+      tokensComplete: p.tokensComplete,
       toolCalls: p.toolCalls,
       bytes: p.bytes,
+      relayInboundCount: p.relayInboundCount,
+      relayInboundTurns: p.relayInboundTurns,
+      inboxSpliceInserts: p.inboxSpliceInserts,
     })),
+    memberNames: Object.fromEntries(nameMap),
     teammateCount: teammates.length,
     teammateTurns,
     teammateTokens,

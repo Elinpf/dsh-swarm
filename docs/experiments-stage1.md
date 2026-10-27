@@ -145,6 +145,11 @@ bash scripts/bench/run.sh --scenario S1,S2,S7 --token-cap 500000 --timeout-ms 70
 
 → **结论：用当前 headless harness，无法在真实模型下证实或证伪「广播下空转成员不耗轮」。** 要确证需**长驻运行**（让 teammates 在广播后继续存活并消费）或**显式驱动 teammate 处理其 inbox**。这是本报告**如实记录的反例/未决项**，也是 P14 若要优化广播前必须先补的实验。
 
+> **【P17 更新 · 2026-10-27】本未决项已用「长驻观测」做掉，结论见 `docs/experiments-idle-wakeup.md`。**
+> 一句话：真实 profile 下广播**根本不是省轮，而是「压根没叫醒任何人」**——`team-bus.broadcast` 扇出到 **0 个成员**
+> （同一次运行里本仓库工具 `team_summary`=`members=0`，原生 `list_agents`=3 人）；对照组的原生 **N 次 DM** 则让每个 inactive 成员 **+1 LLM 轮**。
+> 即「被叫醒但无自己消息→不耗轮」在当前实现下**无对应原语**（`dm`=唤醒+内容、`record-only`=不唤醒），且暴露了一个**更高优先级缺陷**：协作插件栈与原生 `ctx.agentTeams` 未打通。
+
 **发现 C【事实·高价值】成本口径被 root-only 低估 18%–36%**：`dsh headless --json` 只投影 root 会话，**真实团队成本 = root + 所有 teammate**。三者低估幅度 17.9%–36.2%。→ 任何基于 `--json` 的成本核算都严重偏低；harness 现已补 `teammateActivity` 采集（见 §6 优化#2）。
 
 ---

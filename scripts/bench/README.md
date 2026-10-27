@@ -22,6 +22,11 @@ bash scripts/bench/run.sh --no-model --scenario S5 --stale off
 
 # 列出场景
 bash scripts/bench/run.sh --list
+
+# ④ 长驻观测（「空转唤醒」专题）：绕过 headless「root 轮结束即退出」的窗口截断
+bash scripts/bench/exp-idle-wakeup.sh --self-test            # 零成本：合成 durable，验证采集管道
+bash scripts/bench/exp-idle-wakeup.sh --arm both --members alice,bob,carol \
+     --token-cap 500000 --timeout-ms 600000                 # 真实模型：广播臂 vs N-DM 对照臂
 ```
 
 **A/B 与消融开关**（仅桩后端；默认=基线全开）：`--scheduler on|off`、`--review gate|none`、
@@ -44,6 +49,13 @@ bash scripts/bench/run.sh --list
 | **model**（真实模型） | 默认         | 复用 `run-headless.sh` 驱动 `dsh headless --json`                           | 有（token 门禁保护） | 端到端时延、LLM 轮次、token(in/out/total)、工具调用计数、重试(=error 工具结果)、磁盘增量。**wakeups/空转唤醒/teammate token = 未采集**（见 §5 局限） |
 
 > stub 与 model **不可直接互相比较轮次/token**：stub 没有 LLM。跨后端只能比「结构量」（如投递次数）在两端是否一致。
+
+**长驻观测后端（`exp-idle-wakeup`，P17 新增）**：`scripts/bench/exp-idle-wakeup.{sh,mjs}` + `lib/longres.mjs`。
+它专治「`dsh headless` 在 root 轮结束即退出 → teammate 可能在广播后被唤醒但来不及跑下一轮」的**窗口截断**：
+让 lead 在广播/DM 后**反复 `wait_agent` 至静默**，再按成员归属读 durable 会话，逐成员给出 `turns / tokens / relayInbound(是否收到 team 转发消息) / 额外轮`。
+- **口径**：teammate 初始轮 = spawn 初始 prompt 的 `turn=1`；**唤醒后额外轮 = `turns-1`**，并与 `relayInboundCount>0`（durable 里 `user/message.source.kind==='agent-message'`）交叉核对。
+- **注意**：`wait_agent` 在**无活跃 peer** 时**立即**返回 `{"timedOut":false,"noProgress":{"reason":"no-active-peer"}}`（不等满 timeout）；对「唤醒事件」的观测体现为**返回非 `no-active-peer` 的一次变化**。
+- 结论见 `docs/experiments-idle-wakeup.md`（含一个**高价值反例**：真实 profile 下协作插件栈与原生 `ctx.agentTeams` 未打通）。
 
 ## 3. 指标口径（每个数字到底怎么算）
 
@@ -126,6 +138,7 @@ taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm 
    现已用 `teammateActivity`（读 durable 会话日志，按 `subagent/catalog` 归属）补齐 teammate 轮次/token；
    但 `wakeups/spinWakeups`（结构性唤醒分类）在 model 仍记 `null`（不在任何日志）。
    且注意：headless 在 **root 轮结束即退出**，teammate 若在广播后被唤醒可能**来不及跑下一轮**（见 `docs/experiments-stage1.md §4`）。
+   **P17 已用长驻观测解决该截断**（`exp-idle-wakeup`，见 §2 长驻观测后端）：能在同一次运行内观测到 teammate 唤醒后的额外轮。
 3. **`e2eMs` 含冷启动**：model 模式首次启动含 DSH 冷启动（数秒~数十秒），跨系统比时延必须先剥离冷启动或只比同后端增量。
 4. **广播扇出在 model 端不可见**：model 的 `messageDeliveries` 不含广播扇出人数，与 stub 的口径不同，**不可直接比**。
 5. **投递语义为「调用即计数」**：stub 计 `teamCore.send` 调用，不校验真实网络/持久化成功；失败恢复只覆盖 mock 的瞬时失败路径。
@@ -142,6 +155,10 @@ scripts/bench/
   lib/stub-backend.mjs # 离线桩：真实插件 + 仪表化端口 mock
   lib/model-backend.mjs# 真实模型：dsh headless --json 解析 + 门禁
   lib/metrics.mjs      # 口径聚合 + JSON/CSV/markdown 导出
+  lib/sessions.mjs     # durable 会话解析：按成员归属统计轮次/token/relayInbound（长驻观测用）
+  exp-idle-wakeup.sh   # 长驻观测一键入口（source 隔离环境后 exec exp-idle-wakeup.mjs）
+  exp-idle-wakeup.mjs  # 「空转唤醒」长驻实验驱动：广播臂 vs N-DM 对照 + --self-test
+  lib/longres.mjs      # 长驻观测后端：静默等待 + 逐成员归因
   README.md            # 本文件
   jsfw/                # JiuwenSwarm 侧隔离对照夹具（P12；口径与结论见 docs/jsfw-comparison-fixture.md）
     probe_min_team.py       # STAGE-1：隔离 HOME 下构建 + 配置最小 leader TeamAgent
