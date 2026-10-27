@@ -69,12 +69,32 @@ tab 条**加号** → **guide** 列表里点「**群聊**」胶囊 → 右侧出
 ## 已知未验（环境受限待办）
 
 - 自动化浏览器 DOM 断言（点击 → tab 出现 → 列表非空）未做，需在有浏览器的环境补；**当前需人工点开确认**。
-- `TeamChatTab` 读取投影用的 `useSessions/useSession` hook 取自槽位运行时 props；已按上游
-  `client-ui-agent-team` 同款写法，**但未在本环境做类型级核对**（tsdown 不做类型检查）。上生产前建议跑一次 `tsc` 类型核对。
+- ✅ **类型核对：已做**（原「未验」项已升级）。方式与结果见下。
 
-## demo 实例接入记录（P55）
+## 类型核对（已做，P55）
 
-- 已接入 demo profile `dsh-swarm-demo`：`node_modules/@elinpf/dsh-swarm-team-ui` 软链 + `cordis.patch.yml` 追加该 row。
-- `systemctl restart dsh-swarm-demo` 后：journal **无 error/fail/warn**；启动页客户端模块表含本插件；
-  其 `client.js` **HTTP 200（6648 bytes）**，含 `swarmTeamChat`/`swarmBus`/`群聊`。
+`tsdown` 不做类型检查，故单独用 harness 的 `tsc` 对本包 `src/**` 做了一次核对：
+
+```sh
+cd <harness>/packages/client/dsh-swarm-team-ui
+../../../node_modules/.bin/tsc -p tsconfig.typecheck.json   # extends harness tsconfig.base.client.json
+```
+
+- **本包源码（`src/**`）错误数 = 0**（修正项：删去未用的 `TeamKey` 导入；`props.t` 以显式键联合签名收窄，避免 `PropsLocale` 键推导在本 build 下不收 `roster/messages/empty`）。
+- 输出中仍会看到大量**其它包**（`packages/api/**`、`packages/attachment/**` 等）的错误——那是 harness 全量 `paths→src` 解析 + 未构建 `*/remote` 声明造成的**既有环境噪声**，与本包无关（本包零错误）。
+- `tsconfig.typecheck.json` 随本目录交付，便于复跑。
+
+## demo 实例接入记录 + 回滚（P55）
+
+- 已接入 demo profile `dsh-swarm-demo`（**只加一行，未动其它配置**）：
+  1. `ln -sfn <harness>/packages/client/dsh-swarm-team-ui $DSH_HOME/profiles/dsh-swarm-demo/node_modules/@elinpf/dsh-swarm-team-ui`
+  2. `$DSH_HOME/profiles/dsh-swarm-demo/cordis.patch.yml` 追加：
+     ```yaml
+     - insert:
+         - id: dsh-swarm-team-ui
+           name: "@elinpf/dsh-swarm-team-ui"
+     ```
+  3. `systemctl restart dsh-swarm-demo`。
+- 自证：journal **无 error/fail/warn**；启动页客户端模块表含本插件；其 `client.js` **HTTP 200（6648 bytes）**，含 `swarmTeamChat`/`swarmBus`/`群聊`。
 - 用户看板 URL：`http://127.0.0.1:3099/?token=<journal 里的 token>`（重启会换）。
+- **回滚（移除该 tab）**：删除 `cordis.patch.yml` 里那段 `- insert: … dsh-swarm-team-ui`（或加 `disabled: true`）→ `systemctl restart dsh-swarm-demo`；如需彻底移除再删软链。**一行 patch + 重启即可**。

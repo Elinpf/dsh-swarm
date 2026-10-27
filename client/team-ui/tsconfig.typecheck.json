@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "disableSourceOfProjectReferenceRedirect": false
+  },
+  "include": ["src"]
+}

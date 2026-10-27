@@ -15,7 +15,7 @@
 import { useMemo } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { NS, type TeamKey } from './locales.ts'
+import { NS } from './locales.ts'
 
 /** Full props of the team chat tab body. */
 export type TeamChatTabProps =
@@ -44,7 +44,9 @@ function textOf(message: ChatMessage): string {
 
 /** Render the roster and the folded group-chat message stream. */
 export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
-  const { t } = props
+  // Namespace-bound translate; widened so key literals resolve regardless of how
+  // PropsLocale derives its key union in this build.
+  const t = props.t as unknown as (key: 'title' | 'roster' | 'messages' | 'empty') => string
   // The slot runtime exposes the shared Session store hooks; read defensively.
   const runtime = props as unknown as {
     sessionId?: SessionId
