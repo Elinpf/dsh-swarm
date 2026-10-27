@@ -29,7 +29,13 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SkillVisibility, TeamSkills } from '@elinpf/dsh-swarm-team-capability-contract'
 import type { TeamCore as _TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
-import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import {
+  DURABLE_VERSION,
+  emitDurable as appendDurable,
+  durableRecordOf,
+  foldDurableEvents,
+  isDurableEvent,
+} from '@elinpf/dsh-swarm-team-durable'
 import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 export interface Config {
@@ -83,6 +89,9 @@ export class TeamSkillsService extends Service implements TeamSkills {
     // 恢复（ADR-0002）：把历史 durable 可见性/授权事件折叠回 docs/grants。
     ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
       if (isDurableEvent(ev) && ev.type.startsWith('swarm/skills/')) this.recover([ev])
+      const rec = durableRecordOf(ev)
+      if (rec && rec.name.startsWith('swarm/skills/'))
+        this.recover([{ type: rec.name, payload: rec.payload }])
     })
     ctx.effect(
       () => () => {
@@ -120,12 +129,14 @@ export class TeamSkillsService extends Service implements TeamSkills {
     )
   }
 
-  private emitDurable(type: string, payload: Record<string, unknown>): void {
+  /** durable 发射：进程内 `ctx.emit`（供 fold）**且** 真 append 会话日志（P52 通道 A）。 */
+  private emitDurable(session: unknown, type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
         version: DURABLE_VERSION,
         ...payload,
       })
+      appendDurable(session, type, payload)
     } catch (e) {
       this.ctx.logger?.warn?.(
         'team-skills: durable emit %s failed: %s',
@@ -137,7 +148,7 @@ export class TeamSkillsService extends Service implements TeamSkills {
 
   declare(teamId: string, map: SkillVisibility): () => void {
     this.docs.set(teamId, map)
-    this.emitDurable('swarm/skills/visibility', { teamId, map })
+    this.emitDurable(undefined, 'swarm/skills/visibility', { teamId, map }) // declare 无 agent；无 session 时仅进程内 emit
     this.reconcileKnown()
     return () => {
       if (this.docs.get(teamId) === map) this.docs.delete(teamId)
@@ -154,7 +165,11 @@ export class TeamSkillsService extends Service implements TeamSkills {
     }
     const added = skillNames.filter((n) => !set!.has(n))
     added.forEach((n) => set!.add(n))
-    if (added.length > 0) this.emitDurable('swarm/skills/grant', { memberId: id, names: added })
+    if (added.length > 0)
+      this.emitDurable((agent as unknown as { session?: unknown }).session, 'swarm/skills/grant', {
+        memberId: id,
+        names: added,
+      })
     void this.reconcile(agent)
     return () => {
       added.forEach((n) => set!.delete(n))

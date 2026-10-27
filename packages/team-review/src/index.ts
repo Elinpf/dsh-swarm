@@ -20,7 +20,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { TaskView } from '@elinpf/dsh-swarm-team-core-contract'
-import { DURABLE_VERSION, foldDurableEvents } from '@elinpf/dsh-swarm-team-durable'
+import {
+  DURABLE_VERSION,
+  emitDurable as appendDurable,
+  foldDurableEvents,
+} from '@elinpf/dsh-swarm-team-durable'
 import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 declare module '@deepseek-ai/cordis' {
@@ -123,7 +127,11 @@ export class TeamReviewService extends Service implements TeamReview {
       action: 'submit_review',
     })
     this.states.set(taskId, { round: 1, votes: new Map() })
-    this.emitDurable('swarm/review/submitted', { taskId, round: 1 })
+    this.emitDurable(
+      (caller as unknown as { session?: unknown }).session,
+      'swarm/review/submitted',
+      { taskId, round: 1 },
+    )
     return view
   }
 
@@ -140,7 +148,11 @@ export class TeamReviewService extends Service implements TeamReview {
       )
     }
     state.votes.set(callerName, v) // 同一 reviewer 后写覆盖
-    this.emitDurable('swarm/review/vote', { taskId, reviewer: callerName, vote: v })
+    this.emitDurable((caller as unknown as { session?: unknown }).session, 'swarm/review/vote', {
+      taskId,
+      reviewer: callerName,
+      vote: v,
+    })
   }
 
   async settle(caller: Agent, taskId: string, feedback?: string): Promise<ReviewVerdict> {
@@ -150,7 +162,10 @@ export class TeamReviewService extends Service implements TeamReview {
 
     const verdict = this.adjudicate(state)
     state.verdict = verdict
-    this.emitDurable('swarm/review/settled', { taskId, verdict })
+    this.emitDurable((caller as unknown as { session?: unknown }).session, 'swarm/review/settled', {
+      taskId,
+      verdict,
+    })
 
     if (verdict.kind === 'pass') {
       const task = this.ctx.teamCore.getTask(caller, taskId)
@@ -179,7 +194,10 @@ export class TeamReviewService extends Service implements TeamReview {
       })
       await this.steerAuthor(caller, view, taskId, fb)
       state.round += 1
-      this.emitDurable('swarm/review/round', { taskId, round: state.round })
+      this.emitDurable((caller as unknown as { session?: unknown }).session, 'swarm/review/round', {
+        taskId,
+        round: state.round,
+      })
       return verdict
     }
     return verdict
@@ -242,12 +260,14 @@ export class TeamReviewService extends Service implements TeamReview {
     )
   }
 
-  private emitDurable(type: string, payload: Record<string, unknown>): void {
+  /** durable 发射：进程内 `ctx.emit`（供 fold）**且** 真 append 会话日志（P52 通道 A）。 */
+  private emitDurable(session: unknown, type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
         version: DURABLE_VERSION,
         ...payload,
       })
+      appendDurable(session, type, payload)
     } catch (e) {
       this.ctx.logger?.warn?.(
         'team-review: durable emit %s failed: %s',

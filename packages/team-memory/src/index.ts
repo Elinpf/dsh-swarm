@@ -16,7 +16,13 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MemoryRecord, TeamMemory } from '@elinpf/dsh-swarm-team-capability-contract'
 import type { TeamCore as _TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
-import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import {
+  DURABLE_VERSION,
+  emitDurable as appendDurable,
+  durableRecordOf,
+  foldDurableEvents,
+  isDurableEvent,
+} from '@elinpf/dsh-swarm-team-durable'
 import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 export interface Config {
@@ -50,6 +56,9 @@ export class TeamMemoryService extends Service implements TeamMemory {
     // 恢复（ADR-0002）：把历史 durable 记忆事件折叠回 shared/private。
     ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
       if (isDurableEvent(ev) && ev.type.startsWith('swarm/memory/')) this.recover([ev])
+      const rec = durableRecordOf(ev)
+      if (rec && rec.name.startsWith('swarm/memory/'))
+        this.recover([{ type: rec.name, payload: rec.payload }])
     })
     ctx.effect(() => {
       // context（非 section）：保 system-prompt 前缀稳定（cache-safe）。
@@ -76,7 +85,9 @@ export class TeamMemoryService extends Service implements TeamMemory {
     }
     const rec = this.record('shared', text)
     this.shared.push(rec)
-    this.emitDurable('swarm/memory/shared', { record: rec })
+    this.emitDurable((caller as unknown as { session?: unknown }).session, 'swarm/memory/shared', {
+      record: rec,
+    })
     return rec
   }
 
@@ -86,7 +97,10 @@ export class TeamMemoryService extends Service implements TeamMemory {
     const list = this.private.get(id) ?? []
     list.push(rec)
     this.private.set(id, list)
-    this.emitDurable('swarm/memory/private', { memberId: id, record: rec })
+    this.emitDurable((agent as unknown as { session?: unknown }).session, 'swarm/memory/private', {
+      memberId: id,
+      record: rec,
+    })
     return rec
   }
 
@@ -125,12 +139,14 @@ export class TeamMemoryService extends Service implements TeamMemory {
     if (Number.isFinite(n)) this.seq = Math.max(this.seq, n)
   }
 
-  private emitDurable(type: string, payload: Record<string, unknown>): void {
+  /** durable 发射：进程内 `ctx.emit`（供 fold）**且** 真 append 会话日志（P52 通道 A）。 */
+  private emitDurable(session: unknown, type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
         version: DURABLE_VERSION,
         ...payload,
       })
+      appendDurable(session, type, payload)
     } catch (e) {
       this.ctx.logger?.warn?.(
         'team-memory: durable emit %s failed: %s',
