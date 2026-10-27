@@ -1,0 +1,105 @@
+2026-10-26 20:15:03 | common | default_trace_id | INFO | Registered connector pool type: default
+2026-10-26 20:15:04 | common | default_trace_id | INFO | Registered connector pool type: httpx
+2026-10-26 20:15:04 | common | default_trace_id | INFO | Registered query expression support for milvus
+2026-10-26 20:15:04 | common | default_trace_id | INFO | Registered query expression support for chroma
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ExcelParser for .xlsx
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ExcelParser for .csv
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ExcelParser for .tsv
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser TxtMdParser for .txt
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser TxtMdParser for .md
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser TxtMdParser for .markdown
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser HTMLFileParser for .htm
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser HTMLFileParser for .html
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser JSONParser for .json
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser PDFParser for .pdf
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser WordParser for .docx
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ImageParser for .png
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ImageParser for .jpg
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ImageParser for .jpeg
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ImageParser for .webp
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ImageParser for .gif
+2026-10-26 20:15:05 | common | default_trace_id | INFO | Registered parser ImageParser for .jfif
+[stage2] building leader TeamAgent ...
+2026-10-26 20:15:06 | team | default_trace_id | INFO | AgentTeam manager initialized for jsfw_fixture, member=team_leader
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "a6b215eb-9468-407f-affb-528fc8340fa1", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.017072+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation", "resource_type": "sys_operation", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation,name="}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.code.execute_code, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "ffc0ffd7-dc78-487d-9d41-309ee1c9e181", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.033787+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.code.execute_code", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.code.execute_code,name=execute_code"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.code.execute_code_stream, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "b7f78d7f-8c5e-45e7-a5d0-00d3ef822d41", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.034213+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.code.execute_code_stream", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.code.execute_code_stream,name=execute_code_stream"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.read_file, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "9a56affa-bf4f-4b08-b695-011ff55480ff", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.034538+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.read_file", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.read_file,name=read_file"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.read_file_stream, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "94c53b79-73ff-43d3-b960-d04dfa2729f5", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.034792+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.read_file_stream", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.read_file_stream,name=read_file_stream"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.write_file, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "bd8630f8-4a18-4e9d-bf83-606bf73431f5", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.035129+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.write_file", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.write_file,name=write_file"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.upload_file, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "9846d037-8f61-4e8a-94a1-7da1c2c49ebf", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.035431+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.upload_file", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.upload_file,name=upload_file"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.upload_file_stream, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "fc45af10-6d7b-48a9-aa99-952f35eeba28", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.035690+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.upload_file_stream", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.upload_file_stream,name=upload_file_stream"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.download_file, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "e4f01855-2488-467b-a158-edb8d1486a31", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.036032+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.download_file", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.download_file,name=download_file"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.download_file_stream, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "9d56c7e2-2278-4437-9cf1-0cb49e8df5dc", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.036351+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.download_file_stream", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.download_file_stream,name=download_file_stream"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.list_files, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "a09fe3d8-d4f7-4e83-a190-490f2636e0bd", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.036621+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.list_files", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.list_files,name=list_files"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.list_directories, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "543241d6-e64c-4d49-a30d-370c7eefb79f", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.036898+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.list_directories", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.list_directories,name=list_directories"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.fs.search_files, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "86741f1a-b8e5-42bc-9e02-63b6b97be1fe", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.037225+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.fs.search_files", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.fs.search_files,name=search_files"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.shell.execute_cmd, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "57ad028d-0f91-4ae0-8d3f-b85a59078ac2", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.037493+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.shell.execute_cmd", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.shell.execute_cmd,name=execute_cmd"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.shell.execute_cmd_stream, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "492c935b-2a77-4817-b047-50620aaed635", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.037736+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.shell.execute_cmd_stream", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.shell.execute_cmd_stream,name=execute_cmd_stream"}
+2026-10-26 20:15:07 | common | default_trace_id | INFO | Added GLOBAL tag to resource. resource_id=jsfw_fixture_team_leader.sys_operation.shell.execute_cmd_background, changed from [] to [GLOBAL]
+2026-10-26 20:15:07 | runner | default_trace_id | INFO | {"event_id": "844767ce-a2cd-4b6f-8d2a-c96fb2f1da54", "event_type": "add_resource", "log_level": "INFO", "timestamp": "2026-10-26T20:15:07.038030+08:00", "module_type": "system", "module_id": "runner", "module_name": "runner", "status": "success", "message": "add resource succeed", "metadata": {}, "resource_id": "jsfw_fixture_team_leader.sys_operation.shell.execute_cmd_background", "resource_type": "tool", "tag": "__global__", "card": "id=jsfw_fixture_team_leader.sys_operation.shell.execute_cmd_background,name=execute_cmd_background"}
+2026-10-26 20:15:07 | team | default_trace_id | INFO | [team_leader] TeamPolicyRail static sections: section_names=['team_bootstrap', 'team_extra']
+2026-10-26 20:15:07 | common | default_trace_id | WARNING | Failed to import online training rail factory: No module named 'redis'
+2026-10-26 20:15:07 | common | default_trace_id | INFO | [DeepAgent] inner ReAct max_iterations=unbounded (default)
+2026-10-26 20:15:07 | common | default_trace_id | WARNING | [DeepAgent] online training rail factory unavailable: No module named 'redis'
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Session tables ready for session jsfw_fixture_sid
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Team database initialized
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Session tables ready for session jsfw_fixture_sid
+[stage2] session_id=jsfw_fixture_sid backend=TeamBackend task_mgr=TeamTaskManager msg_mgr=TeamMessageManager
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Team jsfw_fixture created
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Member team_leader created
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Member team_leader created successfully
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | [team_leader] build_team completed; latching team DB state
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Team jsfw_fixture created successfully
+[stage2] build_team OK; roster=[]
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Member worker_a created
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Member worker_a created successfully
+[stage2] spawn_member(worker_a) ok=True
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Member reviewer_x created
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Member reviewer_x created successfully
+[stage2] spawn_member(reviewer_x) ok=True
+[stage2] roster now=['worker_a', 'reviewer_x']
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Message 80836c53-e428-4536-bb7c-a1bb004294aa created
+[stage2] DM message_id=80836c53-e428-4536-bb7c-a1bb004294aa
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Message 32d9532e-3c30-43bd-a0d1-a357d7377ec7 created
+[stage2] broadcast message_id=32d9532e-3c30-43bd-a0d1-a357d7377ec7 unread=True
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t2 blocked (1 unresolved deps)
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Created 2 task(s); added 1 edge(s); refreshed 1 task(s)
+[stage2] add_graph ok=True reason=''
+[stage2] after add: t1=pending t2=blocked (t2 should be blocked)
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t1 started by member worker_a
+[stage2] worker_a.claim(t1) ok=True -> in_progress
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t1 completed at 1793016907234
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Resolved 1 dependencies for task t1
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t2 unblocked (all deps resolved)
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t1 completed
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Unblocked 1 tasks
+[stage2] worker_a.complete(t1) ok=True reason=''
+[stage2] t2 after t1 completed = pending (should be pending/unblocked)
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Created 1 task(s); added 0 edge(s); refreshed 0 task(s)
+[stage2] add_graph(t3) ok=True
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t3 started by member worker_a
+[stage2] worker_a.claim(t3) ok=True -> in_progress
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t3 submitted for review
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t3 submitted for review
+[stage2] worker_a.complete(t3) ok=True -> status=in_review (should be in_review)
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | [verify_task] reviewer=reviewer_x task=t3 decision=pass
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t3 completed at 1793016907270
+2026-10-26 20:15:07 | team | jsfw_fixture_sid | INFO | Task t3 verified (passed) and completed
+[stage2] verify_task(pass) ok=True reason='' -> t3=completed (should be completed)
+[stage2] STAGE-2 OK: drove create-team/member/DM/broadcast/task-DAG/review with NO model call.

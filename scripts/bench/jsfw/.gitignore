@@ -1,0 +1,12 @@
+# JSW 夹具的运行态与框架日志——全部由探针脚本重建，不入库
+#
+# 复现方式（每次跑前先删，保证冷启动可复现）：
+#   rm -rf .jsfw-home
+#   <venv>/bin/python -u probe_min_team.py > probe_out.log 2>&1
+#   <venv>/bin/python -u probe_stage2_actions.py > stage2_out.log 2>&1
+
+# 隔离运行态（OPENJIUWEN_HOME）：sqlite DB / WAL / SHM / 会话消息 / 任务 / 锁
+.jsfw-home/
+
+# 框架默认日志：相对进程 CWD 生成，且自带一层无意义的 logs/logs 嵌套（见 docs/jsfw-comparison-fixture.md §1.2）
+logs/

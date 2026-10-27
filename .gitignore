@@ -22,3 +22,6 @@ lib
 .DS_Store
 .idea/
 .vscode/
+
+# 例外：bench harness 的 lib/ 是源码（非构建产物），必须入库
+!scripts/bench/lib/
