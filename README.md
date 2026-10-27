@@ -285,3 +285,8 @@ npm 上这两个实验包的 `latest`（`0.1.5-alpha.2`）与我们的运行时�
 
 leader 默认改为**纯事件唤醒**（对齐 JiuwenSwarm）：**派发/发消息后结束轮次**，由成员消息唤醒新一轮；**不把 `wait_agent` 当默认动作**（工具保留、随时可用，仅同轮必须聚合时使用）。
 由 `team-prompt` 配置 `leaderWaitModel`（`event-wake` 默认 / `blocking-allowed` 旧口径）控制。详见 `docs/leader-wait-model.md`。
+
+## 行为变更 / 边界：消息兜底（P51）
+
+- `blockOnUnread`（默认 true）现把**定向消息未读**纳入完成判定：**未读>0 不得完成**；仅 **leader 显式 `overrideUnread`（需 `allowUnreadOverride=true`）** 可越过（事件标 `overridden`）。**公告类广播不计入**。
+- **覆盖边界（如实登记）**：兜底**只覆盖经 `ctx.teamCore.send`/`team-bus` 的定向消息**；**模型用原生 `send_message` 直发不经过本栈**，故默认 profile 下暂不触发。解锁：集群 preset 改用本栈工具，或上游补 hook。详见 `docs/verification.md §N`。

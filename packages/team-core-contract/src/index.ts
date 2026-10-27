@@ -88,6 +88,8 @@ export interface TeamCore {
       range: MessageRange
       content: ContentBlock[]
       delivery: 'quiet' | 'wakeup'
+      /** 来源（P51 扩展）：`'broadcast'`（公告类，**不计入未读/pending 台账**）| `'directed'`（默认，计入）。 */
+      origin?: 'broadcast' | 'directed'
     },
   ): Promise<{ messageId: string; status: 'accepted' | 'queued' }>
 

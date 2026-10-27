@@ -364,18 +364,8 @@ export class TeamBusService extends Service implements TeamBus {
     const member = this.members(caller).find((m) => m.id === targetId)
     if (!member) return
     try {
-      // origin 是 team-core 的 P51 扩展（可选）；经窄断言调用，避免硬改契约
-      await (
-        this.ctx.teamCore.send as (
-          a: unknown,
-          r: {
-            range: { kind: 'dm'; to: string }
-            content: unknown[]
-            delivery: 'quiet' | 'wakeup'
-            origin?: 'broadcast' | 'directed'
-          },
-        ) => Promise<unknown>
-      )(caller, {
+      // origin 是 team-core 契约的 P51 扩展字段（'broadcast' 不计入未读/pending 台账）
+      await this.ctx.teamCore.send(caller, {
         range: { kind: 'dm', to: member.name },
         content: snap.content,
         delivery: snap.delivery,
