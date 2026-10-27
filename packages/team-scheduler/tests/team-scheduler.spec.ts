@@ -194,4 +194,23 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     await vi.runOnlyPendingTimersAsync()
     expect(listCalls).toBe(callsWhileArmed) // 卸载后不再 tick
   })
+
+  it('计划闸（P30/T9）：planned 任务不被派发/认领（未批准不能执行）', async () => {
+    const tasks = [
+      {
+        id: 't1',
+        revision: 0,
+        subject: 's',
+        description: '',
+        status: 'planned',
+        blockedBy: [],
+        ready: true,
+      },
+    ]
+    const { ctx, sent } = makeCtx({ tasks })
+    const sch = new TeamSchedulerService(ctx, cfg({ mode: 'scheduled' }))
+    const r = await sch.scan(agent)
+    expect(r.started).toBe(0)
+    expect(sent.filter((s) => s.text.includes('启动')).length).toBe(0)
+  })
 })

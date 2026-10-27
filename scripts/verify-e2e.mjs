@@ -46,7 +46,7 @@ const seam = {
     return { member: { id: m.id, name: m.name, role: m.role, description: req.description } }
   },
   sendMessage: async (_c, req) => {
-    sent.push({ target: req.target })
+    sent.push({ target: req.target, content: req.content })
     return { messageId: `msg${sent.length}` }
   },
   createTask: async (_c, req) => {
@@ -109,6 +109,7 @@ await rootCtx.plugin(core.default, {
   maxMembers: 8,
   maxTasks: 256,
   maxMessageBytes: 65536,
+  planGate: true,
 })
 await rootCtx.plugin(bus.default, { maxFanout: 64, maxMessageBytes: 65536 })
 await rootCtx.plugin(review.default, {
@@ -187,6 +188,81 @@ const done = await rootCtx.teamCompletion.evaluate(lead)
 assert(done.completed === true, '完成判定 → completed=true')
 const done2 = await rootCtx.teamCompletion.evaluate(lead)
 assert(done2.completed === true, '重复评估仍 completed（上升沿只发一次事件）')
+
+// ── 阶段 P30：计划闸 + 返工反馈定向回流 ──────────────────────────────────────
+console.log('\n== 阶段 P30：计划闸（执行前审批）/ 返工反馈 ==')
+// 计划闸：入闸 → 未批不能执行 → 驳回带理由 → 批准后可执行
+const pTask = await rootCtx.teamCore.createTask(lead, {
+  subject: 'plan-task',
+  description: 'needs plan',
+})
+await rootCtx.teamCore.updateTask(lead, {
+  taskId: pTask.id,
+  expectedRevision: pTask.revision,
+  action: 'open_plan',
+})
+assert(rootCtx.teamCore.getTask(lead, pTask.id).status === 'planned', '计划闸：入闸 → planned')
+let blocked = false
+try {
+  await rootCtx.teamCore.updateTask(lead, {
+    taskId: pTask.id,
+    expectedRevision: pTask.revision,
+    action: 'claim',
+    owner: 'alice',
+  })
+} catch {
+  blocked = true
+}
+assert(blocked, '计划闸：未批准不能执行（claim 被拒）')
+await rootCtx.teamCore.updateTask(lead, {
+  taskId: pTask.id,
+  expectedRevision: pTask.revision,
+  action: 'submit_plan',
+  plan: 'step1; step2',
+})
+await rootCtx.teamCore.updateTask(lead, {
+  taskId: pTask.id,
+  expectedRevision: pTask.revision,
+  action: 'reject_plan',
+  feedback: '请补测试',
+})
+assert(rootCtx.teamCore.planFeedbackOf(pTask.id) === '请补测试', '计划闸：驳回带理由且可回传')
+await rootCtx.teamCore.updateTask(lead, {
+  taskId: pTask.id,
+  expectedRevision: pTask.revision,
+  action: 'approve_plan',
+})
+assert(
+  rootCtx.teamCore.getTask(lead, pTask.id).status === 'pending',
+  '计划闸：批准后回 pending（可执行）',
+)
+
+// 返工反馈：评审 fail 携带 feedback + 定向 steer 回作者
+const rTask = await rootCtx.teamCore.createTask(lead, { subject: 'rev-task', description: '' })
+await rootCtx.teamCore.updateTask(lead, {
+  taskId: rTask.id,
+  expectedRevision: rTask.revision,
+  action: 'claim',
+  owner: 'alice',
+})
+await rootCtx.teamReview.submitForReview(lead, rTask.id)
+await rootCtx.teamReview.vote({ id: 'verifier', name: 'verifier' }, rTask.id, {
+  kind: 'binary',
+  decision: 'fail',
+  role: 'verifier',
+})
+await rootCtx.teamReview.vote({ id: 'challenger', name: 'challenger' }, rTask.id, {
+  kind: 'binary',
+  decision: 'pass',
+  role: 'challenger',
+})
+sent.length = 0
+await rootCtx.teamReview.settle(lead, rTask.id, '请补测试')
+assert(rootCtx.teamCore.revisionFeedbackOf(rTask.id) === '请补测试', '返工：feedback 存于 team-core（可读）')
+assert(
+  sent.some((s) => s.target === 'alice' && String(s.content?.[0]?.text ?? '').includes('revision-requested')),
+  '返工：定向 steer 回作者（alice 收到 revision-requested）',
+)
 
 // ── 阶段 2：锁守卫 / 技能可见性 / 记忆注入 ──────────────────────────────────
 console.log('\n== 阶段 2：workspace / skills / memory ==')

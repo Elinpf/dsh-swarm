@@ -130,4 +130,12 @@ describe('@elinpf/dsh-swarm-team-completion', () => {
     c2.recover(a.durable)
     expect(c2.unreadCount).toBe(2) // 恢复 → 台账重建
   })
+
+  it('计划闸（P30/T8）：planned 任务非终态 → 不判团队完成', async () => {
+    const planned = { ...doneTask, status: 'planned' }
+    const { ctx, emitted } = makeCtx({ tasks: [planned], members: [idleMember] })
+    const c = new TeamCompletionService(ctx, { blockOnUnread: true })
+    expect((await c.evaluate(lead)).completed).toBe(false)
+    expect(emitted).toEqual([])
+  })
 })

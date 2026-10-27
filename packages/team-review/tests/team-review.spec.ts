@@ -310,4 +310,33 @@ describe('@elinpf/dsh-swarm-team-review', () => {
     expect(s?.round).toBe(1)
     expect(s?.votes.length).toBe(2)
   })
+
+  it('返工反馈（P30）：settle fail 携带 feedback → reject_review 带 feedback + 定向 steer 作者', async () => {
+    const { ctx, task, sent } = makeCtx() // ownerName = 'w'
+    const rv = new TeamReviewService(ctx, {
+      pools: binaryPools,
+      maxRounds: 3,
+      stallTimeoutMs: 1000,
+    })
+    await rv.submitForReview(asCaller('w'), 't1')
+    await rv.vote(asCaller('verifier'), 't1', {
+      kind: 'binary',
+      decision: 'fail',
+      role: 'verifier',
+    })
+    await rv.vote(asCaller('challenger'), 't1', {
+      kind: 'binary',
+      decision: 'pass',
+      role: 'challenger',
+    })
+    const v = await rv.settle(asCaller('lead'), 't1', '请补测试')
+    expect(v.kind).toBe('fail')
+    expect(task.status).toBe('in_progress') // 返工回 in_progress
+    // 定向 steer 作者：feedback 内容送达原作者
+    expect(
+      sent.some(
+        (s) => s.to === 'w' && s.text.includes('revision-requested') && s.text.includes('请补测试'),
+      ),
+    ).toBe(true)
+  })
 })

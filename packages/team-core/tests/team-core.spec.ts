@@ -66,6 +66,7 @@ const cfg = (over: any = {}) => ({
   maxMembers: 8,
   maxTasks: 256,
   maxMessageBytes: 65536,
+  planGate: false,
   ...over,
 })
 const text = [{ type: 'text', text: 'hi' }]
@@ -210,6 +211,8 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
       reflect: { provide() {} },
       effect: (fn: () => unknown) => fn(),
       inject: () => () => {},
+      on: () => () => {},
+      emit: (n: string, p: unknown) => calls.push({ event: n, payload: p }),
     }
     return { ctx, state, calls }
   }
@@ -358,5 +361,111 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
     expect(c2.getTask(agent, 't1').status).toBe('in_progress') // 未恢复 → 丢失（缺陷）
     c2.recover(emitted) // 折叠 durable 事件
     expect(c2.getTask(agent, 't1').status).toBe('in_review') // 恢复 → 仍在
+  })
+
+  it('计划闸 T1/T2/T3：pending→planned；未批准不能执行；approve 后回 pending', async () => {
+    const { ctx, state } = makeReviewCtx()
+    state.status = 'pending'
+    const core = new TeamCoreService(ctx, cfg({ planGate: true }))
+    const planned = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'open_plan',
+    })
+    expect(planned.status).toBe('planned')
+    // T2：未批准不能执行（claim / complete 均被拒）
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'claim', owner: 'w' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'complete' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+    // T3：批准 → 回 pending（可执行）
+    const approved = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'approve_plan',
+    })
+    expect(approved.status).toBe('pending')
+  })
+
+  it('计划闸 T4/T5：驳回带理由且能回传；任务留在 planned 可再改', async () => {
+    const { ctx, state } = makeReviewCtx()
+    state.status = 'pending'
+    const core = new TeamCoreService(ctx, cfg({ planGate: true }))
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'open_plan' })
+    await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'submit_plan',
+      plan: 'step1; step2',
+    })
+    expect(core.planOf('t1')).toBe('step1; step2')
+    const rejected = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'reject_plan',
+      feedback: '请补测试',
+    })
+    expect(rejected.status).toBe('planned') // T5：留在 planned
+    expect(core.planFeedbackOf('t1')).toBe('请补测试') // T4：理由可回传
+  })
+
+  it('计划闸 T6：未入闸不能 approve；planGate 关闭时 open_plan 被拒', async () => {
+    const on = new TeamCoreService(makeReviewCtx().ctx, cfg({ planGate: true }))
+    await expect(
+      on.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'approve_plan' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+    const off = new TeamCoreService(makeReviewCtx().ctx, cfg({ planGate: false }))
+    await expect(
+      off.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'open_plan' }),
+    ).rejects.toThrow(/TEAMCORE_PLAN_GATE_DISABLED/)
+  })
+
+  it('返工反馈 T7：reject_review 携带 feedback → revisionFeedbackOf 可读', async () => {
+    const { ctx } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
+    const back = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'reject_review',
+      feedback: '改 A 部分',
+    })
+    expect(back.status).toBe('in_progress')
+    expect(core.revisionFeedbackOf('t1')).toBe('改 A 部分')
+  })
+
+  it('计划闸恢复 T11：重建服务 + recover(durable) → planned/计划/反馈 仍在', async () => {
+    const a = makeReviewCtx()
+    a.state.status = 'pending'
+    const core = new TeamCoreService(a.ctx, cfg({ planGate: true }))
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'open_plan' })
+    await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'submit_plan',
+      plan: 'do X',
+    })
+    await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'reject_plan',
+      feedback: '补测试',
+    })
+    const durable = a.calls
+      .filter((c: any) => typeof c.event === 'string')
+      .map((c: any) => ({ type: c.event, payload: c.payload }))
+    expect(durable.map((e) => e.type)).toEqual(
+      expect.arrayContaining(['swarm/task/plan-request', 'swarm/task/plan-response']),
+    )
+
+    const b = makeReviewCtx()
+    const core2 = new TeamCoreService(b.ctx, cfg({ planGate: true }))
+    expect(core2.getTask(agent, 't1').status).not.toBe('planned') // 未恢复
+    core2.recover(durable)
+    expect(core2.getTask(agent, 't1').status).toBe('planned') // 恢复
+    expect(core2.planOf('t1')).toBe('do X')
+    expect(core2.planFeedbackOf('t1')).toBe('补测试')
   })
 })
