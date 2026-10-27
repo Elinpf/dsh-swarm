@@ -34,6 +34,7 @@ describe('@elinpf/dsh-swarm-team-scale-contract', () => {
     >()
     expectTypeOf<TransportFrame>().toHaveProperty('kind')
     expectTypeOf<TransportStats['dedupDropped']>().toEqualTypeOf<number>()
+    expectTypeOf<TransportStats['queueDropped']>().toEqualTypeOf<number>()
     expectTypeOf<TeamTransport['send']>().returns.resolves.toEqualTypeOf<{ seq: number }>()
     expectTypeOf<TeamTransport['peers']>().returns.toEqualTypeOf<PeerStatus[]>()
 

@@ -59,6 +59,8 @@ export interface TransportStats {
   replayed: number
   /** 因重连超时被判不可达的 peer 次数。 */
   unreachable: number
+  /** 待发队列满时按「丢弃最旧」策略丢弃的帧数（有界队列的可观测证据）。 */
+  queueDropped: number
 }
 
 export interface TeamTransport {

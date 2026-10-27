@@ -202,6 +202,19 @@ const PACKAGES = [
     config: { enableBroadcast: true, enableReview: true },
     expectTools: ['broadcast', 'multicast', 'review_submit', 'review_vote', 'team_summary'],
   },
+  {
+    name: '@elinpf/dsh-swarm-team-transport',
+    file: 'packages/team-transport/lib/index.js',
+    config: {
+      backend: 'in-process',
+      maxQueue: 1024,
+      maxHistory: 1024,
+      reconnectTimeoutMs: 15000,
+      reconnectIntervalMs: 0,
+      autoReconnect: false,
+    },
+    expectService: 'teamTransport',
+  },
   { name: '@elinpf/dsh-swarm-bundle', file: 'packages/bundle/lib/index.js', kind: 'bundle' },
 ]
 
