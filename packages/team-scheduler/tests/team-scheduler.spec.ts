@@ -37,7 +37,7 @@ function makeCtx(
     updateTask: async (_c: unknown, req: any) => {
       const t = tasks.find((x: any) => x.id === req.taskId)!
       if (t.revision !== req.expectedRevision) throw new Error('CAS conflict')
-      if (req.action === 'claim') {
+      if (req.action === 'claim' || req.action === 'assign') {
         t.status = 'in_progress'
         if (req.owner) t.ownerName = req.owner
         t.revision += 1
@@ -94,6 +94,19 @@ const cfg = (over: Partial<any> = {}) => ({
 })
 
 afterEach(() => vi.useRealTimers())
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** 断言式轮询：避免固定 setTimeout 窗口造成的偶发假红（见 P42 追加要求）。 */
+async function waitFor(fn: () => boolean, timeout = 2000, step = 5): Promise<boolean> {
+  const end = Date.now() + timeout
+  while (Date.now() < end) {
+    if (fn()) return true
+    await sleep(step)
+  }
+  return fn()
+}
+/** 负向断言的**有界**观察窗（证明「不发生」必须观察一段时间）。 */
+const OBSERVE_MS = 200
 
 describe('@elinpf/dsh-swarm-team-scheduler', () => {
   it('导出形态：Service（default export）+ inject', () => {
@@ -331,8 +344,8 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     const sch = new TeamSchedulerService(ctx, cfg({ mode: 'scheduled', pollMs: 10 }))
     // 模拟 agents/teamCore 就绪 → 触发自装配
     injectCallbacks.forEach((cb) => cb({ get: ctx.get }))
-    await new Promise((r) => setTimeout(r, 60))
-    expect(ts[0]!.status).toBe('in_progress') // 真被扫描并派发
+    expect(await waitFor(() => ts[0]!.status === 'in_progress')).toBe(true) // 轮询至派发
+    expect(ts[0]!.ownerName).toBe('w') // P42：owner 是**被派发的成员**，而非 lead
     sch.dispose()
   })
 
@@ -361,7 +374,7 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
       cfg({ mode: 'scheduled', pollMs: 10, autoArm: false }),
     )
     injectCallbacks.forEach((cb) => cb({ get: ctx.get }))
-    await new Promise((r) => setTimeout(r, 60))
+    await sleep(OBSERVE_MS) // 有界观察窗：证明「不派发」
     expect(ts[0]!.status).toBe('pending') // 无人 arm → 保持 pending（=修复前行为）
     sch.dispose()
   })
@@ -389,7 +402,7 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     })
     const sch = new TeamSchedulerService(ctx, cfg({ mode: 'autonomous', pollMs: 10 }))
     injectCallbacks.forEach((cb) => cb({ get: ctx.get }))
-    await new Promise((r) => setTimeout(r, 60))
+    await sleep(OBSERVE_MS) // 有界观察窗：证明「不派发、不 nudge」
     expect(ts[0]!.status).toBe('pending')
     expect(sent.length).toBe(0)
     sch.dispose()

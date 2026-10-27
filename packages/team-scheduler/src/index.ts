@@ -368,7 +368,9 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
           await this.ctx.teamCore.updateTask(agent, {
             taskId: task.id,
             expectedRevision: task.revision,
-            action: 'claim',
+            // 用端口动作 `assign`（→ 原生 `reassign`）：原生 `claim` **以调用者为 owner、忽略 owner 入参**，
+            // 会让任务归到 Lead 名下（P42 实测 ownerName=lead）。`reassign` 才按 owner 指派给成员并置 in_progress。
+            action: 'assign',
             owner: m.name,
           })
           report.started += 1
