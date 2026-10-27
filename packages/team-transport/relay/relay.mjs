@@ -20,9 +20,12 @@
 const MAX_HISTORY = 4096
 
 const epoch = `relay-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
-const ackTimeoutMs = Number(process.env.RELAY_ACK_TIMEOUT_MS ?? 50)
-let dropAcks = Number(process.env.RELAY_DROP_ACKS ?? 0)
-let dropEchoes = Number(process.env.RELAY_DROP_ECHOES ?? 0)
+// 故障注入既可经环境变量、也可经 argv（argv 便于跨 SSH 传递，SSH 默认不透传本地 env）：
+//   node relay.mjs <endpoint> [dropAcks] [dropEchoes] [ackTimeoutMs]
+const argv = process.argv.slice(2)
+const ackTimeoutMs = Number(process.env.RELAY_ACK_TIMEOUT_MS ?? argv[4] ?? 50)
+let dropAcks = Number(process.env.RELAY_DROP_ACKS ?? argv[2] ?? 0)
+let dropEchoes = Number(process.env.RELAY_DROP_ECHOES ?? argv[3] ?? 0)
 
 let nextSeq = 1
 let sinceSeqIn = 0

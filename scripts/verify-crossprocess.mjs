@@ -11,7 +11,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import { fileURLToPath } from 'node:url'
-import { spawn as nodeSpawn } from 'node:child_process'
+import { spawn as nodeSpawn, execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -173,6 +173,117 @@ try {
   rmSync(dir, { recursive: true, force: true })
 } catch {
   /* ignore */
+}
+
+console.log('\n== C. ssh-rpc 机制：真实 SSH 通道承载团队帧（不走本地 stdin/stdout）==')
+
+function sshAvailable() {
+  try {
+    execFileSync(
+      'ssh',
+      [
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'StrictHostKeyChecking=no',
+        '-o',
+        'ConnectTimeout=5',
+        'localhost',
+        'true',
+      ],
+      { stdio: 'ignore', timeout: 10000 },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+if (!sshAvailable()) {
+  console.log('[SKIP] 本环境无可用 SSH 目标（BatchMode localhost 失败）——ssh-rpc 无法在此验证')
+} else {
+  const children = []
+  // 真实 ssh 通道：本地起 `ssh localhost <node> <relay> <endpoint>`，帧经 SSH 承载（非本地 stdio 直连）
+  const sshSeam = {
+    async resolveExecutable() {
+      return process.execPath
+    },
+    spawn(spec) {
+      const remoteCmd = spec.argv.map((a) => String(a))
+      const child = nodeSpawn(
+        'ssh',
+        [
+          '-o',
+          'BatchMode=yes',
+          '-o',
+          'StrictHostKeyChecking=no',
+          '-o',
+          'ConnectTimeout=5',
+          'localhost',
+          ...remoteCmd,
+        ],
+        { stdio: ['pipe', 'pipe', 'inherit'] },
+      )
+      children.push(child)
+      return {
+        stdin: child.stdin ?? undefined,
+        stdout: child.stdout ?? undefined,
+        terminate: () => void child.kill('SIGKILL'),
+        done: new Promise((res) =>
+          child.on('close', (code, signal) => res({ exitCode: code, signal: signal ?? null })),
+        ),
+      }
+    },
+  }
+  Object.assign(process.env, { RELAY_ACK_TIMEOUT_MS: '20' })
+  const ctx = new Context()
+  // 先注册 ssh seam 作为 ctx.subprocess，再加载 transport（local-child 在 start 时读取）
+  await ctx.plugin({
+    name: 'ssh-subprocess-host',
+    apply(c) {
+      c.provide('subprocess', sshSeam)
+    },
+  })
+  await ctx.plugin(TR.default, {
+    backend: 'local-child',
+    endpoint: 'lead',
+    nodeBin: 'node',
+    childRelayPath: RELAY,
+    ackTimeoutMs: 40,
+    reconnectIntervalMs: 0,
+    autoReconnect: false,
+  })
+  const got = []
+  ctx.teamTransport.onFrame((_pid, f) => got.push(f.payload.n))
+  await ctx.teamTransport.send('remote', frame(5))
+  await sleep(700) // SSH 建链 + 帧往返
+  const st1 = ctx.teamTransport.stats()
+  assert(got.includes(5), `SSH 通道承载帧：父观察到远端回声（got=${JSON.stringify(got)}）`)
+  assert(st1.acked >= 1, `SSH 通道：收到远端 ack（acked=${st1.acked}）`)
+
+  const peerBefore = ctx.teamTransport.peers().find((p) => p.peerId === 'remote')
+  assert(peerBefore.state === 'connected', `SSH peer connected（${peerBefore.state}）`)
+
+  // 真实断链：杀掉 ssh 子进程 → degraded → reconnect → connected
+  children[0]?.kill('SIGKILL')
+  await sleep(300)
+  assert(
+    ctx.teamTransport.peers().find((p) => p.peerId === 'remote').state === 'degraded',
+    'SSH 断链 → degraded',
+  )
+  await ctx.teamTransport.reconnect('remote')
+  await sleep(700)
+  assert(
+    ctx.teamTransport.peers().find((p) => p.peerId === 'remote').state === 'connected',
+    'SSH 重连 → connected',
+  )
+  got.length = 0
+  await ctx.teamTransport.send('remote', frame(6))
+  await sleep(700)
+  assert(got.includes(6), `SSH 重连后仍可收发（got=${JSON.stringify(got)}）`)
+  await ctx.stop?.()
+  for (const c of children) c.kill('SIGKILL')
+  delete process.env.RELAY_ACK_TIMEOUT_MS
 }
 
 console.log(

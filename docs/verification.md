@@ -897,3 +897,60 @@ $ node scripts/verify-crossprocess.mjs        # 真实 ctx.subprocess + 真实�
   由应用层 `messageId` 幂等兜底（transport 的 seq 去重只保证「同一对端进程内的不重」）。「sinceSeq 增量补齐」在**对端存活**的重连上验证（in-process 单测 + relay 的 `sync-req` 路径）。
 - 跨机 SSH 真断网/丢包联调仍未跑（无 SSH 后端）。
 - 真实模型 token 消耗：本任务全程为本地确定性探针/单测，**模型 token 消耗 0**。
+
+
+## J. ssh-rpc 与 subagents out-of-process 的解锁尝试（P26-unlock-ssh-subagents / dev-2）
+
+对 P25 §I.5 的两处「未验证」逐一推到底：**先查包存在性（带命令与输出），存在则装到隔离环境真接线**。
+
+### J.1 包存在性（`npm view`，0.2.1-rc.3 可装）
+
+```console
+$ npm view @deepseek-ai/dsh-ssh dist-tags --json
+{ "latest":"0.1.6-alpha.1", "alpha":"0.2.1-alpha.5", "next":"0.2.1-rc.4" }
+$ npm view @deepseek-ai/dsh-ssh versions --json   # …"0.2.1-rc.3","0.2.1-rc.4"
+$ npm view @deepseek-ai/dsh-acp dist-tags --json          → latest 0.0.1-rc.1 / next 0.2.1-rc.4
+$ npm view @deepseek-ai/dsh-subagent-dsh-sdk dist-tags --json → next 0.2.1-rc.4
+$ npm view @deepseek-ai/dsh-subagent-acp dist-tags --json  → next 0.2.1-rc.4
+$ npm view @deepseek-ai/dsh-subprocess-ssh dist-tags --json → next 0.2.1-rc.4
+```
+**结论：包存在**，且**钉版 `0.2.1-rc.3` 可安装**（不是「没有」）。已装入项目内隔离目录 `.runtime/xproc/`（`npm install @deepseek-ai/dsh-ssh@0.2.1-rc.3 @deepseek-ai/dsh-subagent-dsh-sdk@0.2.1-rc.3 @deepseek-ai/dsh-acp@0.2.1-rc.3` → `added 622 packages`）。
+
+### J.2 `ssh-rpc`：**部分已验证**（帧经真实 SSH 通道收发 + 断线重连），`ctx.ssh` 本体未接通
+
+- **`ctx.ssh`（`dsh-ssh`）的真实 API ≠ 通用帧总线**（`lib/types/index.d.ts` 实测）：`class SshConnection extends Service`，
+  Config 必填 `host`（OpenSSH alias）/`helper`（远端 helper 入口）/`helperHash`（SHA-256）/`workspace`/`launch`，
+  公开面是 `ptcLaunch` 与 `connectStream(endpoint)`（endpoint 由远端 helper 下发）。
+  ⇒ 它绑定「宿主机 ↔ 一台装了**版本对齐 helper 归档**的远端 POSIX 主机」，用于 `fs-ssh`/`subprocess-ssh`/`sandbox-ssh`，
+  **不是**可承载任意应用帧的 RPC 总线；我们 `team-transport` 里的 `SshSeam.openDuplex` 是 P25 按【推断】设计的，**与真实形状不匹配**（已修正登记）。
+- **真验证（帧经 SSH 通道，非本地 stdio 直连）**：本机有 `sshd`（`:22` 监听、`ssh -o BatchMode=yes localhost true` 成功）。
+  探针 C 段用**真实 ssh 通道**跑我们的 relay（`ssh localhost <node> relay.mjs …`）作为 local-child 的 seam：
+  ```console
+  == C. ssh-rpc 机制：真实 SSH 通道承载团队帧（不走本地 stdin/stdout）==
+  [OK]   SSH 通道承载帧：父观察到远端回声（got=[5]）
+  [OK]   SSH 通道：收到远端 ack（acked=1）
+  [OK]   SSH peer connected（connected）
+  [OK]   SSH 断链 → degraded
+  [OK]   SSH 重连 → connected
+  [OK]   SSH 重连后仍可收发（got=[6]）
+  ```
+  ⇒ 「跨进程且经 SSH 通道」的帧收发与断线重连**已验证**（`scripts/verify-crossprocess.mjs` C 段，无可用 SSH 目标时自动 SKIP）。
+- **结论**：`ssh-rpc` **机制可行且已验证**；**未接通的是 `dsh-ssh` 本身**（需远端 helper 归档部署）。
+  **解锁条件**：在远端安装 `@deepseek-ai/dsh-ssh` 配套 helper 归档（`ssh-helper-runtime`），配置 OpenSSH alias + 记录 `helperHash`，
+  再经 `@deepseek-ai/dsh-subprocess-ssh` 作为 `ctx.subprocess` 承载我们的 relay（或直接用 `ssh <alias>` 跑 relay，即本探针路径）。
+
+### J.3 `ctx.subagents` out-of-process：**包存在可加载，未验证执行**
+
+- `@deepseek-ai/dsh-subagent-dsh-sdk@0.2.1-rc.3` 实测导出 `{ Config, apply, inject:["subagents"], name:"subagent-dsh-sdk" }`；
+  Config 必填 `dshHome`（隔离子 Harness home）、`profile`（默认 `sdk`）、`patches`、`provider`（默认 `deepseek-official`）、`model`、`env`（子进程 `DEEPSEEK_API_KEY` 等）。
+  ⇒ 它**真起一个子 DSH 运行进程**并驱动一次执行。
+- 隔离探针（`.runtime/xproc/probe-subagent.mjs`）加载 `@deepseek-ai/dsh-subagent`（服务**抽象定义**）后 `ctx.subagents === undefined`：
+  该 provider 需要**一个具体的 `ctx.subagents` 运行时**（如 `dsh-subagent-spawn-in-process`）+ 子 profile + 模型路由才能注册并执行。
+- **结论**：**包存在、可安装、可加载**，但**未验证真实执行**（缺具体 subagent 运行时装配 + 子 profile + 模型端点/凭据）。
+  **解锁条件**：装配一个 concrete `ctx.subagents` runtime，提供 `dshHome`/`dshBin` 与可用的子 profile，并给子进程配置**可用模型路由 + 凭据**（会消耗真实模型 token）。
+
+### J.4 与文档一致性
+
+- P25 §I.5 的 `ssh-rpc` 登记由「内存 dual mock」**升级为：机制在真实 SSH 通道上已验证；`dsh-ssh` 本体未接通（附解锁条件）**。
+- `ctx.subagents` out-of-process 登记由「无 provider」**更正为：包存在且可装上加载，执行链路未验证（附解锁条件）**。
+- 全程真实模型 token 消耗 **0**（本地确定性探针；未驱动子运行时的模型执行）。
