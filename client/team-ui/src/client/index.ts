@@ -28,12 +28,20 @@ export const inject = ['slots', 'locale', 'sidebarRightTabs', 'sessions']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-swarm-team-ui: dictionaries')
   ctx.effect(
-    () => ctx.sidebarRightTabs.register(teamChatDefinition(ctx.locale.bind(NS) as unknown as (k: 'title' | 'messages') => string)),
+    () =>
+      ctx.sidebarRightTabs.register(
+        teamChatDefinition(ctx.locale.bind(NS) as unknown as (k: 'title' | 'messages') => string),
+      ),
     'dsh-swarm-team-ui: tab type',
   )
-  ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-    name: 'sidebar.right.pane.tab',
-    key: TEAM_CHAT_ID,
-    locale: NS,
-  }, TeamChatTab))
+  ctx.slots.inject('sidebar.right.pane.tab', () =>
+    ctx.slots.register(
+      {
+        name: 'sidebar.right.pane.tab',
+        key: TEAM_CHAT_ID,
+        locale: NS,
+      },
+      TeamChatTab,
+    ),
+  )
 }

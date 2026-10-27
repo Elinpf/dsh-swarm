@@ -16,17 +16,21 @@ export const TEAM_CHAT_KIND = 'swarmTeamChat'
  * @param t - namespace-bound translate.
  * @returns the definition to register.
  */
-export function teamChatDefinition(t: (key: 'title' | 'messages') => string): SidebarRightTabDefinition {
+export function teamChatDefinition(
+  t: (key: 'title' | 'messages') => string,
+): SidebarRightTabDefinition {
   return {
     id: TEAM_CHAT_ID,
     kind: TEAM_CHAT_KIND,
     priority: 'extension',
     title: () => t('title'),
-    guide: [{
-      id: TEAM_CHAT_ID,
-      order: 20,
-      title: () => t('title'),
-      description: () => t('messages'),
-    }],
+    guide: [
+      {
+        id: TEAM_CHAT_ID,
+        order: 20,
+        title: () => t('title'),
+        description: () => t('messages'),
+      },
+    ],
   }
 }

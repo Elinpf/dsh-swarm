@@ -18,8 +18,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { NS } from './locales.ts'
 
 /** Full props of the team chat tab body. */
-export type TeamChatTabProps =
-  PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
+export type TeamChatTabProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
 
 interface MemberRow {
   id: string
@@ -39,7 +38,10 @@ interface ChatMessage {
 
 function textOf(message: ChatMessage): string {
   const blocks = message.content ?? []
-  return blocks.map((b) => (typeof b.text === 'string' ? b.text : '')).join('').trim()
+  return blocks
+    .map((b) => (typeof b.text === 'string' ? b.text : ''))
+    .join('')
+    .trim()
 }
 
 /** Render the roster and the folded group-chat message stream. */
@@ -50,14 +52,19 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
   // The slot runtime exposes the shared Session store hooks; read defensively.
   const runtime = props as unknown as {
     sessionId?: SessionId
-    useSession?: (selector: (snapshot: { subagent?: { address?: { parentSessionId?: SessionId } } }) => SessionId | undefined) => SessionId | undefined
-    useSessions?: (selector: (state: {
-      projectionsBySession?: Record<string, { values?: Record<string, unknown> }>
-    }) => unknown) => unknown
+    useSession?: (
+      selector: (snapshot: {
+        subagent?: { address?: { parentSessionId?: SessionId } }
+      }) => SessionId | undefined,
+    ) => SessionId | undefined
+    useSessions?: (
+      selector: (state: {
+        projectionsBySession?: Record<string, { values?: Record<string, unknown> }>
+      }) => unknown,
+    ) => unknown
   }
-  const leadId = (runtime.useSession?.((s) => s.subagent?.address?.parentSessionId) ?? runtime.sessionId) as
-    | SessionId
-    | undefined
+  const leadId = (runtime.useSession?.((s) => s.subagent?.address?.parentSessionId) ??
+    runtime.sessionId) as SessionId | undefined
 
   const team = runtime.useSessions?.((state) =>
     leadId === undefined ? undefined : state.projectionsBySession?.[leadId]?.values?.['agentTeam'],
@@ -71,35 +78,82 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
   const messages = useMemo(() => (bus?.messages ?? []).slice().reverse(), [bus?.messages])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10, overflow: 'auto', height: '100%' }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: 10,
+        overflow: 'auto',
+        height: '100%',
+      }}
+    >
       <section>
         <h4 style={{ margin: '0 0 6px' }}>{t('roster')}</h4>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <ul
+          style={{
+            listStyle: 'none',
+            margin: 0,
+            padding: 0,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 6,
+          }}
+        >
           {members.map((m) => (
-            <li key={m.id} title={`${m.role} · ${m.phase}`}
-              style={{ border: '1px solid #d0d0d0', borderRadius: 12, padding: '2px 8px', fontSize: 12 }}>
-              {m.name}{m.role === 'lead' ? ' (lead)' : ''}
+            <li
+              key={m.id}
+              title={`${m.role} · ${m.phase}`}
+              style={{
+                border: '1px solid #d0d0d0',
+                borderRadius: 12,
+                padding: '2px 8px',
+                fontSize: 12,
+              }}
+            >
+              {m.name}
+              {m.role === 'lead' ? ' (lead)' : ''}
             </li>
           ))}
         </ul>
       </section>
       <section style={{ flex: 1, minHeight: 0 }}>
         <h4 style={{ margin: '0 0 6px' }}>{t('messages')}</h4>
-        {messages.length === 0
-          ? <div style={{ color: '#888', fontSize: 12 }}>{t('empty')}</div>
-          : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {messages.map((m) => (
-                <li key={m.id} style={{ border: '1px solid #e0e0e0', borderRadius: 6, padding: '4px 8px', fontSize: 13 }}>
-                  <div style={{ fontSize: 11, color: '#666' }}>
-                    {m.senderName}{m.topic === undefined ? '' : ` · ${m.topic}`}
-                    {m.kind === 'multicast' && m.targets !== undefined ? ` → ${m.targets.join(', ')}` : ''}
-                  </div>
-                  <div>{textOf(m)}</div>
-                </li>
-              ))}
-            </ul>
-          )}
+        {messages.length === 0 ? (
+          <div style={{ color: '#888', fontSize: 12 }}>{t('empty')}</div>
+        ) : (
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}
+          >
+            {messages.map((m) => (
+              <li
+                key={m.id}
+                style={{
+                  border: '1px solid #e0e0e0',
+                  borderRadius: 6,
+                  padding: '4px 8px',
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontSize: 11, color: '#666' }}>
+                  {m.senderName}
+                  {m.topic === undefined ? '' : ` · ${m.topic}`}
+                  {m.kind === 'multicast' && m.targets !== undefined
+                    ? ` → ${m.targets.join(', ')}`
+                    : ''}
+                </div>
+                <div>{textOf(m)}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   )

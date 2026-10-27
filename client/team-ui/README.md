@@ -35,7 +35,7 @@ cd packages/client/dsh-swarm-team-ui
 2. **先 `tsc`** 出 `lib/types/index.js`：`clientBundle(dir, ['lib/types/index.js'])` 的 host 面要求该入口存在。
 3. `tsconfig.json` **不要写 `references`**；host 面 `include` 只留 `src/index.ts`（client 半由 tsdown 转译，不走 tsc）。
 4. `tsconfig.json` 的 `extends` 指到 **harness 根** `../../../tsconfig.base.client.json`。
-5. 包放 `packages/client/**`（会被 `BundleInputIsolation` 判为非实验），**不要放 `packages/experimental/**`**。
+5. 包放 `packages/client/**`（会被 `BundleInputIsolation` 判为非实验），**不要放 `packages/experimental/**`\*\*。
 
 ## 接进 profile（原型/正式）
 
@@ -48,7 +48,7 @@ cd packages/client/dsh-swarm-team-ui
    ```yaml
    - insert:
        - id: dsh-swarm-team-ui
-         name: "@elinpf/dsh-swarm-team-ui"
+         name: '@elinpf/dsh-swarm-team-ui'
    ```
 3. 起实例（`DSH_HOME` 指向该 home）：`dsh --profile <profile> --port <port>`。
 
@@ -80,7 +80,7 @@ cd <harness>/packages/client/dsh-swarm-team-ui
 ../../../node_modules/.bin/tsc -p tsconfig.typecheck.json   # extends harness tsconfig.base.client.json
 ```
 
-- **本包源码（`src/**`）错误数 = 0**（修正项：删去未用的 `TeamKey` 导入；`props.t` 以显式键联合签名收窄，避免 `PropsLocale` 键推导在本 build 下不收 `roster/messages/empty`）。
+- **本包源码（`src/**`）错误数 = 0**（修正项：删去未用的 `TeamKey` 导入；`props.t`以显式键联合签名收窄，避免`PropsLocale`键推导在本 build 下不收`roster/messages/empty`）。
 - 输出中仍会看到大量**其它包**（`packages/api/**`、`packages/attachment/**` 等）的错误——那是 harness 全量 `paths→src` 解析 + 未构建 `*/remote` 声明造成的**既有环境噪声**，与本包无关（本包零错误）。
 - `tsconfig.typecheck.json` 随本目录交付，便于复跑。
 
@@ -92,7 +92,7 @@ cd <harness>/packages/client/dsh-swarm-team-ui
      ```yaml
      - insert:
          - id: dsh-swarm-team-ui
-           name: "@elinpf/dsh-swarm-team-ui"
+           name: '@elinpf/dsh-swarm-team-ui'
      ```
   3. `systemctl restart dsh-swarm-demo`。
 - 自证：journal **无 error/fail/warn**；启动页客户端模块表含本插件；其 `client.js` **HTTP 200（6648 bytes）**，含 `swarmTeamChat`/`swarmBus`/`群聊`。
