@@ -174,6 +174,8 @@ scripts/bench/
   exp-idle-wakeup.sh   # 长驻观测一键入口（source 隔离环境后 exec exp-idle-wakeup.mjs）
   exp-idle-wakeup.mjs  # 「空转唤醒」长驻实验驱动：广播臂 vs N-DM 对照 + --self-test
   lib/longres.mjs      # 长驻观测后端：静默等待 + 逐成员归因
+  exp-sched.sh         # #5 scheduler 三臂（real profile）：--mode scheduled|autonomous|off（自带 scheduler overlay）
+  exp-headless.sh      # 通用 real profile 跑手：--plan-gate on|off --enable-review on|off --prompt-file … --out …
   README.md            # 本文件
   jsfw/                # JiuwenSwarm 侧隔离对照夹具（P12；口径与结论见 docs/jsfw-comparison-fixture.md）
     probe_min_team.py       # STAGE-1：隔离 HOME 下构建 + 配置最小 leader TeamAgent
