@@ -177,6 +177,12 @@ corepack pnpm format:check
 - **`record-only` / `quiet` 为 opt-in（非默认）**：`broadcast({fanout:'record-only'})` = 1 落库、不逐人 DM、成员按需 `history()` 拉取（完全不唤醒）；`broadcast({delivery:'quiet'})` = 入邮箱但不唤醒。**适用**高流量信息型广播。**风险**：静默广播**无法触发协同动作**（「全体停止 / 任务变更」类若无人被唤醒可能长期无人处理），故**不作默认**。
 - **遗留（待评估）**：写放大——源系统广播 **O(1)** 写（1 记录 + 读水位线）vs 我们 **O(N)**（1 落库 + 逐人 DM）；唤醒语义相同、存储形态不同。
 
+### 计划闸与返工反馈（P30）
+
+- **计划闸（执行前审批，opt-in）**：`ctx.teamCore` 的 `Config.planGate` **默认 `false`**（对齐源系统 PLANNING 为可选闸门，避免默认给所有任务加人工卡点）。开启后：`pending → planned`（`updateTask.action:'open_plan'`）→ 提交计划（`submit_plan`，携带 `plan` 正文）→ 批准（`approve_plan`）回到 `pending` 可执行；**驳回**（`reject_plan`，携带 `feedback`）留在 `planned` 可再改。**未批准不能执行**（`claim`/`complete` 等被拒 `TEAMCORE_INVALID_TRANSITION`）；关闭时 `open_plan` 抛 `TEAMCORE_PLAN_GATE_DISABLED`。`planned` 是**非终态**（不被完成判定误判）且**不被调度器派发**；与 `in_review` 验证闸**独立可开关**。批准/驳回经**统一 action 面**（不新增独立工具）。
+- **返工反馈（定向回流）**：评审 `fail` 时 `settle(caller, taskId, feedback)` 携带 `feedback`；`team-core` 存 `revisionFeedbackOf(taskId)` 并发 `swarm/task/revision-requested`；`team-review` 再把 `[revision-requested] task X: <feedback>` **定向 DM 回原作者**——作者知道「改什么」（不再只知 fail）。
+- 事件 schema（ADR-0002 §3）：`swarm/task/{plan-request, plan-response, revision-requested}`。
+
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）

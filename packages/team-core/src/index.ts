@@ -391,7 +391,11 @@ export class TeamCoreService extends Service implements TeamCore {
       }
       const feedback = req.feedback ?? ''
       if (feedback) this.planFeedback.set(req.taskId, feedback)
-      this.emitDurable('swarm/task/plan-response', { taskId: req.taskId, approved: false, feedback })
+      this.emitDurable('swarm/task/plan-response', {
+        taskId: req.taskId,
+        approved: false,
+        feedback,
+      })
       return this.overlay(this.require().getTask(caller, req.taskId))
     }
     // 计划闸中（overlay `planned`）：只允许计划相关动作（上方已处理）；其余一律被拒 —— **未批准不能执行**。

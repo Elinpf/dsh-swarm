@@ -32,6 +32,25 @@ const tasks = []
 const sent = []
 let seq = 0
 
+/**
+ * 端口 mock：模拟 `ctx.agentTeams` 的结构（P30 审计：明确覆盖/盲区，避免"断言看不见东西"）。
+ *
+ * **覆盖的语义字段**：
+ *  - `sendMessage`：记录 `{ target, content }`（真实 seam 另带 `{ signal }`——对断言无意义，不记）；
+ *    `range`/`delivery` 由 `team-core.send` 在端口层消化，**不进入 native seam**。
+ *  - `updateTask`：**仅模拟 `claim` / `complete`** 两个 native 动作；`release`/`reopen`/`assign`/
+ *    `reassign`/`delete`/`edit`/`set_dependencies` **未模拟** → 依赖它们的断言在此 mock 下**失真**，勿假设。
+ *  - `createTask`：忽略 `blockedBy`（无 DAG/readiness 建模）。
+ *  - `waitForChange`：**恒返回 `timedOut:true`**（无真实阻塞）。
+ *  - `spawnTeammate`/`listMembers`/`membership`/`tryMembership`/`getTask`/`listTasks`：最小结构。
+ *
+ * **盲区（mock 无法忠实模拟的真实行为）**：任务 DAG 依赖解锁、`waitForChange` 真实阻塞、
+ *  `delivery`（quiet/wakeup）语义、跨进程 / 持久化 / footprint。依赖这些的断言在此 mock 下属**弱断言**，
+ *  应在真实 profile（`scripts/e2e-profile.sh`）或用真实 seam 验收。
+ *
+ * **注意**：`team-core` 的叠加态动作（`submit_review`/`reject_review`/`open_plan`/`plan-*`）由团队端口
+ *  自处理、**不经此 mock**，故其断言不受上述 `updateTask` 盲区影响。
+ */
 const seam = {
   membership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
   tryMembership: (a) => {
@@ -258,9 +277,15 @@ await rootCtx.teamReview.vote({ id: 'challenger', name: 'challenger' }, rTask.id
 })
 sent.length = 0
 await rootCtx.teamReview.settle(lead, rTask.id, '请补测试')
-assert(rootCtx.teamCore.revisionFeedbackOf(rTask.id) === '请补测试', '返工：feedback 存于 team-core（可读）')
 assert(
-  sent.some((s) => s.target === 'alice' && String(s.content?.[0]?.text ?? '').includes('revision-requested')),
+  rootCtx.teamCore.revisionFeedbackOf(rTask.id) === '请补测试',
+  '返工：feedback 存于 team-core（可读）',
+)
+assert(
+  sent.some(
+    (s) =>
+      s.target === 'alice' && String(s.content?.[0]?.text ?? '').includes('revision-requested'),
+  ),
   '返工：定向 steer 回作者（alice 收到 revision-requested）',
 )
 

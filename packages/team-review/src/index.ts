@@ -201,10 +201,7 @@ export class TeamReviewService extends Service implements TeamReview {
         delivery: 'wakeup',
       })
     } catch (e) {
-      this.ctx.logger?.warn?.(
-        'team-review: steer author failed: %s',
-        String((e as Error)?.message),
-      )
+      this.ctx.logger?.warn?.('team-review: steer author failed: %s', String((e as Error)?.message))
     }
   }
 

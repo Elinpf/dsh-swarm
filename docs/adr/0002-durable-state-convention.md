@@ -38,6 +38,11 @@
 | memory | `swarm/memory/shared` | `{ record: MemoryRecord }` |
 | memory | `swarm/memory/private` | `{ memberId, record: MemoryRecord }` |
 | completion | `swarm/completion/unread` | `{ delta }`（+1 入队 / -1 投递） |
+| task | `swarm/task/plan-request` | `{ taskId, plan? }`（P30 计划闸：入闸 / 提交计划） |
+| task | `swarm/task/plan-response` | `{ taskId, approved, feedback? }`（P30 计划闸：批准 / 驳回+理由） |
+| task | `swarm/task/revision-requested` | `{ taskId, feedback }`（P30 返工反馈，定向回流作者） |
+
+> P30 新增 `task` 域（贴近源 `TASK_*` 语义，保留 `swarm/*` 命名）；`domain ∈ {core, review, bus, skills, memory, completion, task}`。
 
 ## 4. 折叠助手（统一实现，禁止各包手写）
 

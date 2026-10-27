@@ -1092,3 +1092,63 @@ $ node scripts/verify-crossprocess.mjs
 - **已突破**：同机**任意两个 dsh 进程**可经 `local-listen` + registry **自动互连**（无需预置守护进程）。
 - **仍止于**：**跨机**互连仍走 `ssh-rpc`（需远端 helper 归档部署，见 §J）；registry 为同机共享目录，不跨机发现。
 - **未做的**：端点租约/过期清理（当前 dispose 删文件；崩溃残留需 GC）、鉴权（本机 Unix socket 依赖文件权限 0700）。
+
+---
+
+# P30-plan-gate-revision-feedback：计划闸（执行前审批）+ 返工反馈定向回流
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 依据：`docs/event-alignment.md`（P28 审计）
+> 裁定：计划闸默认 **off（opt-in）**；**不新增独立工具**（统一 action 面）。
+
+## A. 改动面
+
+| 面 | 改动 |
+|---|---|
+| `team-core-contract` | `TaskView.status += 'planned'`；`updateTask.action += open_plan｜submit_plan｜approve_plan｜reject_plan`；`req += plan?, feedback?` |
+| `team-core` | 新增 `planning`/`plans`/`planFeedback`/`revisionFeedback` + `overlay()` 叠加 `planned` + 计划闸四动作 + `reject_review` 带 feedback→`swarm/task/revision-requested` + `recover` 折叠 + getter（`planOf`/`planFeedbackOf`/`revisionFeedbackOf`）；`Config.planGate` 默认 `false` |
+| `team-review` | `settle(caller, taskId, feedback?)`：fail 时 `reject_review` 带 feedback + **定向 steer 作者**（DM `[revision-requested] task X: <feedback>`） |
+| `team-scheduler` | `planned` 不被派发/认领（`status!=='pending'` 已排除；补测试 T9） |
+| `team-completion` | `planned` 非终态（已正确；补测试 T8） |
+| `tool-swarm` | **不新增工具**（批准/驳回走统一 action 面）；`team_summary` byStatus 自然含 `planned` |
+| `ADR-0002` | §3 增 `swarm/task/{plan-request,plan-response,revision-requested}` |
+
+## B. 行为级单测（T1–T11，覆盖不变量）
+
+```console
+$ (cd packages/team-core         && corepack pnpm exec vitest run)   # Tests 22 passed (22)
+$ (cd packages/team-review       && corepack pnpm exec vitest run)   # Tests 14 passed (14)
+$ (cd packages/team-scheduler    && corepack pnpm exec vitest run)   # Tests  8 passed (8)
+$ (cd packages/team-completion   && corepack pnpm exec vitest run)   # Tests  8 passed (8)
+```
+
+重点（先红后绿相关）：T2「未批准不能执行」（`planned` 下 claim/complete 被拒）、T4「驳回带理由且可回传」、T7「评审 fail 携带 feedback 且定向 steer 作者」、T11「计划闸状态经 `recover` 跨重启保持」。
+
+## C. 集成冒烟（`pnpm verify:e2e`）——**先红后绿**
+
+首跑**真失败**（本轮由 team-leader 拦截后重跑发现）：
+```console
+[FAIL] 返工：定向 steer 回作者（alice 收到 revision-requested）
+```
+根因：in-process e2e 的 seam mock `sendMessage` **只记 `{target}`、未记 `content`** → 断言取不到文本。修 mock（增记 `content`）后重跑全绿：
+```console
+== 阶段 P30：计划闸（执行前审批）/ 返工反馈 ==
+[OK]   计划闸：入闸 → planned
+[OK]   计划闸：未批准不能执行（claim 被拒）
+[OK]   计划闸：驳回带理由且可回传
+[OK]   计划闸：批准后回 pending（可执行）
+[OK]   返工：feedback 存于 team-core（可读）
+[OK]   返工：定向 steer 回作者（alice 收到 revision-requested）
+✅ 集成冒烟通过……
+```
+
+## D. mock 可信度审计（应 team-leader 要求）
+
+`scripts/verify-e2e.mjs` 的 seam mock 已加**覆盖/盲区注释**。结论：
+- **覆盖**：`sendMessage{target, content}`（真实 seam 另带 `signal`，对断言无意义）；`updateTask` **仅** `claim`/`complete`。
+- **盲区（mock 无法忠实）**：`updateTask` 的 `release`/`reopen`/`assign`/`reassign`/`delete`/`edit`/`set_dependencies` **未模拟**；`createTask` 无 DAG/readiness；`waitForChange` 恒 timeout；`delivery`（quiet/wakeup）语义；跨进程/持久化。依赖这些的断言属**弱断言**，应在真实 profile 验收。
+- **本次失败的启示**：T7 的 steer 断言**恰好撞上** mock 盲区才暴露；已把盲区写进注释，避免后续断言「静默通过」。
+- 本 P30 的 team-core **叠加态动作**（submit_review/reject_review/open_plan/plan-*）**不经此 mock**（由团队端口自处理），故不受 `updateTask` 盲区影响。
+
+## E. 全链路
+
+`build / test / verify / verify:e2e / lint / format:check` + `scripts/e2e-profile.sh --no-model` 全绿（见提交 `docs(plan-gate)` 的原始输出）。
