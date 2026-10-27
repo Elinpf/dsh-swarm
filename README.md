@@ -170,6 +170,13 @@ corepack pnpm format:check
 
 机制与事件 schema 见 `docs/adr/0002-durable-state-convention.md`；诊断 `pnpm verify:durability`（非发布门禁）验证「置态 → 重建 → recover → 恢复」为绿。
 
+### 广播与唤醒语义（P27 核实）
+
+**广播唤醒全体非发送者 = 与源系统一致**（源系统 `interaction-mechanisms.md` L232 / §3：广播 `to='*'` 唤醒每个非发送者 1 轮），**非缺陷、不存在省轮空间**。真正的对齐点是「**发给别人的直接消息不唤醒我**」——已核实对齐（真实 profile：DM 给 alice 时 bob/carol 额外轮 = 0）。详见 `docs/experiments-idle-wakeup.md §9`、`docs/verification.md` P27 节。
+
+- **`record-only` / `quiet` 为 opt-in（非默认）**：`broadcast({fanout:'record-only'})` = 1 落库、不逐人 DM、成员按需 `history()` 拉取（完全不唤醒）；`broadcast({delivery:'quiet'})` = 入邮箱但不唤醒。**适用**高流量信息型广播。**风险**：静默广播**无法触发协同动作**（「全体停止 / 任务变更」类若无人被唤醒可能长期无人处理），故**不作默认**。
+- **遗留（待评估）**：写放大——源系统广播 **O(1)** 写（1 记录 + 读水位线）vs 我们 **O(N)**（1 落库 + 逐人 DM）；唤醒语义相同、存储形态不同。
+
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）

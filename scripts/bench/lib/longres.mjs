@@ -51,6 +51,11 @@ export function buildPrompt(arm, members) {
     lines.push(
       `${n + 2}) Call broadcast with content='FYI standup moved to 5pm; no action required.' topic='announce' fanout='record-only'.`,
     )
+  } else if (arm === 'dm_one') {
+    // 仅对**第一个**成员发一条 DM：验证「DM 给 A 不唤醒 B」（源系统对齐点，P27）
+    lines.push(
+      `${n + 2}) Call send_message with target='${members[0]}' message='FYI standup moved to 5pm; no action required.'.`,
+    )
   } else {
     members.forEach((m, idx) =>
       lines.push(

@@ -330,3 +330,51 @@ bash scripts/bench/exp-idle-wakeup.sh --arm broadcast,n_dm,broadcast_record \
 
 > 诚实边界（P24）：结论基于**单次取数**（每臂 1 次，成本约束）；但三臂差异为结构性（3 vs 3 vs 0）且方向与源码一致，稳健。
 > teammate token 仍为 durable `assistant/message.usage` 累加（重试 attempt 未计，轻微低估）。
+
+---
+
+## 9. P27 前提更正：广播唤醒全体 = 与源系统一致（**非缺陷、无省轮空间**）
+
+> 触发：P27 任务原前提写「源系统广播不唤醒未寻址成员 → 应省 N−1 轮」——**经核实为误读**（team-leader 已更正裁定 (A)：严格对齐源系统）。
+
+**证据（源系统，`interaction-mechanisms.md`，团队共享目录）**：
+
+- L232：广播 `to='*'` → **唤醒每个非发送者 1 轮**（各读水位线）。
+- §3 唤醒表：「直接消息（发给**别人**）→ **不会**（本人邮箱无该行，空转 handler）」；「广播 `BroadcastEvent` → **会**（每个非发送者的可达成员都读到→投喂）」。
+- L17：「被信号叫醒但邮箱里没有自己消息 → 空转 handler、不产生 LLM 轮」——该规则针对**发给别人的直接消息 / 无关 topic churn**，**不适用于广播**。
+
+⇒ **源系统广播同样唤醒全体非发送者；我们当前行为（`fanout:'dm'`）本就一致。广播层面不存在「省 N−1」空间。**
+
+### 9.1 真正的对齐点核实（P27，真实 profile）
+
+`exp-idle-wakeup` 新增 `dm_one` 臂：spawn 3 成员 → **只对 alice 发 1 条 DM** → 长驻收尾。
+
+```console
+$ bash scripts/bench/exp-idle-wakeup.sh --arm dm_one --members alice,bob,carol \
+      --token-cap 500000 --turn-cap 30 --timeout-ms 600000 --out .runtime/bench/p27-dm-one
+```
+
+| 成员            | turns | 额外轮 | 收到 relay |
+| --------------- | ----- | ------ | ---------- |
+| alice（被 DM）  | 2     | **1**  | 1          |
+| bob             | 1     | **0**  | 0          |
+| carol           | 1     | **0**  | 0          |
+
+→ **DM 给 A 不唤醒 B/C（1/3）**：与源系统「直接消息只唤醒收件人」**已对齐**。root+teammate 合计 **115,816 token（2.32% / 5M）**。
+
+另两项对齐点（确定性核实，无模型）：
+- **无关 topic 订阅者**：`team-bus.notifySubscribers` 仅对 `sub.topic === snap.topic` 的**收件人**回调，且回调在**本进程内**（不产生 LLM 轮）——无空唤醒。源码 `packages/team-bus/src/index.ts:286-296`。
+- **任务看板 churn**：`team-scheduler` 仅在「成员空闲且无活跃任务」时 nudge（有意的派发/自愈），与源系统「看板变更唤醒空闲成员去认领」一致。
+
+**结论：未发现真 bug，无需修复。**
+
+### 9.2 遗留（只记录，本轮不做）
+
+**写放大（真实「精髓未对齐」）**：源系统广播 = **1 条记录 + 读水位线（O(1) 写）**；我们 = **1 落库 + 逐人 DM（O(N) 写/存）**。**唤醒语义相同，但存储/写入形态不同**。改动涉及 mailbox 语义，**待 P21 后评估**。
+
+### 9.3 opt-in 手段（`record-only` / `quiet`）保持非默认
+
+- `broadcast({fanout:'record-only'})`：1 落库、不逐人 DM、成员按需 `history()` 拉取 → **完全不唤醒**。
+- `broadcast({delivery:'quiet'})`：不唤醒（但按 `dm` 扇出入各成员邮箱）。
+- **适用**：高流量信息型广播（不想打扰全体）。
+- **风险（重要）**：静默广播**无法触发协同动作**——「全体停止」「任务变更」类广播若无人被唤醒，可能**长期无人处理**。故**不作默认**；源系统选择唤醒全体是**有意设计**。
