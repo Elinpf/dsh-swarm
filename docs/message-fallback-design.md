@@ -63,3 +63,39 @@
 - **头号风险 = P50**：若 durable 有缺口 → 未读/去重台账重启失真 ⇒ **先修持久化再实现**。本方案在 P50 出结论前**不实现、不声称可靠**。
 - 次要：超时判定的「处理」定义需与 P42 `assign`/P46 唤醒边界对齐（避免把「leader 已空闲等事件」误判为未处理）。
 - **实现顺序**：P50 结论 → 本方案批准 → 先红后绿实现（`team-completion`/`team-core`）→ 真实 profile 回归（报预算）。
+
+
+---
+
+## 7. 方案收紧（Leader 批准前补充，2026-10-27）
+
+### 7.1 终止性论证：**不会永久死锁**（最重要）
+
+`blockOnUnread=true` 若某成员**永远不读**，会导致「任务永不完成」的**新停滞**。必须与升级/override 联动，保证**有界解封**：
+
+```
+未读>0 阻塞完成
+   └─(超时 ackTimeoutMs)─▶ 重投一次（幂等 messageId）
+        └─(仍无 delivered/处理)─▶ 升级 leader：swarm/message/undelivered
+             └─ leader 裁决（人）：改派 owner / 释放回池 / 显式 overrideUnread
+                  └─ override 或释放 → unread 闸解除 → 任务可完成
+```
+
+- **最坏情况解封路径**：即使捕获方（成员）永久静默，**超时→重投→升级**三步都在**有界时间**内发生（各 1 次、有阈值/上限），最终**升级到 leader（人）**由人裁决——**不存在无人可解的无限阻塞**。
+- **`overrideUnread` 触发者 = leader（人）**：完成闸仅在**显式** override 时越过未读，且发 `swarm/completion/unread-blocked{overridden:true}` 留痕（谁/何时可解析）。
+- **单测覆盖解封路径**：`提前单测（先红后绿）`——构造 unread>0 + 任务全终态 → `completed:false`；随后 leader `overrideUnread` → `completed:true` 且事件标 `overridden`；另一路：超时→重投→`undelivered` 事件 + 升级通知可达。
+- **防什么偏差**：防「未读闸把团队锁死」——把「不可完成」变成「**有界升级到人可裁决**」。
+
+### 7.2 行为变更标注（README）
+
+- `blockOnUnread=true` 是**行为变更**：默认会因未读而**阻塞完成**。README 写清「**默认阻塞完成 + 如何 override**」，并按项目规矩**标注为破坏性/行为变更**。
+
+### 7.3 持久化依赖写死到验收
+
+- 「未读台账」与「重投去重集」的**跨重启正确性**：**仅当 P50 结论=可持久（真 append+可 replay）时才计【已验证】**。
+- **若 P50 证有缺口**：本任务**先做「持久化修复」前置**（由 Leader 另立任务或并入），**兜底不在沙地上实现**。
+- 验收条目显式依赖 P50：`【跨重启正确性】= P50 可持久 且 本任务台账 replay 通过`。
+
+### 7.4 落点与撞车提醒
+
+- 发送侧台账落 `team-core.send` 包一层；**若因此需动 `team-bus`，先报 Leader**（P47 可能也在动 `team-bus` 加 append）。
