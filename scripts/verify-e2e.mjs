@@ -237,8 +237,98 @@ assert(conflict, '写域锁互斥：bob 与 lead 的独占锁冲突')
 await rootCtx.teamWorkspace.releaseLock(lead, lk)
 assert(rootCtx.teamWorkspace.listLocks().length === 0, '释放后无锁')
 
+// ── 阶段 3：传输 / 分布式 / 人类席位（覆盖 spec §3.4 的 V1/V2/V4）────────────
+console.log('\n== 阶段 3：transport / distributed / human ==')
+const trMod = await load('packages/team-transport/lib/index.js')
+const distMod = await load('packages/team-distributed/lib/index.js')
+const humMod = await load('packages/team-human/lib/index.js')
+
+// 同进程双端：借用共享内存总线模拟「两个传输服务」
+const peerCtx = new Context()
+await peerCtx.plugin({
+  name: 'peer-host',
+  apply(ctx) {
+    ctx.provide('tools', { register: () => () => {} })
+    ctx.provide('systemPrompt', { section: () => () => {}, context: () => () => {} })
+    ctx.provide('sessions', {})
+    ctx.provide('agents', { list: () => [] })
+  },
+})
+const trCfg = {
+  backend: 'in-process',
+  maxQueue: 8,
+  maxHistory: 8,
+  reconnectTimeoutMs: 60,
+  reconnectIntervalMs: 0,
+  autoReconnect: false,
+}
+await rootCtx.plugin(trMod.default, { ...trCfg, endpoint: 'lead' })
+await peerCtx.plugin(trMod.default, { ...trCfg, endpoint: 'worker' })
+const tbus = trMod.getLoopbackBus()
+const tick = () => new Promise((r) => setTimeout(r, 0))
+
+// V2 不重：丢 ack → 重连重放 → 恰好一次生效
+const seenX = []
+peerCtx.teamTransport.onFrame((_pid, f) => {
+  if (f.payload && f.payload.x) seenX.push(f.payload.x)
+})
+tbus.shouldDrop = (m) => m.t === 'ack'
+await rootCtx.teamTransport.send('worker', { kind: 'event', teamId: 'T', payload: { x: 1 } })
+await tick()
+assert(seenX.length === 1, '阶段3 V2：首投送达 1 次')
+assert(rootCtx.teamTransport.stats().acked === 0, '阶段3 V2：ack 被注入丢弃')
+tbus.shouldDrop = undefined
+tbus.disconnect('worker')
+assert(
+  rootCtx.teamTransport.peers().find((p) => p.peerId === 'worker').state === 'degraded',
+  '阶段3 V4：断连 → degraded',
+)
+await rootCtx.teamTransport.reconnect('worker')
+assert(
+  rootCtx.teamTransport.peers().find((p) => p.peerId === 'worker').state === 'connected',
+  '阶段3 V4：重连 → connected',
+)
+assert(seenX.length === 1, '阶段3 V2：重放后仍恰好一次生效（幂等去重）')
+assert(peerCtx.teamTransport.stats().dedupDropped >= 1, '阶段3 V2：dedupDropped++')
+
+// V1 丢帧 → 重连重放后收敛（不丢）
+const seenY = []
+rootCtx.teamTransport.onFrame((_pid, f) => {
+  if (f.payload && f.payload.y) seenY.push(f.payload.y)
+})
+tbus.shouldDrop = (m) => m.t === 'app' && m.seq === 2 // 吞掉第 2 帧
+await peerCtx.teamTransport.send('lead', { kind: 'event', teamId: 'T', payload: { y: 1 } })
+await peerCtx.teamTransport.send('lead', { kind: 'event', teamId: 'T', payload: { y: 2 } })
+assert(seenY.length === 1, '阶段3 V1：丢帧导致本端只收到 1 帧')
+tbus.shouldDrop = undefined
+tbus.disconnect('lead')
+await peerCtx.teamTransport.reconnect('lead')
+assert(seenY.sort((a, b) => a - b).join(',') === '1,2', '阶段3 V1/V4：重放后终态对账补齐（不丢）')
+
+// 分布式：leader 权威 + 投递去重
+await rootCtx.plugin(distMod.default, { role: 'lead', deliveryTtlMs: 30000 })
+rootCtx.teamDistributed.becomeLead(lead, 'T')
+await rootCtx.teamDistributed.deliver(lead, member.id, 'e2e-msg-1', [{ type: 'text', text: 'hi' }])
+await rootCtx.teamDistributed.deliver(lead, member.id, 'e2e-msg-1', [{ type: 'text', text: 'hi' }])
+assert(
+  rootCtx.teamDistributed.state().dedupDropped === 1,
+  '阶段3 V2：分布式投递去重（dedupDropped=1）',
+)
+assert(rootCtx.teamDistributed.state().delivered === 1, '阶段3 V2：恰好交付一次')
+
+// 人类席位：注册 + 入站路由 + 离线未达保留
+await rootCtx.plugin(humMod.default, { leadName: 'lead', retainWhenOffline: true })
+const opSeat = await rootCtx.teamHuman.addSeat(lead, { name: 'op', kind: 'controller' })
+assert(opSeat.kind === 'controller', '阶段3：人类席位注册（kind=controller）')
+const routed = await rootCtx.teamHuman.inbound(opSeat.seatId, '@all hi')
+assert(routed.target === 'all', '阶段3：入站 @all → 广播目标')
+const offline = await rootCtx.teamHuman.deliver(opSeat.seatId, [{ type: 'text', text: 'x' }])
+assert(offline.delivered === false, '阶段3：无前端在线 → 未达（保留待补投）')
+
 if (failures === 0) {
-  console.log('\n✅ 集成冒烟通过：成员 → 消息 → 任务 → 评审 → 完成 链路打通（端口 mock 后端）。')
+  console.log(
+    '\n✅ 集成冒烟通过：成员 → 消息 → 任务 → 评审 → 完成 + 阶段3 传输/分布式/人类席位 链路打通（端口 mock 后端）。',
+  )
 } else {
   console.error(`\n❌ 集成冒烟失败：${failures} 项断言未通过。`)
   process.exit(1)

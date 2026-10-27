@@ -86,3 +86,21 @@
       config:
         enabled: false
         maxTokens: 100000
+
+    # —— 阶段 3：规模化与边界层（默认 in-process，跨进程需显式配置）——
+    - id: team-transport
+      name: '@elinpf/dsh-swarm-team-transport'
+      config:
+        backend: in-process
+        reconnectTimeoutMs: 15000
+
+    - id: team-distributed
+      name: '@elinpf/dsh-swarm-team-distributed'
+      config:
+        role: lead
+
+    - id: team-human
+      name: '@elinpf/dsh-swarm-team-human'
+      config:
+        leadName: lead
+        retainWhenOffline: true

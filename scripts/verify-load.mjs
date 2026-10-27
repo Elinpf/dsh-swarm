@@ -215,6 +215,18 @@ const PACKAGES = [
     },
     expectService: 'teamTransport',
   },
+  {
+    name: '@elinpf/dsh-swarm-team-distributed',
+    file: 'packages/team-distributed/lib/index.js',
+    config: { role: 'lead', deliveryTtlMs: 30000 },
+    expectService: 'teamDistributed',
+  },
+  {
+    name: '@elinpf/dsh-swarm-team-human',
+    file: 'packages/team-human/lib/index.js',
+    config: { leadName: 'lead', retainWhenOffline: true },
+    expectService: 'teamHuman',
+  },
   { name: '@elinpf/dsh-swarm-bundle', file: 'packages/bundle/lib/index.js', kind: 'bundle' },
 ]
 

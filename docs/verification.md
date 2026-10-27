@@ -676,3 +676,108 @@ $ bash scripts/e2e-profile.sh --no-model
 - `scripts/bench/exp-idle-wakeup.mjs`（P17）：7 处 `(a.x=v), i++` 逗号表达式 → 花括号；`jsonl`/`args` 未用 → `_jsonl`/`_args`。
 - `packages/team-transport/src/index.ts`、`packages/team-transport/tests/team-transport.spec.ts`（dev-2）：`prettier --write` 格式化。
 - `eslint.config.mjs`：把「下划线前缀=有意未使用」的 `no-unused-vars` 约定从 `**/*.ts` 扩到 `**/*.mjs`（与既有约定一致，`@typescript-eslint/no-unused-vars` 本已覆盖 .mjs）。
+
+---
+
+# P22-native-wiring-fix：真实 profile 下协作栈与 ctx.agentTeams 未接通（根因 + 修复）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 项目 `dsh-swarm`
+> 现象（P17 上报）：真实 headless profile 下**原生** `list_agents` 显示 `lead+alice+bob`（3 人），而本栈 `team_summary` 实测 **`members=0`** → `team-bus.broadcast` 扇出到 0。
+
+## A. 根因（带源码位置 / 实跑证据）
+
+**非响应式获取 + 缺依赖边**：`team-core` 在**构造期**用**一次性** `ctx.get('agentTeams')` 取服务并缓存（`packages/team-core/src/index.ts:138` 原实现），而 `agentTeams` **不在**其 `inject`（`static inject = ['agents','sessions','subagents']`）。真实 profile 下 `agentTeams`（原生 `TeamService`，额外依赖 `sessionPersistence`/`sessionProjections`，`agent-team/src/index.ts:57`）**晚于** `team-core` 就绪 → `ctx.get` 返回 `undefined` → `seam=undefined` → **永久 no-op**（无重试）。
+
+- **不是 scope 错配**：合并配置里 `agent-team`（dump 行 390）**在** `team-core`（行 405）**之前**（`scripts/e2e-profile.sh --no-config` 产出 `.runtime/probe/e2e-dump-config.yml`）；二者同在根 ctx。故问题**不是**作用域，而是**激活时序**（`team-core` 依赖更少、更早就绪）。
+- **零成本确定性复现**（`scripts/verify-native-wiring.mjs`，真实 cordis，复现同一时序）：
+  ```console
+  修复前： [wiring] active=false members=0   ❌ 原生未接通（team-core 走 no-op）
+  修复后： [wiring] active=true  members=1   ✅ 原生接通回归通过
+  ```
+
+## B. 修复
+
+`packages/team-core/src/index.ts`：
+- 保留构造期一次 `ctx.get('agentTeams')`（若已就绪即挂接）；
+- 新增**响应式** `ctx.inject(['agentTeams'], (sctx) => { this.attach(sctx.get('agentTeams')) })`：服务可用/更换时重新挂接，使「服务可用性驱动」（bundle patch 注释的既定语义）**真正生效**；服务消失时解挂。
+- **去静默降级（缺陷修复）**：不可用时 `warnUnavailableOnce()` 明确告警「reads empty / writes throw TEAMCORE_UNAVAILABLE」；成功挂接记 `info`。不再安静返回空。
+
+## C. 真实环境断言（先红后绿）
+
+1. **`scripts/verify-native-wiring.mjs`（零成本、确定性）** — 已证明**修复前红、修复后绿**（见 §A）；并接进 `pnpm verify:wiring` 与 `scripts/e2e-profile.sh` 的 `[wiring]` 步骤（每次 profile 跑都查）。
+2. **`scripts/e2e-profile.sh §3`（真实 profile + 真实模型）** — 新增断言「`team_summary` 成员数 ≥1」。修复前后对比：
+
+| | 本栈 `team_summary` | 原生 `list_agents` | 判定 |
+|---|---|---|---|
+| 修复前（P17，main da032be） | **members=0** | lead+alice+bob（3） | ❌ 不一致（no-op） |
+| 修复后（本次，真实模型） | **`members=2; tasks=1 (pending=1)`** | `lead` + `alice`（2） | ✅ 一致 |
+
+原始输出（`.runtime/probe/e2e-team-interaction.json`）：`team_summary` → `{"result":"members=2; tasks=1 (pending=1)"}`。
+
+## D. 全链路复验（P22 收口后，真实输出）
+
+```console
+$ corepack pnpm build        # 全包 Done
+$ corepack pnpm test         # 19 包全通过（team-core 16 / team-transport 11 / team-human 9 / team-distributed 9 / …）
+$ corepack pnpm verify       # 真实 cordis 加载全部插件，✅
+$ corepack pnpm verify:e2e   # 阶段1/2/3 链路，✅
+$ corepack pnpm verify:wiring# 原生接通回归，✅（修复前为红）
+$ corepack pnpm lint         # 0 error
+$ corepack pnpm format:check # All matched
+$ bash scripts/e2e-profile.sh          # 真实模型：PASS=11 FAIL=0（含 [wiring] 与 team_summary 成员数>=1）
+```
+
+## E. 受影响的历史结论清单（需重测；交 Leader）
+
+> 原则：**依赖 `ctx.teamCore` 端口的端到端结论**，凡在**真实 profile** 下取得或断言的，修复前均为 no-op 产物；纯 **stub（端口 mock）** 结论不受此 bug 影响，但**不代表真实 profile**，需在修复后于真实 profile 复测方可引用。
+
+1. **P13 `docs/experiments-stage1.md`**：以真实 profile 表述、或依赖 `team-core` 的端到端结论（广播/多播投递、scheduler 派发、review 结算、完成判定）——**须重跑**。其 §2 的 A/B（broadcast vs N-DM 等）为 stub，结论仅在端口 mock 语义下成立，**不可外推**到真实运行。
+2. **P17 `docs/experiments-idle-wakeup.md`**：§0 命题 1「广播 0 额外轮」是 no-op 产物（已由 P17 自标反例）；§2 广播臂数据修复后**须重采集**。
+3. **P6/P16 `scripts/e2e-profile.sh §3`（旧版）**：其「团队交互」实际走**原生工具**（`spawn_teammate`/`send_message`/`team_task_*`），**未覆盖 `team-core` 端口** → 不能作为「本栈端到端可用」的证据（本 P22 已补 `team_summary` 断言堵此漏）。
+4. **`scripts/bench` model 后端的 `messageDeliveries`**（广播按 1 次调用计，扇出人数不在流内）：若结论依赖本栈扇出，修复后**须重测**；stub 后端的结构量结论待与真实 profile 对齐后再引用。
+5. **任何「team-core 依赖能力」的 no-op 降级路径**（team-review/completion/scheduler/tool-swarm 在真实 profile 的实际行为）：此前从未真实功能验证，修复后应逐项复测。
+
+
+## H. 阶段 3（跨进程分布式 + 人类席位，P15-stage3-impl / dev-2）
+
+新增 **4 包**（14 → 18）：`team-scale-contract`（纯类型契约）、`team-transport`、`team-distributed`、`team-human`。
+核心是让「投递语义可证伪」——不靠注释声称，而是**可执行**的验证。
+
+### H.1 全链路门禁（真实输出，2026-10-27）
+
+```console
+$ pnpm build                # 18 包 tsc 全过（PASS）
+$ pnpm test                 # 各包 vitest 全绿；新增：scale-contract 2 / transport 11 / distributed 9 / human 9
+$ pnpm verify               # 真实 cordis 加载 18 包，观察 4 个新 ctx（teamTransport/teamDistributed/teamHuman）+3 契约包零导出，✅
+$ pnpm verify:e2e           # 阶段1/2 链路 + 阶段3（transport/distributed/human），✅
+$ pnpm lint                 # 0 error
+$ pnpm format:check         # All matched files use Prettier code style!
+$ bash scripts/e2e-profile.sh --no-model
+  [PASS] @elinpf/dsh-swarm-bundle 自身插入行数 = 14 (期望 14；阶段3 追加 transport/distributed/human)
+  [PASS] 原生 agent-team / tool-agent-team 行 = 2 (期望 2)
+  [PASS] legacy tool-subagent* 为 disabled 的行数 = 4 (期望 4)
+  [PASS] dump-config 无禁用/不兼容告警
+  [PASS] 原生接通（team-core ↔ ctx.agentTeams，P22 回归）
+  结果：PASS=5 FAIL=0
+```
+
+### H.2 「不丢不重」四条验证（spec §3.4）— 单测 + 集成双落点
+
+| # | 验证 | 落点（用例名） | 判据（实测） |
+|---|---|---|---|
+| V1 | 不丢（丢帧→终态对账） | `team-transport` "V4 增量补齐" / `verify-e2e` "阶段3 V1" | 注入吞掉 seq=2 的 app 帧 → 重连重放后终态 `1,2` 补齐，不丢 |
+| V2 | 不重（重复投递→恰好一次） | `team-transport` "V2 不重" / `team-distributed` "V2 不重" / e2e | 丢 ack 后重放：目标仍恰 1 次，`dedupDropped>=1`；同一 `messageId` 投 3 次 `send` 只调 1 次 |
+| V3 | 崩溃恢复（queued-minus-delivered 重放） | `team-distributed` "V3 崩溃恢复" | 交付失败留 `queued`；换新服务复用同一 journal → `recover()` replayed=1，`send` 恰 1 次，重复投递被吞 |
+| V4 | 断线重连（sinceSeq 增量 + 重放） | `team-transport` "V4 断线重连" / e2e | 状态机 `connected→degraded→resyncing→connected` 可观测；重连后无丢失无重复 |
+
+### H.3 状态机与队列边界（有测试）
+
+- 重连状态机：`swarm/transport/peer` 事件承载迁移；`unreachable` 在超 `reconnectTimeoutMs` 后置位（`stats.unreachable++`），**只影响该 peer**。
+- 有界待发队列：超界按「丢最旧」策略 + `queueDropped` 计数（测试：maxQueue=3 发 5 帧 → `queueDropped=2`，pending=3，不 OOM、不隐式丢）。
+
+### H.4 边界与未做到（诚实登记）
+
+- `ctx.ssh` / `ctx.subprocess` 的真实帧 API【推断，未实测，spec §9.1】：本包以**本地结构化 seam**（`SubprocessSeam`/`SshSeam`/`DuplexSeam`）隔离，单测以内存双工 mock 验证帧搬运；**真机跨进程/跨机 SSH 断网联调未跑**（属 profile 环境联调项）。
+- `team-distributed` 的 out-of-process 成员执行复用 `ctx.subagents` provider 的接线**未实测**（spec §9.2）；副本持久化用 `ctx.storage` forms **未接**（spec §9.3），当前 journal 为内存 seam（测试注入同一实例模拟崩溃恢复）。
+- `team-human` 的宿主桥接面为 seam（`ctx.teamHumanBridge`），**Web UI 未写**（spec §2.2 明确不做）；真实前端在线/离线补投未联调。
+- `team-skills` scope 接线、`team-memory` storage forms 两项阶段 2 遗留**未在本轮收尾**（超出新增包范围）。

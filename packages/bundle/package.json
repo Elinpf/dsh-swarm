@@ -29,17 +29,21 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@elinpf/dsh-swarm-team-core": "workspace:*",
     "@elinpf/dsh-swarm-team-bus": "workspace:*",
-    "@elinpf/dsh-swarm-team-prompt": "workspace:*",
-    "@elinpf/dsh-swarm-team-scheduler": "workspace:*",
-    "@elinpf/dsh-swarm-team-review": "workspace:*",
+    "@elinpf/dsh-swarm-team-compaction": "workspace:*",
     "@elinpf/dsh-swarm-team-completion": "workspace:*",
-    "@elinpf/dsh-swarm-tool-swarm": "workspace:*",
-    "@elinpf/dsh-swarm-team-workspace": "workspace:*",
-    "@elinpf/dsh-swarm-team-skills": "workspace:*",
+    "@elinpf/dsh-swarm-team-core": "workspace:*",
+    "@elinpf/dsh-swarm-team-distributed": "workspace:*",
+    "@elinpf/dsh-swarm-team-human": "workspace:*",
     "@elinpf/dsh-swarm-team-memory": "workspace:*",
-    "@elinpf/dsh-swarm-team-compaction": "workspace:*"
+    "@elinpf/dsh-swarm-team-prompt": "workspace:*",
+    "@elinpf/dsh-swarm-team-review": "workspace:*",
+    "@elinpf/dsh-swarm-team-scale-contract": "workspace:*",
+    "@elinpf/dsh-swarm-team-scheduler": "workspace:*",
+    "@elinpf/dsh-swarm-team-skills": "workspace:*",
+    "@elinpf/dsh-swarm-team-transport": "workspace:*",
+    "@elinpf/dsh-swarm-team-workspace": "workspace:*",
+    "@elinpf/dsh-swarm-tool-swarm": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-base": "^0.2.1-rc.3",

@@ -52,8 +52,8 @@ DUMP="$PROBE/e2e-dump-config.yml"
 "$DSH" --profile "$PROFILE" --dump-config > "$DUMP" 2>"$PROBE/e2e-dump-config.err"
 # @elinpf/dsh-swarm-bundle 段落内的 9 行
 sec=$(awk '/^# == @elinpf\/dsh-swarm-bundle/{f=1} f&&/^# ==/&&!/@elinpf\/dsh-swarm-bundle/{if(f>1)exit} f{print} f&&/^# == @elinpf\/dsh-swarm-bundle/{f=2}' "$DUMP")
-rows=$(printf '%s\n' "$sec" | grep -cE "^- id: (team-core|team-prompt|team-bus|team-review|team-scheduler|team-completion|tool-swarm|team-workspace|team-skills|team-memory|team-compaction)$")
-ck $([ "$rows" -eq 11 ] && echo 1 || echo 0) "@elinpf/dsh-swarm-bundle 自身插入行数 = $rows (期望 11)"
+rows=$(printf '%s\n' "$sec" | grep -cE "^- id: (team-core|team-prompt|team-bus|team-review|team-scheduler|team-completion|tool-swarm|team-workspace|team-skills|team-memory|team-compaction|team-transport|team-distributed|team-human)$")
+ck $([ "$rows" -eq 14 ] && echo 1 || echo 0) "@elinpf/dsh-swarm-bundle 自身插入行数 = $rows (期望 14；阶段3 追加 transport/distributed/human)"
 # 原生团队域由 agent-team-profile 提供（bundle 不再重复插入）：确认它们在 dump 中确实存在
 nat=0
 grep -qE "^- id: agent-team$" "$DUMP" && nat=$((nat+1))
@@ -70,6 +70,13 @@ ck $([ "$leg" -eq 4 ] && echo 1 || echo 0) "legacy tool-subagent* 为 disabled �
 grep -iE "disabl|incompat|did not activate" "$PROBE/e2e-dump-config.err" | head -5 && \
   ck 0 "dump-config 出现禁用时告警（见上）" || ck 1 "dump-config 无禁用/不兼容告警"
 
+echo ">>> [wiring] 零成本原生接通回归（scripts/verify-native-wiring.mjs）"
+if node "$REPO_ROOT/scripts/verify-native-wiring.mjs" >"$PROBE/e2e-wiring.log" 2>&1; then
+  ck 1 "原生接通（team-core ↔ ctx.agentTeams，P22 回归）"
+else
+  ck 0 "原生未接通（team-core 走 no-op；见 $PROBE/e2e-wiring.log）"
+fi
+
 if [ "$NO_MODEL" = 1 ]; then
   echo ">>> [3/4][4/4] 跳过真实模型调用（--no-model）"
   echo; echo "结果：PASS=$pass FAIL=$fail"
@@ -78,13 +85,17 @@ fi
 
 echo ">>> [3/4] 真实模型：最小团队交互（spawn + DM + 任务看板）"
 run-headless() { bash "$REPO_ROOT/scripts/run-headless.sh" --json "$1"; }
-run-headless "Do these in order and report each raw tool result verbatim: 1) spawn_teammate name='alice' description='e2e' prompt='Reply with exactly ACK'; 2) send_message target='alice' message='hello from lead'; 3) team_task_create subject='e2e-task' description='probe'; 4) team_task_list." \
+run-headless "Do these in order and report each raw tool result verbatim: 1) spawn_teammate name='alice' description='e2e' prompt='Reply with exactly ACK'; 2) send_message target='alice' message='hello from lead'; 3) team_task_create subject='e2e-task' description='probe'; 4) team_task_list; 5) team_summary; 6) list_agents." \
   > "$PROBE/e2e-team-interaction.json" 2>"$PROBE/e2e-team-interaction.err"
 tc=$(grep -c '"type":"tool_call"' "$PROBE/e2e-team-interaction.json")
 ck $([ "$tc" -ge 4 ] && echo 1 || echo 0) "团队交互工具调用数 = $tc (期望 >=4)"
 grep -qE '"tool":"spawn_teammate"' "$PROBE/e2e-team-interaction.json" && ck 1 "spawn_teammate 被调用" || ck 0 "spawn_teammate 未调用"
 grep -q 'sent\\":true' "$PROBE/e2e-team-interaction.json" && ck 1 "send_message 返回 sent:true" || ck 0 "send_message 未成功"
 grep -q 'task-1' "$PROBE/e2e-team-interaction.json" && ck 1 "team_task_create 返回 task-1" || ck 0 "任务创建失败"
+# P22 接通回归：本栈 team_summary 的成员数必须 >=1（未接通时 team-core no-op → members=0 → 本断言红）
+sumline=$(grep -oE 'members=[0-9]+' "$PROBE/e2e-team-interaction.json" | tail -1)
+mnum=${sumline#members=}
+ck $([ -n "$mnum" ] && [ "$mnum" -ge 1 ] && echo 1 || echo 0) "team_summary 成员数 = ${mnum:-未采集} (期望 >=1；P22 native 接通回归)"
 
 echo ">>> [4/4] 真实模型：interrupt_agent 探针"
 run-headless "Do these in order and report each raw tool result verbatim: 1) spawn_teammate name='dave' description='interrupt' prompt='Count from 1 to 300, one number per line, then write DONE.' 2) immediately call interrupt_agent target='dave'. 3) list_agents." \
