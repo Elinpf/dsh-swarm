@@ -4,7 +4,7 @@
 
 - 工作流文件：[`.github/workflows/publish.yml`](../.github/workflows/publish.yml)
 - 自检脚本：[`scripts/check-publish-workflow.mjs`](../scripts/check-publish-workflow.mjs)
-- 发布的包：**14 个**协作包（见下）。`example-plugin` 是骨架阶段的 hello-world **演示包**，`package.json` 保留 `"private": true`，**不发布**（`pnpm -r publish` 自动跳过它）。
+- 发布的包：**19 个**协作包（见下）。`example-plugin` 是骨架阶段的 hello-world **演示包**，`package.json` 保留 `"private": true`，**不发布**（`pnpm -r publish` 自动跳过它）。
 
 > ⚠️ 本仓**不存放任何凭证**。仓库根的 `.npmrc` 只含 registry；发布凭证一律从 GitHub Secret 读取。工作流里有一个预检步骤，一旦仓库 `.npmrc` 混入 `_authToken` 之类内容会直接让流水线失败。
 
@@ -87,13 +87,13 @@ corepack pnpm -r publish --dry-run --no-git-checks --access public   # 只打包
 
 **采用「统一版本 + tag 驱动」**：所有可发布包共用一个版本号，版本号即 git tag。理由：
 
-- 14 个包彼此经 `workspace:*` 强耦合、由 `bundle` 统一组装，消费者通常整族安装，独立版本只会制造不存在的“兼容矩阵”。
+- 19 个包彼此经 `workspace:*` 强耦合、由 `bundle` 统一组装，消费者通常整族安装，独立版本只会制造不存在的“兼容矩阵”。
 - 实现简单、零额外工具链，符合「打 tag 就能发」的目标。
 
 ### 怎么发下一个版本（例如 0.0.1 → 0.0.2）
 
 ```bash
-# 1) 改版：把 14 个可发布包的 version 全部改成目标版本（example-plugin 不动）
+# 1) 改版：把 19 个可发布包的 version 全部改成目标版本（example-plugin 不动）
 #    例如用 pnpm 的递归命令（会同时更新 workspace 引用）：
 source scripts/env.sh
 corepack pnpm -r --filter '!@elinpf/dsh-swarm-example-plugin' exec \
@@ -109,7 +109,7 @@ git push origin main
 git push origin v0.0.2
 ```
 
-推送 `v0.0.2` 后，Actions 会自动：装依赖 → 跑三门禁 → dry-run 预检 → 发布 14 个包。
+推送 `v0.0.2` 后，Actions 会自动：装依赖 → 跑三门禁 → dry-run 预检 → 发布 19 个包。
 
 > 想更自动化可后续引入 [changesets](https://github.com/changesets/changesets)（生成 changelog + 自动改版 + 自动打 tag）。当前阶段不必，tag 驱动已足够。
 
@@ -117,40 +117,50 @@ git push origin v0.0.2
 
 ## 4. 发布前预检（本地实测）
 
-在隔离环境实测（移除 `private` 之后，`2026-10-26`）。先跑门禁，实测 **`build` / `test` / `verify` 三者均 `rc=0`**；再跑发布预检 `pnpm -r publish --dry-run`：
+在隔离环境实测（移除 `private` 之后）。先跑门禁，实测 **`build` / `test` / `verify` 三者均 `rc=0`**；再跑发布预检 `pnpm -r publish --dry-run`（因当时工作树含他人未提交改动，加 `--no-git-checks` 仅做打包预览）：
 
 ```text
 📦 @elinpf/dsh-swarm-team-capability-contract@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-capability-contract@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-core-contract@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-core-contract@0.0.1 (dry run)
-📦 @elinpf/dsh-swarm-team-bus@0.0.1 → https://registry.npmjs.org/
-[WARN] Skip publishing @elinpf/dsh-swarm-team-bus@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-durable@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-durable@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-scale-contract@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-scale-contract@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-compaction@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-compaction@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-prompt@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-prompt@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-scheduler@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-scheduler@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-workspace@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-workspace@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-tool-swarm@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-tool-swarm@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-bus@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-bus@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-completion@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-completion@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-core@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-core@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-memory@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-memory@0.0.1 (dry run)
-📦 @elinpf/dsh-swarm-team-prompt@0.0.1 → https://registry.npmjs.org/
-[WARN] Skip publishing @elinpf/dsh-swarm-team-prompt@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-review@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-review@0.0.1 (dry run)
-📦 @elinpf/dsh-swarm-team-scheduler@0.0.1 → https://registry.npmjs.org/
-[WARN] Skip publishing @elinpf/dsh-swarm-team-scheduler@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-team-skills@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-team-skills@0.0.1 (dry run)
-📦 @elinpf/dsh-swarm-team-workspace@0.0.1 → https://registry.npmjs.org/
-[WARN] Skip publishing @elinpf/dsh-swarm-team-workspace@0.0.1 (dry run)
-📦 @elinpf/dsh-swarm-tool-swarm@0.0.1 → https://registry.npmjs.org/
-[WARN] Skip publishing @elinpf/dsh-swarm-tool-swarm@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-distributed@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-distributed@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-human@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-human@0.0.1 (dry run)
+📦 @elinpf/dsh-swarm-team-transport@0.0.1 → https://registry.npmjs.org/
+[WARN] Skip publishing @elinpf/dsh-swarm-team-transport@0.0.1 (dry run)
 📦 @elinpf/dsh-swarm-bundle@0.0.1 → https://registry.npmjs.org/
 [WARN] Skip publishing @elinpf/dsh-swarm-bundle@0.0.1 (dry run)
 ```
 
-**恰好 14 个包，`example-plugin` 未出现（符合预期）。** 退出码 `0`。
+**恰好 19 个包，`example-plugin` 未出现（符合预期）。** 退出码 `0`。
 
 ### 打包内容核对（`npm pack --dry-run --json`，逐包）
 
@@ -158,7 +168,7 @@ pnpm 的 dry-run 不打印 tarball 清单，故另用 `npm pack --dry-run` 逐�
 
 | 包 | 入包文件 | `lib/` | `src/`/`tests/`/`.runtime/` |
 | --- | --- | --- | --- |
-| 12 个普通包（team-*、tool-swarm 等） | `lib/*.js`、`lib/*.d.ts`、`lib/*.js.map`、`lib/*.d.ts.map`、`package.json` | ✅ | ❌ 不存在 |
+| 18 个普通包（team-*、tool-swarm 等） | `lib/*.js`、`lib/*.d.ts`、`lib/*.js.map`、`lib/*.d.ts.map`、`package.json` | ✅ | ❌ 不存在 |
 | `bundle` | 同上 + `cordis.patch.yml` | ✅ | ❌ 不存在 |
 | `example-plugin`（不发布） | 同 `bundle` | ✅ | ❌ 不存在 |
 
@@ -198,7 +208,7 @@ npm deprecate '@elinpf/dsh-swarm-team-core@0.0.2' "已知问题：xxx，请升�
 npm dist-tag add @elinpf/dsh-swarm-team-core@0.0.1 latest   # 把 latest 指回旧版
 ```
 
-> 提醒：本仓是「整族发布」，回滚最好**整族一起**（14 个包同版本），否则会出现版本错配。
+> 提醒：本仓是「整族发布」，回滚最好**整族一起**（19 个包同版本），否则会出现版本错配。
 
 ---
 

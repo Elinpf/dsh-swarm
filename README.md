@@ -2,12 +2,9 @@
 
 把 JiuwenSwarm 的「集群/多智能体协作精髓」迁移到 **DeepSeek Harness（DSH）** 的插件族仓库。
 
-本仓当前处于 **骨架阶段（scaffold）**：只做两件事——
+本仓已走完 **阶段 0–3**：在可复用的 pnpm workspace 骨架上，用 `packages/example-plugin` 跑通「**插件能被构建 → 能被 DSH 内核加载 → 能观察到它注册的东西**」这条链路后，已在其上落地 **19 个协作能力包**（协作内核 / 能力供给 / 规模化边界三层），覆盖消息总线、任务看板、验证闸、跨进程传输与人类成员席位等团队协作能力。
 
-1. 搭好可复用的 pnpm workspace 骨架；
-2. 用 `packages/example-plugin` 跑通「**插件能被构建 → 能被 DSH 内核加载 → 能观察到它注册的东西**」这条链路。
-
-> 团队协作能力（消息总线 / 任务看板 / 验证闸等）是**下一阶段**任务，本仓目前**只包含 hello-world**，请勿在此阶段实现业务插件。
+> `example-plugin` 是骨架阶段的 hello-world **演示包**（保留 `"private": true`，不发布）；其余 **19 个**协作包均为可发布交付件。各包的阶段归属与清单见 [`docs/package-layout.md`](docs/package-layout.md)，验证证据见 [`docs/verification.md`](docs/verification.md)。
 
 插件与 bundle 的开发契约以 [`docs/plugin-dev-guide.md`](docs/plugin-dev-guide.md)（`dsh-v0.2.1-rc.3` 核定版）为唯一依据；隔离开发环境见 [`docs/env-setup.md`](docs/env-setup.md)。
 
@@ -33,7 +30,7 @@
 
 > 上游 DSH 包一律以 `@deepseek-ai/dsh-*` 命名（peer 依赖，不由本仓发布）。本仓的包名与上游**不混用同一 scope**：自建=`@elinpf/dsh-swarm-*`，上游=`@deepseek-ai/*`。
 >
-> `example-plugin` 是骨架阶段的 hello-world **演示包**，`package.json` 保留 `"private": true`，**不发布到 npm**（`pnpm -r publish` 会自动跳过它）。其余 14 个协作包可发布。
+> `example-plugin` 是骨架阶段的 hello-world **演示包**，`package.json` 保留 `"private": true`，**不发布到 npm**（`pnpm -r publish` 会自动跳过它）。其余 19 个协作包可发布。
 
 ---
 
@@ -243,12 +240,17 @@ corepack pnpm install --store-dir=/dev/shm/dsh-swarm-store --prefer-offline
 - [x] hello-world 插件包 + bundle 声明
 - [x] 阶段 0/1 协作插件 7 包（team-core-contract / team-bus / team-prompt / team-scheduler / team-review / team-completion / tool-swarm）
 - [x] `team-core`（TeamCorePort，native 后端）+ `bundle` 组装 —— 阶段 0/1 全部 9 个包就位
-- [x] **阶段 2 能力供给 5 包**（team-capability-contract / team-workspace / team-skills / team-memory / team-compaction）—— 共 **14 个包**
+- [x] **阶段 2 能力供给 5 包**（team-capability-contract / team-workspace / team-skills / team-memory / team-compaction）
+- [x] **阶段 3 规模化与边界 4 包**（team-scale-contract / team-transport / team-distributed / team-human）—— 阶段 0–3 共 **19 个协作包**
+- [x] ADR-0002 内存态持久化约定（`team-durable` 折叠助手 + 各包 `emit`/`fold`；`pnpm verify:durability` 诊断）
 - [x] `pnpm build` / `pnpm test` / `pnpm verify` / `pnpm verify:e2e` / `pnpm lint` / `pnpm format:check` 全部实跑通过
-- [x] 真实 cordis 加载验证覆盖**全部 14 个包**（`scripts/verify-load.mjs`）；集成冒烟覆盖「成员 → 消息 → 任务 → 评审 → 完成」+ 阶段 2「锁互斥/技能隔离/记忆授权」（`scripts/verify-e2e.mjs`）
-- [x] 真实 profile 回归（`scripts/e2e-profile.sh --no-model`）：bundle 11 行 + 4 legacy disabled + 原生行来自 agent-team-profile，PASS=4
+- [x] 真实 cordis 加载验证覆盖**全部 19 个包**（`scripts/verify-load.mjs`）；集成冒烟覆盖「成员 → 消息 → 任务 → 评审 → 完成」+ 阶段 2/3「锁互斥 / 技能隔离 / 记忆授权 / 跨进程 transport / 分布式 / 人类席位」（`scripts/verify-e2e.mjs`）
+- [x] 真实 profile 回归（`scripts/e2e-profile.sh --no-model`）：bundle **14 行** + 4 legacy disabled + 原生行来自 agent-team-profile + 阶段 3 三行 + `subprocess` 可用 + 无禁用/不兼容告警，全绿
+- [x] 阶段 3 真实跨进程 / 崩溃恢复 / 人类席位验证（真实 OS 进程 + 真实 `ctx.subprocess`）—— 见 [`docs/profile-e2e-stage3.md`](docs/profile-e2e-stage3.md)
 - [ ] 整机 profile 级联调（完整 `dsh-base` + 实验包 + 可用模型端点）—— 见 `docs/verification.md` 边界说明
-- [ ] 阶段 2/3：worktree+文件锁 / 跨进程分布式 / 技能与记忆 / 人类成员席位 / Web UI
+- [ ] Web 端 roster / task-board UI（`team-human` 只提供桥接面，Web UI 未写）
+
+> **默认派发模式（如实登记）**：`team-scheduler` 的 `Config.mode` **当前默认仍是 `autonomous`**（`team-scheduler/src/index.ts` 默认值 + `bundle` 实测 `mode: autonomous`）。「默认改为 `scheduled`」的原任务 P19 **已取消**（重建为 P19b，仍未落地）——**不要把计划中的默认变更当作已完成**；如需无人值守自动 claim，请显式配置 `mode: scheduled`。
 
 ### 依赖版本陷阱（重要）
 

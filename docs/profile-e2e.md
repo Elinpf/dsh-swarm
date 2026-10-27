@@ -15,7 +15,7 @@
 |---|---|
 | 隔离环境（Node/pnpm/DSH_HOME） | ✅ 复用 P1 产出，`/root/.dsh` 零改动 |
 | 装齐 headless profile（npm 已发布包，未构建单仓） | ✅ `dsh-base + dsh-headless + agent-team-profile@0.2.1-rc.3 + @elinpf/dsh-swarm-bundle` |
-| `--dump-config`：9 行团队插件 | ✅ **实测出现**（见 §3） |
+| `--dump-config`：9 行团队插件（P6 时点；阶段 3 后 bundle 自身插入 **14 行**） | ✅ **实测出现**（见 §3） |
 | `--dump-config`：4 行 legacy `tool-subagent*` disabled | ✅ **实测全部 disabled** |
 | 真实模型驱动（`llm-pi-ai` overlay） | ✅ `Reply with exactly: PONG` → `PONG`；固化为 `scripts/run-headless.sh` |
 | 最小团队交互（spawn + DM + 任务看板） | ✅ 全部真实跑通（见 §5） |
@@ -79,6 +79,10 @@ $DSH plugin --profile headless add ./packages/bundle
 ---
 
 ## 3. `--dump-config` 证据（9 行插件 + 4 行 disabled）
+
+> 注：本节点为 **P6 时点**的原始记录（当时 bundle 自身插入 9 行）。阶段 3（P15/P25）后 bundle 自身插入 **14 行**
+> （追加 `team-transport`/`team-distributed`/`team-human` 及阶段 2 的 workspace/skills/memory/compaction），
+> 断言见 `scripts/e2e-profile.sh`；跨进程/人类席位的真实验证见 `docs/profile-e2e-stage3.md`。
 
 命令：`$DSH --profile headless --dump-config > .runtime/probe/e2e-dump-config.yml`
 （stderr 为空，无 `disabling`/`incompatible`/`did not activate` 告警）
@@ -300,7 +304,7 @@ bash scripts/run-headless.sh --json "1) spawn_teammate name='dave' description='
 | Web roster / task-board UI | 未测 | 本次仅 CLI/headless；需另装 `dsh-experimental-client-ui-agent-team` + `dsh web` |
 | 多成员并发高负载 / 压测 | 未测 | 单进程、无压测，列入后续 |
 | 跨进程分布式 / worktree+文件锁 | 未涉及 | 属阶段 2/3 能力，本任务只做 e2e 联调 |
-| 团队 bundle 重复插入 `agent-team`/`tool-agent-team` | ⚠️ 观察项 | `@elinpf/dsh-swarm-bundle` 的 insert 里再次插入了这两个 id（与 agent-team-profile 重复）。`--dump-config` 与真实运行均未见冲突，但**建议 P2 复核**是否应改为「仅 disabled legacy + 插入 dsh-swarm 自身 7 行」以避免潜在重复 id 语义歧义 |
+| 团队 bundle 重复插入 `agent-team`/`tool-agent-team` | ✅ **已收敛** | 后续 bundle 组装已改为「仅 disabled 4 行 legacy + **只 insert dsh-swarm 自身行**」，**不再重复插入**原生 `agent-team`/`tool-agent-team`（其定义来自 `dsh-experimental-agent-team-profile`）。`packages/bundle/cordis.patch.yml` 顶部注释与 `--dump-config` 均证实无重复 id（P6 时的「建议 P2 复核」已完成） |
 
 > 纪律：以上「跑通」项均附真实命令与输出；`followup_task` 记为**不存在**而非「成功」，未编造。
 

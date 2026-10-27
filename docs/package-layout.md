@@ -2,7 +2,7 @@
 
 > 配套：[`implementation-spec.md`](./implementation-spec.md)（阶段 0/1）、[`implementation-spec-stage2.md`](./implementation-spec-stage2.md)（阶段 2）、[`implementation-spec-stage3.md`](./implementation-spec-stage3.md)（阶段 3）
 > 产出人：migration-architect ｜ 任务：P3-spec（0/1）→ P6-spec-stage2（2）→ **P10-spec-stage3（3 更新）**
-> 约定：`【事实】`= 来自 DSH 0.2.1-rc.3 / example-plugin / 手册 / 已实现 14 包；`【推断】`= 未实测的方向判断；`【设计主张】`= 规格建议。
+> 约定：`【事实】`= 来自 DSH 0.2.1-rc.3 / example-plugin / 手册 / 已实现 19 包；`【推断】`= 未实测的方向判断；`【设计主张】`= 规格建议。
 
 ---
 
@@ -29,8 +29,9 @@
 | **`@elinpf/dsh-swarm-team-transport`** | `packages/team-transport/` | `team-transport` | `ctx.teamTransport` | Service | **3** |
 | **`@elinpf/dsh-swarm-team-distributed`** | `packages/team-distributed/` | `team-distributed` | `ctx.teamDistributed` | Service | **3** |
 | **`@elinpf/dsh-swarm-team-human`** | `packages/team-human/` | `team-human` | `ctx.teamHuman` | Service | **3** |
+| **`@elinpf/dsh-swarm-team-durable`** | `packages/team-durable/` | （纯函数库，无 row） | — | 纯函数库 | **3（ADR-0002）** |
 
-> **包数：9（阶段 0/1）→ 14（阶段 2）→ 18（阶段 3）**。三个契约包均为**纯类型 SSOT**（零运行时实现）。
+> **包数：9（阶段 0/1）→ 14（阶段 2）→ 18（阶段 3）→ 19（+ ADR-0002 `team-durable`）**。三个契约包均为**纯类型 SSOT**（零运行时实现）；`team-durable` 为**纯函数库**（无 cordis row，供各包 fold durable 事件）。
 > **【事实·ADR-0001】** `team-core-contract` 是 `ctx.teamCore` 的唯一类型 SSOT；业务包**禁止** import 实现包，只从契约包取类型。
 > **【设计主张·阶段 2 §1.1 / 阶段 3 §1.1】** 每个阶段（cohort）新增**独立契约包**（阶段 2 = `team-capability-contract`，阶段 3 = `team-scale-contract`），**不塞进前序契约包**：不同层（协作内核 / 能力供给 / 规模化边界）、不同冻结时点；独立成包同样满足 ADR-0001 的编译期边界。
 
@@ -151,6 +152,7 @@ flowchart TB
 13. `team-distributed`（依赖 transport）
 14. **`bundle`**（追加 3 行后重新构建）
 15. （可选）`tool-swarm` 增量发布（阶段 3 工具）
+16. **`team-durable`**（ADR-0002 折叠库）：是 `team-core` / `team-bus` / `team-review` / `team-completion` / `team-skills` / `team-memory` 的**运行时依赖**，须**先于这些包**发布。
 
 ---
 
@@ -171,7 +173,7 @@ dsh-swarm/
 │   ├── team-core/ · bundle/
 │   ├── team-bus/ · team-scheduler/ · team-review/ · team-completion/ · team-prompt/ · tool-swarm/
 │   ├── team-workspace/ · team-skills/ · team-memory/ · team-compaction/
-│   └── team-transport/ · team-distributed/ · team-human/                        # 阶段 3
+│   └── team-transport/ · team-distributed/ · team-human/ · team-durable/       # 阶段 3（durable=ADR-0002 折叠库）
 └── .runtime/                                   # 隔离环境（gitignore，勿提交）
 ```
 
