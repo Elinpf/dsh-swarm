@@ -3,7 +3,7 @@
  * P46 阶段 1 探针：真实 profile + 模型下核实 leader 等待模型（不改 e2e-profile.sh / bench / verify-e2e）。
  *
  * 场景（先红后绿；判定落在**实际 tool_call / turn 事件**上，不看文本措辞）：
- *   R  红态基线 `nativeWait`：**不**禁止等待 → 观察 leader 是否调用 `wait_agent`（原生默认挂等）
+ *   R  `nativeWait`：**改后**期望不调 `wait_agent`（改前红态见 docs §6）；含鼓励等待的提示
  *   G1 绿态意图 `noWait`：显式要求派发后结束轮次 → 观察是否**不**调 `wait_agent`、turn 结束
  *   W  唤醒 `wakeOnMember`：成员向 **@all（含 leader）** 广播 → 观察 leader 是否**新开 turn 2**（②成立）
  *   I  无关 `peerOnly`：成员 DM **另一个成员（不含 leader）** → 观察 leader **无 turn 2**（③）
@@ -56,6 +56,9 @@ function runHeadless(prompt, tag) {
 const SCEN = {
   nativeWait:
     "spawn_teammate name='dave' description='p46' prompt='Reply with exactly ACK'. Then WAIT for dave to finish before you give your final answer (use wait_agent as needed).",
+  // 中立派发（不含任何「等/别等」指示）——衡量**我们提示**是否把 leader 引向事件唤醒
+  neutralDispatch:
+    "spawn_teammate name='frank' description='p46' prompt='Reply with exactly ACK'. Make sure frank finishes the work before you conclude. Report what you did.",
   noWait:
     "Do these in order, then END YOUR TURN (do not call wait_agent): 1) spawn_teammate name='bob' description='p46' prompt='Reply with exactly ACK'; 2) send_message target='bob' message='reply ACK'; 3) output the raw results verbatim.",
   wakeOnMember:
@@ -86,12 +89,21 @@ async function scenario(tag) {
   return r
 }
 
-// R 红态基线：原生默认下 leader 是否挂 wait_agent
+// R：改后（我们提示 event-wake）期望 **NOT** wait_agent（绿态）。
+// 改前红态（曾调用 wait_agent）证据见 docs/leader-wait-model.md §6（阶段1 原始输出）。
 {
   const r = await scenario('nativeWait')
   assert(
-    r.toolCalls.includes('wait_agent'),
-    `R 红态：原生默认下 leader 调用 wait_agent（tools=${r.toolCalls.join(',')}）`,
+    !r.toolCalls.includes('wait_agent'),
+    `R 绿态（改后）：即便提示鼓励等待，leader 也未调 wait_agent（tools=${r.toolCalls.join(',')}）`,
+  )
+}
+// N 中立派发：改后（我们提示 event-wake）→ 期望 NOT wait_agent（绿态主证据）
+{
+  const r = await scenario('neutralDispatch')
+  assert(
+    !r.toolCalls.includes('wait_agent'),
+    `N 绿态：中立派发下未调 wait_agent（tools=${r.toolCalls.join(',')}）`,
   )
 }
 // G1 绿态意图：禁止等待 → 不调 wait_agent 且 turn 结束

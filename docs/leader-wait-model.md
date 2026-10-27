@@ -147,3 +147,32 @@ grep -n '唤醒' /root/.jiuwenswarm/.agent_teams/jiuwen_team_web_1a1765709a5_5ff
 
 ### 7.5 E（回归）待跑
 - 阶段 2 改后需**真实 profile 端到端**回归（预算先报 Leader）。确定性回归：`build`/`test`/`verify`/`verify:e2e`（无模型）。
+
+
+---
+
+## 8. 阶段 2 实测：前后对比（P46，真实 profile + 模型）
+
+同一 `nativeWait` 提示（含「use wait_agent as needed」），**改前 vs 改后**：
+
+| 时序 | 场景 | tool_calls | wait_agent | 结论 |
+|---|---|---|---|---|
+| **改前**（阶段1，§6） | `nativeWait` | spawn,**wait_agent**,list | **调用了** | 红态：默认挂等 |
+| **改后**（阶段2） | `nativeWait` | spawn,list | **未调用** | 绿态：我们提示已覆盖「鼓励等待」 |
+| 改后 | `neutralDispatch`（中立，无等/别等指示） | spawn,list | **未调用** | 绿态主证据 |
+| 改后 | `wakeOnMember`（@all 含 leader） | spawn | — | ②**成立**：开 turn 2（turns=1,2） |
+| 改后 | `noWait` | spawn,send_message | 未调用 | G1 成立 |
+| 改后 | `regression` | 6 类团队工具 | — | ④**成立** |
+
+**总 token ≈ 173,980（0.174M）**（阶段2）。两阶段合计 ≈ **0.35M**，在批准上限 0.5M 内。
+
+### 8.1 判定
+- **B【已验证】**：`team-prompt` 默认 `event-wake` 后，leader 在「鼓励等待」与「中立派发」两类提示下**均不调用 `wait_agent`**、正常结束轮次。
+- **A【成立】**：工具未禁用；等待仅在需要时由模型自行使用（本组未触发）。
+- **②【成立】**：成员消息唤醒空闲 leader 开新轮。
+- **③【仍不可判定】**：混淆项（spawned 成员完成回报 spawner）未变；解锁条件同 §6.1。
+- **④【成立】**：回归通过。
+
+### 8.2 原始输出
+- 改前：`.runtime/probe/p46-nativeWait.json`（阶段1 版本，含 `wait_agent`）
+- 改后：`.runtime/probe/p46-neutralDispatch.json`、`.runtime/probe/p46-nativeWait.json`（阶段2 版本，无 `wait_agent`）
