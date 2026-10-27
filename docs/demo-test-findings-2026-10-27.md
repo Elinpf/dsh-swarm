@@ -83,6 +83,11 @@ zstd -dc "$D/session-29558dd1-2aab-4fc5-8d6e-db7757f56dc6/session.v4.jsonl.zstd"
 
 同文件还可读到渲染逻辑：`return chatNode(context, waking ? "turn-trigger" : …)`（即**每个「唤醒该轮」的入站消息渲染成一个 `turn-trigger` 节点**）与 `turnProcesses` / `turnProcessOpen` / `turnProcessAlwaysOpen`（**每轮一个 `turn-process` 节点**，可展开 `⌄`）。截图里每条右侧的 **`⌄` 展开箭头 + 图标**正是这类**结构化 envelope/card**（不是纯文本消息）。
 
+**代码位置（上游 `@deepseek-ai/dsh-client-ui-chat@0.2.1-rc.3` `lib/client.js`）**：
+- `turn-trigger` 标题赋值：`:7035`（`title = "message.trigger.agent"`）、`:7043`（`title = "message.trigger.subagent"`）；
+- `turn-process` 徽标：`message.turnProcess.took` 于 `:5776 / :5970 / :6629`，折叠状态 `turnProcessOpen`/`turnProcessAlwaysOpen` 于 `:3644/3670/3719/3722/4161/6624`。
+⇒ 两者均为**上游会话/客户端 UI 的轮次徽标与触发节点**，**不是**我们插件 `emit` 的文本。
+
 **这些条目由谁产生？→ 上游原生会话/客户端层，不是我们的插件**：
 - `收到任务消息`（trigger=agent）由 **native agent-team 的入站 relay** 触发——对应 durable 里 `user/message` 且 `source.kind==='agent-message'`（如「Team message from researcher-research:」）。
 - `子任务状态更新`（trigger=subagent）由 **native subagent 层**触发——对应 `source.kind==='subagent-settled'`（「Background subagent … finished」）。
@@ -129,6 +134,24 @@ zstd -dc "$D/session-29558dd1-2aab-4fc5-8d6e-db7757f56dc6/session.v4.jsonl.zstd"
 3. 展开该 `⌄`，看答复是否在里面 → 若是，则定性为**「turn-process 折叠吞掉可见答复」**（上游呈现）；若答复**完全不存在**，则升级为**上游渲染 bug**。
 
 **建议**：在确认前**不要**归因到我们的 runtime；先按上面复现；若确认是折叠所致，落点是**上游 chat 客户端**（或我们做一层「被事件唤醒的过程轮不吞用户答复」的呈现约定）。
+
+### 4.1 补充取证（回应「是否空跑一轮」的追问）
+
+**结论：不是空跑——leader 在第 19 轮有 committed 的可见正文。** durable 原文（`usage=true` ⇒ 已提交，非半截流）：
+
+| turn | step | blocks（类型） | 正文节选 |
+|---|---|---|---|
+| 18 | 3 | `text` | 「完成。最终报告已通过我的独立复核（"第八节"残留 0…）」 |
+| **19** | 1 | `reasoning` + **`text`** | 「**总体评价：可用，属于"结构扎实、诚实度高、但覆盖有已知盲区"的成果**。分开说。…」（**正是对「如何？」的答复**） |
+| 20 | 2 | `reasoning` + **`text`** | 「## 这一年 AI 的一句话总结…」 |
+
+`turn/end 18/19/20` 均为 `{"kind":"completed"}`；**没有** `wait_agent` 阻塞、**没有**未消费的用户消息（「如何？」进了 19 轮、「？」进了 20 轮并各自产出正文）。
+
+⇒ **驳回「leader 只打完成徽标/空跑一轮」的假设**：正文确实产出且已落库。因此现象③的异常点在**「已提交的正文未被用户可见层展示」**——属**呈现层**（折叠/渲染），**非** runtime 空轮、**非**卡死、**非 P51**。会话标题 `session/title="收集最新AI相关近况"` 与截图一致，确认是**同一会话**。
+
+**待 1 次 web 复现**（零/低 token）分辨这两种呈现子因：
+- (a) 正文被**折叠进该轮 `turn-process` 节点**（展开 `⌄` 可见）→ 上游呈现约定；
+- (b) 正文**根本没渲染**（展开也没有）→ 上游渲染 bug（升级给上游）。
 
 ---
 
