@@ -19,7 +19,13 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强（type-only import 即可生效）。
 import type { TeamCore } from '@elinpf/dsh-swarm-team-core-contract'
-import { DURABLE_VERSION, foldDurableEvents, isDurableEvent } from '@elinpf/dsh-swarm-team-durable'
+import {
+  DURABLE_VERSION,
+  emitDurable as appendDurable,
+  durableRecordOf,
+  foldDurableEvents,
+  isDurableEvent,
+} from '@elinpf/dsh-swarm-team-durable'
 import type { DurableEvent } from '@elinpf/dsh-swarm-team-durable'
 
 declare module '@deepseek-ai/cordis' {
@@ -117,6 +123,9 @@ export class TeamBusService extends Service implements TeamBus {
     // 恢复（ADR-0002）：把历史 durable 广播事件折叠回 durable + seq。
     ctx.on?.('session/event', (_s: unknown, ev: unknown) => {
       if (isDurableEvent(ev) && ev.type.startsWith('swarm/bus/')) this.recover([ev])
+      const rec = durableRecordOf(ev)
+      if (rec && rec.name.startsWith('swarm/bus/'))
+        this.recover([{ type: rec.name, payload: rec.payload }])
     })
     ctx.logger?.debug?.('team-bus: ready (backend=%s)', this.ctx.teamCore?.backend ?? 'none')
   }
@@ -139,12 +148,14 @@ export class TeamBusService extends Service implements TeamBus {
     )
   }
 
-  private emitDurable(type: string, payload: Record<string, unknown>): void {
+  /** durable 发射：进程内 `ctx.emit`（供 fold）**且** 真 append 会话日志（P52 通道 A；写入侧）。 */
+  private emitDurable(session: unknown, type: string, payload: Record<string, unknown>): void {
     try {
       ;(this.ctx as unknown as { emit?: (t: string, p: unknown) => void }).emit?.(type, {
         version: DURABLE_VERSION,
         ...payload,
       })
+      appendDurable(session, type, payload)
     } catch (e) {
       this.ctx.logger?.warn?.(
         'team-bus: durable emit %s failed: %s',
@@ -202,7 +213,9 @@ export class TeamBusService extends Service implements TeamBus {
       delivery: req.delivery,
     }
     this.durable.push(snap)
-    this.emitDurable('swarm/bus/broadcast', { snapshot: snap })
+    this.emitDurable((caller as unknown as { session?: unknown }).session, 'swarm/bus/broadcast', {
+      snapshot: snap,
+    })
     const targetIds = targets.map((m) => m.id)
     if ((req.fanout ?? 'dm') === 'record-only') {
       // 仅落库 + 通知本进程订阅者；不逐人 DM（成员按需 history 拉取）。
@@ -246,7 +259,11 @@ export class TeamBusService extends Service implements TeamBus {
       for (const r of records) {
         this.durable.push(r)
         written.push(r)
-        this.emitDurable('swarm/bus/broadcast', { snapshot: r })
+        this.emitDurable(
+          (caller as unknown as { session?: unknown }).session,
+          'swarm/bus/broadcast',
+          { snapshot: r },
+        )
       }
     } catch (e) {
       this.rollback(written)

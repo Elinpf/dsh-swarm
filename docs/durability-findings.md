@@ -55,3 +55,11 @@ GREEN：emitDurable(session,'swarm/core/review-entered',{taskId}) → true；
 - `team-bus`：已由 analyst 接同一入口；**待其 P47 push 后 rebase 复核一致性**。
 - `team-skills.visibility`（`declare` 无 agent）：**仅进程内 emit**（无 session 可 append）。
 - `team-review` 无 `session/event` replay 订阅（其 `recover()` 由外部调用；本任务未改其恢复入口）。
+
+## 7. profile 级免模型触发的尝试结论（不可判定）
+
+**尝试**：写了一个 patch 插件（激活即 `emitDurable`），经 `dsh --patch <overlay> --dump-config` 与 boot 触发（均免模型）：
+- `--dump-config` 会把该行加载进真实 profile 组合（dump 输出含该行），但**只打印配置、不完成插件的异步写入**；
+- boot 触发下**插件确实在真实 profile 上下文中激活并建了会话**（`sessions/_no-cwd/p52-probe-<pid>/session.v4.jsonl.zstd`），但进程因 `MISSING_CREDENTIAL` **在异步 flush 前退出** ⇒ 日志仅有 session header，**无 `plugin:swarm/probe/durable`**。
+
+**结论：【profile 级 端到端 仍不可判定/未验】**。原因：**dsh 无「免模型完整运行」入口**（`--dump-config` 不跑插件异步；boot 无凭证即快速退出）。**通道本身已由 O2（session 级）证成**；profile 级待 **P49 后 tool-swarm 可达触发**，或上游提供免模型执行入口。探针脚本未入库（避免死代码）。
