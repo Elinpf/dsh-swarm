@@ -1,0 +1,227 @@
+# profile: dsh-swarm-demo /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-home/profiles/dsh-swarm-demo
+# 用户 patch 文件: /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-home/profiles/dsh-swarm-demo/cordis.patch.yml 条目数: 3
+# skipped bundles: []
+# layer @deepseek-ai/dsh-base <- /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/node_modules/@deepseek-ai/dsh-base
+#   patch files: /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/node_modules/@deepseek-ai/dsh-base/cordis.patch.yml
+# layer @deepseek-ai/dsh-web-app <- /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-web-app
+#   patch files: /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-web-app/cordis.patch.yml, /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-web-app/presets/standard.patch.yml, /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-web-app/presets/ptc.patch.yml, /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-web-app/presets/minimal.patch.yml, /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-web-app/presets/cordis.patch.yml
+# layer @deepseek-ai/dsh-experimental-agent-team-profile <- /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-experimental-agent-team-profile
+#   patch files: /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-experimental-agent-team-profile/cordis.patch.yml
+# layer @elinpf/dsh-swarm-bundle <- /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/node_modules/@elinpf/dsh-swarm-bundle
+#   patch files: /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/node_modules/@elinpf/dsh-swarm-bundle/cordis.patch.yml, /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/node_modules/@elinpf/dsh-swarm-bundle/presets/swarm.patch.yml
+# layer @deepseek-ai/dsh-experimental-inspector-profile <- /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-experimental-inspector-profile
+#   patch files: /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/node_modules/.pnpm/@deepseek-ai+dsh@0.2.1-rc.3_65e76538d9a0c5b726dd78698c4a7e92/node_modules/@deepseek-ai/dsh-experimental-inspector-profile/cordis.patch.yml
+# 有效 entry 数: 212
+tool-plugin-manager	@deepseek-ai/dsh-plugin-manager/tools	DISABLED
+plugin-manager	@deepseek-ai/dsh-plugin-manager
+timer	@deepseek-ai/cordis-plugin-timer
+hmr	@deepseek-ai/dsh-hmr
+llm	@deepseek-ai/dsh-llm
+deepseek-llm-api-extensions	@deepseek-ai/dsh-deepseek-llm-api-extensions
+session	@deepseek-ai/dsh-session
+session-log-deepseek	@deepseek-ai/dsh-session-log-deepseek
+typert	@deepseek-ai/dsh-typert-registry
+typert-loader	@deepseek-ai/dsh-typert-loader
+typert-gateway	@deepseek-ai/dsh-api-gateway
+remote-access	@deepseek-ai/dsh-api-remote-access
+session-title	@deepseek-ai/dsh-session-title
+session-title-llm	@deepseek-ai/dsh-session-title-first-prompt-llm
+user-questions	@deepseek-ai/dsh-user-questions
+agent	@deepseek-ai/dsh-agent
+plugin-package-inventory-deepseek	@deepseek-ai/dsh-plugin-package-inventory-deepseek
+agent-default-model	@deepseek-ai/dsh-agent-default-model
+jobs	@deepseek-ai/dsh-jobs-local
+llm-retry	@deepseek-ai/dsh-llm-retry
+config-editor	@deepseek-ai/dsh-config-editor
+settings	@deepseek-ai/dsh-settings
+authorization	@deepseek-ai/dsh-authorization
+deepseek-account	@deepseek-ai/dsh-deepseek-account-platform
+credentials	@deepseek-ai/dsh-credentials-local
+llm-pi-ai	@deepseek-ai/dsh-llm-pi-ai
+session-persistence-jsonl	@deepseek-ai/dsh-session-persistence-jsonl
+attachment-local	@deepseek-ai/dsh-attachment-local
+session-query-sqlite	@deepseek-ai/dsh-session-query-sqlite
+working-directory	@deepseek-ai/dsh-working-directory
+tool-working-directory	@deepseek-ai/dsh-tool-working-directory
+session-projection	@deepseek-ai/dsh-session-projection
+storage	@deepseek-ai/dsh-storage
+storage-json	@deepseek-ai/dsh-storage-json
+storage-domain	@deepseek-ai/dsh-storage-domain
+session-projection-cache	@deepseek-ai/dsh-session-projection-cache
+otel	@deepseek-ai/dsh-otel
+session-telemetry-otel	@deepseek-ai/dsh-session-telemetry-otel
+subprocess	@deepseek-ai/dsh-subprocess-local
+sandbox	@deepseek-ai/dsh-sandbox-local
+sandbox-policy	@deepseek-ai/dsh-sandbox-policy
+bash-sandbox	@deepseek-ai/dsh-bash-sandbox
+pwsh-sandbox	@deepseek-ai/dsh-pwsh-sandbox
+approval	@deepseek-ai/dsh-user-approval
+permission	@deepseek-ai/dsh-permission-presets
+shell-env	@deepseek-ai/dsh-shell-env
+tool-bash	@deepseek-ai/dsh-tool-bash	DISABLED
+tool-pwsh	@deepseek-ai/dsh-tool-pwsh	DISABLED
+tool-jobs	@deepseek-ai/dsh-tool-jobs	DISABLED
+fs-observation-policy	@deepseek-ai/dsh-fs-observation-policy
+tool-fs	@deepseek-ai/dsh-tool-fs	DISABLED
+tool-fs-search	@deepseek-ai/dsh-tool-fs-search	DISABLED
+agent-instructions	@deepseek-ai/dsh-agent-instructions	DISABLED
+skill	@deepseek-ai/dsh-skill
+skill-filesystem	@deepseek-ai/dsh-skill-filesystem	DISABLED
+tool-skill	@deepseek-ai/dsh-tool-skill	DISABLED
+commands	@deepseek-ai/dsh-commands
+command-feedback	@deepseek-ai/dsh-command-feedback
+goal	@deepseek-ai/dsh-goal
+goal-round-driver	@deepseek-ai/dsh-goal-round-driver
+command-goal	@deepseek-ai/dsh-command-goal	DISABLED
+plan-mode	@deepseek-ai/dsh-plan-mode	DISABLED
+token-meter	@deepseek-ai/dsh-token-meter
+compaction-basic	@deepseek-ai/dsh-compaction-basic	DISABLED
+command-compact	@deepseek-ai/dsh-command-compact	DISABLED
+subagent	@deepseek-ai/dsh-subagent
+subagent-spawn-in-process	@deepseek-ai/dsh-subagent-spawn-in-process
+subagent-fork-in-process	@deepseek-ai/dsh-subagent-fork-in-process
+tool-subagent-control	@deepseek-ai/dsh-tool-subagent-control	DISABLED
+tool-subagent-list-agents	@deepseek-ai/dsh-tool-subagent-control/list-agents	DISABLED
+tool-subagent	@deepseek-ai/dsh-tool-subagent	DISABLED
+tool-subagent-fork	@deepseek-ai/dsh-tool-subagent	DISABLED
+ptc-runtime	@deepseek-ai/dsh-ptc-runtime-node
+workflow-ptc	@deepseek-ai/dsh-workflow-ptc	DISABLED
+tool-workflow	@deepseek-ai/dsh-tool-workflow	DISABLED
+timeout-policy	@deepseek-ai/dsh-tool-call-timeout-policy
+spill-local	@deepseek-ai/dsh-spill-local
+spill-policy	@deepseek-ai/dsh-spill-policy
+session-checkpoint-policy	@deepseek-ai/dsh-session-checkpoint-policy
+tool-result-pruner	@deepseek-ai/dsh-compaction-tool-result-pruner	DISABLED
+image-offload	@deepseek-ai/dsh-compaction-image-offload
+tool-todo	@deepseek-ai/dsh-tool-todo	DISABLED
+tool-goal	@deepseek-ai/dsh-tool-goal	DISABLED
+repeat-tool-reminder	@deepseek-ai/dsh-repeat-tool-reminder
+web	@deepseek-ai/dsh-web
+web-search-deepseek	@deepseek-ai/dsh-web-search-deepseek
+web-deepseek-api	@deepseek-ai/dsh-web-deepseek-api
+web-fetch-http	@deepseek-ai/dsh-web-fetch-http
+tool-web	@deepseek-ai/dsh-tool-web	DISABLED
+mcp-resources	@deepseek-ai/dsh-mcp-resources
+tools	@deepseek-ai/dsh-tools
+system-prompt	@deepseek-ai/dsh-system-prompt
+agent-loop	@deepseek-ai/dsh-agent-loop
+fs-sandbox	@deepseek-ai/dsh-fs-sandbox
+llm-deepseek	@deepseek-ai/dsh-llm-deepseek-api-key
+llm-deepseek-account	@deepseek-ai/dsh-llm-deepseek-account
+desktop-product-telemetry	@deepseek-ai/dsh-host-product-telemetry-otel
+product-analytics	@deepseek-ai/dsh-client-product-analytics
+subagent-model-selection-settings	@deepseek-ai/dsh-tool-subagent/model-selection-settings
+message-feedback	@deepseek-ai/dsh-message-feedback
+session-log-download	@deepseek-ai/dsh-session-log-export
+open-in-app	@deepseek-ai/dsh-host-open-in-app
+ui-open-in-app	@deepseek-ai/dsh-client-ui-open-in-app
+workspace	@deepseek-ai/dsh-workspace
+session-reference	@deepseek-ai/dsh-session-reference
+file-reference-local	@deepseek-ai/dsh-file-reference-local
+session-stats	@deepseek-ai/dsh-session-stats
+session-turn-outline	@deepseek-ai/dsh-session-turn-outline
+directory-picker	@deepseek-ai/dsh-host-directory-picker-auto
+plugin-inventory	@deepseek-ai/dsh-host-plugin-inventory
+session-controller	@deepseek-ai/dsh-api-session-controller
+job-controller	@deepseek-ai/dsh-api-job-controller
+terminal-controller	@deepseek-ai/dsh-api-terminal-controller
+workspace-files	@deepseek-ai/dsh-api-workspace-files
+schedule	@deepseek-ai/dsh-schedule
+ui-settings-account	@deepseek-ai/dsh-client-ui-settings-account
+account-controller	@deepseek-ai/dsh-api-account-controller
+settings-controller	@deepseek-ai/dsh-api-settings-controller
+workspace-controller	@deepseek-ai/dsh-api-workspace-controller
+cordis-host-runner	@deepseek-ai/dsh-cordis-host-runner
+cordis-inspect-providers	@deepseek-ai/dsh-tool-cordis/host
+web-startup	@deepseek-ai/dsh-web-app/startup
+webserver	@deepseek-ai/dsh-host-webserver
+web-runtime	@deepseek-ai/dsh-web-app
+harness-dev-context	@deepseek-ai/dsh-harness-dev-context
+client-hmr	@deepseek-ai/dsh-client-hmr
+modules	@deepseek-ai/dsh-client-modules
+connection	@deepseek-ai/dsh-client-connection
+file-upload	@deepseek-ai/dsh-client-file-upload
+api-remotes	@deepseek-ai/dsh-api-remotes
+cordis-client-runner	@deepseek-ai/dsh-cordis-client-runner
+ui-theme	@deepseek-ai/dsh-client-ui-theme
+locale	@deepseek-ai/dsh-client-locale
+shortcuts	@deepseek-ai/dsh-client-shortcuts
+ui-shortcuts	@deepseek-ai/dsh-client-ui-shortcuts
+ui-layout	@deepseek-ai/dsh-client-ui-layout
+ui-renderer	@deepseek-ai/dsh-client-ui-renderer
+ui-session	@deepseek-ai/dsh-client-ui-session
+resources	@deepseek-ai/dsh-client-resources
+ui-sidebar	@deepseek-ai/dsh-client-ui-sidebar
+ui-sidebar-right	@deepseek-ai/dsh-client-ui-sidebar-right
+office-to-pdf	@deepseek-ai/dsh-office-to-pdf
+ui-sidebar-documentpreview	@deepseek-ai/dsh-client-ui-sidebar-documentpreview
+ui-sidebar-browser	@deepseek-ai/dsh-client-ui-sidebar-browser
+ui-sidebar-terminal	@deepseek-ai/dsh-client-ui-sidebar-terminal
+ui-sidebar-files	@deepseek-ai/dsh-client-ui-sidebar-files
+ui-settings	@deepseek-ai/dsh-client-ui-settings
+ui-settings-general	@deepseek-ai/dsh-client-ui-settings-general
+ui-settings-models	@deepseek-ai/dsh-client-ui-settings-models
+ui-plugin-manager	@deepseek-ai/dsh-client-ui-plugin-manager
+ui-settings-plugin-inventory	@deepseek-ai/dsh-client-ui-settings-plugin-inventory
+ui-conversation	@deepseek-ai/dsh-client-ui-conversation
+ui-approval	@deepseek-ai/dsh-client-ui-approval
+ui-chat	@deepseek-ai/dsh-client-ui-chat
+ui-brand-official	@deepseek-ai/dsh-client-ui-brand-official
+ui-attachment	@deepseek-ai/dsh-client-ui-attachment
+ui-tool	@deepseek-ai/dsh-client-ui-tool
+ui-cordis	@deepseek-ai/dsh-client-ui-cordis
+ui-deliverables	@deepseek-ai/dsh-client-ui-deliverables
+workspace-changes	@deepseek-ai/dsh-workspace-changes
+ui-workspace	@deepseek-ai/dsh-client-ui-workspace
+ui-workflow-run	@deepseek-ai/dsh-client-ui-workflow-run
+ui-input-trigger	@deepseek-ai/dsh-client-ui-input-trigger
+ui-commands	@deepseek-ai/dsh-client-ui-commands
+ui-skill	@deepseek-ai/dsh-client-ui-skill
+ui-subagent	@deepseek-ai/dsh-client-ui-subagent
+ui-reference	@deepseek-ai/dsh-client-ui-reference
+ui-secret-mask	@deepseek-ai/dsh-client-ui-secret-mask
+ui-jobs	@deepseek-ai/dsh-client-ui-jobs
+ui-schedule	@deepseek-ai/dsh-client-ui-schedule
+ui-goal	@deepseek-ai/dsh-client-ui-goal
+ui-message-feedback	@deepseek-ai/dsh-client-ui-message-feedback
+ui-model-selection	@deepseek-ai/dsh-client-ui-model-selection
+ui-deepseek-model-label-1017	@deepseek-ai/dsh-client-ui-deepseek-model-label-1017
+ui-permission	@deepseek-ai/dsh-client-ui-permission-presets
+ui-agent-preset	@deepseek-ai/dsh-client-ui-agent-preset
+entry-customization	@deepseek-ai/dsh-client-ui-entry-customization
+ui-settings-session-log	@deepseek-ai/dsh-client-ui-settings-session-log
+ui-settings-plugins	@deepseek-ai/dsh-client-ui-settings-plugins
+ui-settings-shell	@deepseek-ai/dsh-client-ui-settings-shell
+ui-settings-agent-loop	@deepseek-ai/dsh-client-ui-settings-agent-loop
+ui-settings-subagent	@deepseek-ai/dsh-client-ui-settings-subagent
+ui-settings-web-search	@deepseek-ai/dsh-client-ui-settings-web-search
+ui-plan	@deepseek-ai/dsh-client-ui-plan
+ui-user-questions	@deepseek-ai/dsh-client-ui-user-questions
+ui-trajectory	@deepseek-ai/dsh-client-ui-trajectory
+agent-preset-registry	@deepseek-ai/dsh-agent-preset-registry
+preset-standard	@deepseek-ai/dsh-agent-preset
+preset-ptc	@deepseek-ai/dsh-agent-preset
+preset-minimal	@deepseek-ai/dsh-agent-preset
+preset-cordis	@deepseek-ai/dsh-agent-preset
+agent-team	@deepseek-ai/dsh-experimental-agent-team
+tool-agent-team	@deepseek-ai/dsh-experimental-tool-agent-team
+ui-agent-team	@deepseek-ai/dsh-experimental-client-ui-agent-team
+team-core	@elinpf/dsh-swarm-team-core
+team-prompt	@elinpf/dsh-swarm-team-prompt
+team-bus	@elinpf/dsh-swarm-team-bus
+team-review	@elinpf/dsh-swarm-team-review
+team-scheduler	@elinpf/dsh-swarm-team-scheduler
+team-completion	@elinpf/dsh-swarm-team-completion
+tool-swarm	@elinpf/dsh-swarm-tool-swarm
+team-workspace	@elinpf/dsh-swarm-team-workspace
+team-skills	@elinpf/dsh-swarm-team-skills
+team-memory	@elinpf/dsh-swarm-team-memory
+team-compaction	@elinpf/dsh-swarm-team-compaction
+team-transport	@elinpf/dsh-swarm-team-transport
+team-distributed	@elinpf/dsh-swarm-team-distributed
+team-human	@elinpf/dsh-swarm-team-human
+preset-swarm	@deepseek-ai/dsh-agent-preset
+experimental-inspector	@deepseek-ai/dsh-experimental-inspector
+session-inspector	@deepseek-ai/dsh-experimental-session-inspector
+preset-swarm	@deepseek-ai/dsh-agent-preset
+# profile 内安装副本 patch == checkout 源 patch : true

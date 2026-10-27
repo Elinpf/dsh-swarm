@@ -1,0 +1,40 @@
+# task-3 证据：被引文件的修订指纹（sha256 前 16 位）与 mtime
+# 生成时间: 2026-10-27T16:42:29+08:00
+# 审计后复核（17:0x，回应 FIX-3）：下列 [W] 文件中仅 README.md 已变；其余指纹不变。
+#   README.md            568cea4c8fcb4311 (16:20:00)  →  45c39bc914e6bc5b (16:56:02)
+#   packages/bundle/cordis.patch.yml  b3de4c7f3137a067 (16:39:44)  不变
+#   packages/team-scheduler/src/index.ts  44f537959100c1eb (15:28:18)  不变
+#   packages/team-core/src/index.ts       1968ddd62df936f0 (14:31:55)  不变
+# 新增 H 侧引用（同批 mtime 11:29:36）：
+#   packages/experimental/agent-team/src/journal.ts
+
+0865f3676d6a2777  11:29:36  .runtime/deepseek-harness/packages/experimental/agent-team/src/index.ts
+002e9dced26625ec  11:29:36  .runtime/deepseek-harness/packages/experimental/agent-team/src/projection.ts
+0537a77c061605b8  11:29:36  .runtime/deepseek-harness/packages/experimental/agent-team/src/types.ts
+5469fc7de443b1ac  11:29:36  .runtime/deepseek-harness/packages/experimental/client-ui-agent-team/src/client/mount.ts
+acf7ed33e5d8b74c  11:29:36  .runtime/deepseek-harness/packages/experimental/client-ui-agent-team/src/client/TeamAction.tsx
+aa5335430d6fe11b  11:29:36  .runtime/deepseek-harness/packages/experimental/client-ui-agent-team/src/client/locales.ts
+1eff6fe14f46d180  11:29:36  .runtime/deepseek-harness/packages/experimental/client-ui-agent-team/src/index.ts
+a4f6d8004038eedc  11:29:36  .runtime/deepseek-harness/packages/experimental/client-ui-agent-team/package.json
+b5459c83d2779de1  11:29:36  .runtime/deepseek-harness/packages/experimental/agent-team-profile/cordis.patch.yml
+07fd90a30ca2957b  11:29:36  .runtime/deepseek-harness/packages/experimental/agent-team-profile/src/index.ts
+8e3c2fda0334e34b  11:29:36  .runtime/deepseek-harness/packages/boot/app-boot/src/profile.ts
+11f14c578780f8fa  11:29:36  .runtime/deepseek-harness/packages/boot/plugin-manager/src/index.ts
+dca304d22bda0d46  11:29:36  .runtime/deepseek-harness/packages/client/modules/src/client/manifest.ts
+a673387aca6232b5  11:29:36  .runtime/deepseek-harness/packages/client/modules/src/index.ts
+26ea2571d088e7cb  11:29:36  .runtime/deepseek-harness/packages/api/session-controller/src/client/sessions/manager.ts
+a45bdb4bf86025c6  11:29:36  .runtime/deepseek-harness/packages/api/session-controller/src/model-selection-projection.ts
+f6e57c06f57b20a7  11:29:36  .runtime/deepseek-harness/packages/session/session-projection/src/index.ts
+c008c324ca5b0e4d  11:29:36  .runtime/deepseek-harness/packages/preset/agent-preset-registry/src/mount.ts
+c225066519c3aa6b  11:29:36  .runtime/deepseek-harness/docs/subsystems/agent-team.md
+847c76c990e027b5  11:29:36  .runtime/deepseek-harness/docs/config-catalog.md
+b8f7be6075af9db0  16:35:53  .runtime/dsh-home/profiles/dsh-swarm-demo/package.json
+c9e8d0c7f5fe9046  16:33:02  .runtime/dsh-home/profiles/dsh-swarm-demo/cordis.patch.yml
+c300dcf2ebc5f020  16:33:03  .runtime/dsh-home/profiles/dsh-swarm-demo/cordis.yml
+b3de4c7f3137a067  16:39:44  packages/bundle/cordis.patch.yml
+1968ddd62df936f0  14:31:55  packages/team-core/src/index.ts
+44f537959100c1eb  15:28:18  packages/team-scheduler/src/index.ts
+5fe44b4f8a5e4868  12:48:28  packages/team-core-contract/src/index.ts
+568cea4c8fcb4311  16:20:00  README.md
+d11214239e339d5f  16:19:41  docs/verification.md
+3dba633a0290e14c  11:29:36  .runtime/deepseek-harness/packages/experimental/agent-team/src/journal.ts   # 审计后新增引用

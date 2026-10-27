@@ -1,0 +1,16 @@
+frames=348 decoded=348 events=709
+team/member=8 team/task=27 team/message/*=0 relay-splices=7
+members=4 tasks=7 seq-range=0..707
+member ids: 8754a0a1-1dfa-43ab-bb24-b5cf0bda90f3, 47072ac8-e41c-4d43-8eeb-4f39c511d3ab, 3d8517d7-da96-4428-923f-129f3cda7c3e, 1ca7e9bf-28c0-4cc0-bfbc-7af33c0c0aa1
+task-1 seqs/rev/status/owner: 112:r1:pending:- | 167:r2:in_progress:8754a0a1-1dfa-43ab-bb24-b5cf0bda90f3 | 363:r3:completed:8754a0a1-1dfa-43ab-bb24-b5cf0bda90f3
+PASS zstd 多帧解码成功且事件序列化可解析
+PASS [F1] team/* 事件的 data.teamId 恒等于根会话 id
+PASS [F2] 每条 team/task 都是完整快照且 data.version===2
+PASS [F5] 每个队员各有 provisioning→active 两跳；Lead 无 team/member 事件
+PASS [02 §2.6] Lead 日志中没有任何 team/message/* 事件
+PASS [F12] 成员→Lead 消息以 relay + next-step 落 inbox
+PASS [F13] 投递正文首块是 "Team message from <name>:"
+PASS [F16] task-1 以 completed 的完整快照收尾（rev 递增），并记录真实 owner
+PASS [交叉验证] 会话日志的 ownerId 与 projection 缓存中的 member id 集合一致
+
+check2: 9/9 passed

@@ -1,0 +1,133 @@
+# task-3 证据：workspace bundle patch 快照（并发写入期的定版）
+# 文件: packages/bundle/cordis.patch.yml
+# mtime: 2026-10-27 16:39:44.249290582 +0800
+# sha256: b3de4c7f3137a0672bce79ff6076f1d060ba628b1fa64c3c162bb45b2a4df455  packages/bundle/cordis.patch.yml
+# 说明: 该文件在本调查期间被其他成员修改（16:39:44，新增 agent-preset-registry 顶层 config 与 presets/swarm.patch.yml 第二 patch 文件），
+#       本快照用于固定行号；引用前请用上面的 sha256 复核。
+
+     1	# dsh-swarm 组合层：施加在 dsh-base 之后。
+     2	# 先 disabled 关掉与团队工具冲突的 legacy 直属委派行，再 insert **仅 dsh-swarm 自身**的包行。
+     3	# 行序不承载加载语义，激活由服务可用性驱动（plugin-dev-guide §3.2）。
+     4	#
+     5	# 说明：原生团队域（agent-team / tool-agent-team）由
+     6	# `@deepseek-ai/dsh-experimental-agent-team-profile@0.2.1-rc.3` 提供，本 bundle **不重复插入**
+     7	# （P6-e2e-profile 实测发现重复行；此处收敛以避免潜在重复 id 歧义）。
+     8	
+     9	# —— 关闭 legacy 直属委派行（对齐 agent-team-profile 的处理）——
+    10	- id: tool-subagent-control
+    11	  disabled: true
+    12	- id: tool-subagent-list-agents
+    13	  disabled: true
+    14	- id: tool-subagent
+    15	  disabled: true
+    16	- id: tool-subagent-fork
+    17	  disabled: true
+    18	
+    19	# —— dsh-swarm：默认选中「集群模式」preset（覆盖 agent-preset-registry 的 `default`；该行由 dsh-web-app 提供）——
+    20	- id: agent-preset-registry
+    21	  config:
+    22	    default: swarm
+    23	
+    24	- insert:
+    25	    # —— dsh-swarm：端口 + 协作内核补全（原生团队域由 agent-team-profile 提供，不在此重复）——
+    26	    - id: team-core
+    27	      name: '@elinpf/dsh-swarm-team-core'
+    28	      config:
+    29	        backend: auto
+    30	        maxMembers: 8
+    31	        maxTasks: 256
+    32	        maxMessageBytes: 65536
+    33	        planGate: false
+    34	
+    35	    - id: team-prompt
+    36	      name: '@elinpf/dsh-swarm-team-prompt'
+    37	      config:
+    38	        locales: cn
+    39	        leaderProgressiveDisclosure: true
+    40	
+    41	    - id: team-bus
+    42	      name: '@elinpf/dsh-swarm-team-bus'
+    43	      config:
+    44	        maxFanout: 64
+    45	        maxMessageBytes: 65536
+    46	
+    47	    - id: team-review
+    48	      name: '@elinpf/dsh-swarm-team-review'
+    49	      config:
+    50	        pools:
+    51	          - { kind: binary, rule: veto, roles: [verifier, challenger] }
+    52	        maxRounds: 3
+    53	        stallTimeoutMs: 1800000
+    54	
+    55	    - id: team-scheduler
+    56	      name: '@elinpf/dsh-swarm-team-scheduler'
+    57	      config:
+    58	        mode: scheduled
+    59	        pollMs: 30000
+    60	
+    61	    - id: team-completion
+    62	      name: '@elinpf/dsh-swarm-team-completion'
+    63	      config:
+    64	        blockOnUnread: true
+    65	
+    66	    - id: tool-swarm
+    67	      name: '@elinpf/dsh-swarm-tool-swarm'
+    68	      config:
+    69	        enableBroadcast: true
+    70	        enableReview: false
+    71	
+    72	    # —— 阶段 2：能力供给层 ——
+    73	    - id: team-workspace
+    74	      name: '@elinpf/dsh-swarm-team-workspace'
+    75	      config:
+    76	        defaultTtlMs: 900000
+    77	        enforceWriteGuard: true
+    78	        sweepIntervalMs: 30000
+    79	
+    80	    - id: team-skills
+    81	      name: '@elinpf/dsh-swarm-team-skills'
+    82	      config:
+    83	        unrestrictedWhenUndeclared: true
+    84	
+    85	    - id: team-memory
+    86	      name: '@elinpf/dsh-swarm-team-memory'
+    87	      config:
+    88	        sharedWriter: lead
+    89	
+    90	    - id: team-compaction
+    91	      name: '@elinpf/dsh-swarm-team-compaction'
+    92	      config:
+    93	        enabled: false
+    94	        maxTokens: 100000
+    95	
+    96	    # —— 阶段 3：规模化与边界层（默认 in-process，跨进程需显式配置）——
+    97	    - id: team-transport
+    98	      name: '@elinpf/dsh-swarm-team-transport'
+    99	      config:
+   100	        backend: in-process
+   101	        reconnectTimeoutMs: 15000
+   102	
+   103	    - id: team-distributed
+   104	      name: '@elinpf/dsh-swarm-team-distributed'
+   105	      config:
+   106	        role: lead
+   107	
+   108	    - id: team-human
+   109	      name: '@elinpf/dsh-swarm-team-human'
+   110	      config:
+   111	        leadName: lead
+   112	        retainWhenOffline: true
+
+# ---- packages/bundle/package.json dsh.bundle 声明 ----
+{
+ "bundle": {
+  "patch": [
+   "./cordis.patch.yml",
+   "./presets/swarm.patch.yml"
+  ]
+ }
+}
+
+# ---- packages/bundle/presets/swarm.patch.yml（16:36 新增，未跟踪）----
+# sha256: 34b8010245f598d3432746344d6a487a5de03e8cdf637d5591ba1a4c41bc92da  packages/bundle/presets/swarm.patch.yml
+129 packages/bundle/presets/swarm.patch.yml

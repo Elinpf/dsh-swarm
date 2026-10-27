@@ -1,0 +1,25 @@
+vitest.config.ts (3:26) [33m[UNRESOLVED_IMPORT] [0mCould not resolve 'vite-tsconfig-paths' in vitest.config.ts
+   [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m vitest.config.ts:3:27 [38;5;246m][0m
+   [38;5;246m│[0m
+ [38;5;246m3 │[0m [38;5;249mi[0m[38;5;249mm[0m[38;5;249mp[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249ms[0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mf[0m[38;5;249mi[0m[38;5;249mg[0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249mt[0m[38;5;249mh[0m[38;5;249ms[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m [0m'vite-tsconfig-paths'
+ [38;5;240m  │[0m                           ──────────┬──────────  
+ [38;5;240m  │[0m                                     ╰──────────── Module not found, treating it as an external dependency
+[38;5;246m───╯[0m
+
+failed to load config from /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/deepseek-harness/vitest.config.ts
+
+⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯⎯
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'vite-tsconfig-paths' imported from /root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/node_modules/.vite-temp/vitest.config.ts.timestamp-1793090447220-22677350978ff.mjs
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:314:9)
+    at packageResolve (node:internal/modules/esm/resolve:772:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:989:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:724:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:320:38)
+    at ModuleJob._link (node:internal/modules/esm/module_job:182:49) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+
+

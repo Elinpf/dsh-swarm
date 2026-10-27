@@ -1,0 +1,103 @@
+# task-3 证据：本实例（DSH_PROFILE=dsh-swarm-demo）装配实测（只读）
+# 采样时间: 2026-10-27T16:43:52+08:00；全部命令均为读取，未启动/重启 server，未重建 bundle
+
+## 1. 环境变量（本会话进程）
+DSH_HOME=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-home
+DSH_PROFILE_DIR=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-home/profiles/dsh-swarm-demo
+DSH_PROFILE=dsh-swarm-demo
+DSH_SESSION_ID=3d8517d7-da96-4428-923f-129f3cda7c3e
+DSH_SHELL=1
+DSH_WEB_URL=http://127.0.0.1:3099
+
+## 2. profile 清单 .runtime/dsh-home/profiles/dsh-swarm-demo/package.json
+     1	{
+     2	  "name": "dsh-profile-web",
+     3	  "private": true,
+     4	  "dependencies": {
+     5	    "@deepseek-ai/dsh-experimental-agent-team-profile": "0.2.1-rc.3",
+     6	    "@elinpf/dsh-swarm-bundle": "link:/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/packages/bundle"
+     7	  },
+     8	  "dsh": {
+     9	    "profile": {
+    10	      "bundles": [
+    11	        "@deepseek-ai/dsh-base",
+    12	        "@deepseek-ai/dsh-web-app",
+    13	        "@deepseek-ai/dsh-experimental-agent-team-profile",
+    14	        "@elinpf/dsh-swarm-bundle",
+    15	        "@deepseek-ai/dsh-experimental-inspector-profile"
+    16	      ]
+    17	    }
+    18	  }
+    19	}
+
+## 3. profile 根 cordis.yml（空 entry 列表，树由 patch 组成）
+     1	# dsh profile root — an empty entry list. The tree is composed as patches:
+     2	# each bundle in package.json's dsh.profile.bundles, then cordis.patch.yml, then any
+     3	# --patch overlays. Edit cordis.patch.yml, not this file.
+     4	[]
+
+## 4. 用户 patch 层条目（顶层动作摘要；行号见 cordis.patch.yml）
+- 第 1 条: insert preset-swarm（:4-130；preset id=swarm / name=集群模式 / order=0）
+- 第 2 条: id=agent-preset-registry, config.default=swarm（:133-135）
+- 第 3 条: id=ui-settings-general, config.welcomeNoticeVersion=2026-09-28.1（:136-139）
+- 该层未 disabled 任何 tool-subagent* 行；legacy 行的关闭来自 agent-team-profile 与 dsh-swarm-bundle 两层
+
+## 5. 安装侧 vs profile 侧 agent-team-profile（bundle 解析为安装优先）
+- 安装锚点: .runtime/dsh-cli-npm/node_modules/@deepseek-ai/dsh/package.json
+41:    "@deepseek-ai/dsh-experimental-agent-team-profile": "0.2.1-rc.3",
+- 安装副本 cordis.patch.yml 与 checkout 源逐字节相同（diff 无输出）
+  (identical)
+
+## 6. 会话 projection 缓存（运行中的 Lead 会话，含 agentTeam 行）
+- 文件: .runtime/dsh-home/storages/session_projcache/sessions/session-4e0b08f3-9cfa-43a8-bc0a-5b6debceea3f.json
+- 行键: agentPreset, agentTeam, contextBreakdown, contextPressure, goal, harnessDevLegacyPrompt, imageLimits, inbox, llmRetry, modelSelection, permissions, plan, sandboxMode, sessionListMetadata, sessionStats, subagent, subagentCatalog, subagentModelSelectionPolicy, subagentTiming, timeContext, title, titleInput, todos, tokenUsage, turnBoundary, turnOutline, userQuestions, workingDirectory
+- agentTeam ver/seq: 4 358
+- agentTeam.val keys: ['id', 'members', 'tasks', 'messages', 'delivered', 'nextTaskNumber'] （= TeamProjectionState，非 wire view）
+- members: [('core-model', 'active', 'spawn'), ('tools-messaging', 'active', 'spawn'), ('wiring-ui', 'active', 'spawn'), ('auditor', 'active', 'spawn')]
+- tasks: [('task-1', 'in_progress', 2), ('task-2', 'in_progress', 2), ('task-3', 'in_progress', 2), ('task-4', 'pending', 2), ('task-5', 'in_progress', 2), ('task-6', 'pending', 2)]
+- 任务态取值集合: ['in_progress', 'pending']
+- 任务快照键（无 ownerName/ready/writeScopeWarnings）: ['blockedBy', 'description', 'id', 'ownerId', 'revision', 'status', 'subject', 'writeScopes']
+- subagent 行（Lead，无 address）: {"ver": 2, "seq": 358, "val": {}}
+
+## 7. 同实例 teammate 会话缓存（wiring-ui 自身）
+- subagent.val: {"identity": {"mode": "continuable", "label": "核查并补全 UI 投影与启用接线文档（任务 task-3）", "seq": 0}}
+- agentTeam.val: {"id": "3d8517d7-da96-4428-923f-129f3cda7c3e", "members": [], "tasks": [], "messages": [], "delivered": [], "nextTaskNumber": 1} （id=自身会话，members/tasks 为空）
+- modelSelection.val（state，无 next）: {"lastUsed": {"provider": "dshdemo", "model": "DeepSeek-Flash"}, "pending": null}
+
+## 8. 运行中 Lead 会话事件（本会话调查小组产生的 team/* 事件）
+- 采样时刻 16:43；源 `investigation-live/session-events.jsonl`（队友导出的运行日志）
+- session: 1
+- subagent/catalog: 4
+- team/member: 8
+- team/task: 12
+
+## 9. 审计后补测（17:0x，回应 FIX-2）：team/message/* 事件数为 0
+- 同一日志按**事件类型**统计：`team/member` = 8、`team/task` = 13，**`team/message/queued` / `team/message/delivered` 均为 0**。
+- 直接 `grep -c "team/message"` 得到 7 处命中，但逐条核对类型后全部是他人汇报正文里的字符串（agent/inbox/spliced、user/message、tool/result、assistant/message），**不是事件类型**——引用计数时不可用裸 grep。
+- 写入侧代码依据：`[H]packages/experimental/agent-team/src/journal.ts:9` 的 `MutableTeamEventType = 'team/member' | 'team/task'`，`:60` 的 `appendAndFlush<T extends MutableTeamEventType>` 是该包唯一的 durable 追加入口；`team/message/{queued,delivered}` 只保留在类型（`types.ts:234-238`）与回放折叠（`projection.ts:292-305`）中。
+- 采样命令：
+```console
+$ python3 - <<'PY'
+import json,collections
+c=collections.Counter()
+for line in open('.runtime/investigation-live/session-events.jsonl'):
+    line=line.strip()
+    if not line: continue
+    try: d=json.loads(line)
+    except: continue
+    c[d.get('type','?')]+=1
+print(sorted((k,v) for k,v in c.items() if k.startswith('team/')))
+PY
+[('team/member', 8), ('team/task', 13)]
+```
+
+## 10. 审计后补测：`[W]README.md` 快照失效（回应 FIX-3）
+- 原快照：sha256 `568cea4c8fcb4311…`（mtime 16:20）——本文全部 README 行号基于它。
+- 现文件：sha256 `45c39bc914e6bc5b…`（mtime 2026-10-27 16:56:02），`:209` 起插入「集群模式 agent preset」等 7 行。
+- 行号平移：原 `:255`（bundle 14 行）→ `:262`；原 `:258`（Web UI 未写）→ `:265`；原 `:260`（旧「默认仍是 autonomous」）→ `:267`（内容已重写为「默认即 `scheduled`」）。
+- 结论：「README 自相矛盾」这一 DRIFT 在现工作区已被修掉；§5 C5 的描述仅对 `568cea4c` 快照成立。
+```console
+$ sha256sum README.md | cut -c1-16   # 45c39bc914e6bc5b
+$ stat -c '%y' README.md             # 2026-10-27 16:56:02
+```
+

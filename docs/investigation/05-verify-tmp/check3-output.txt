@@ -1,0 +1,7 @@
+唯一被引文件路径：113；直接/后缀验证通过：108；未找到：5
+
+MISSING [-] .runtime/dsh-cli-npm/…/@deepseek-ai/dsh-web-app/presets/standard.patch.yml  (docs: 03-ui-wiring-and-docs.md)  tried=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-cli-npm/@deepseek-ai/dsh-web-app/presets/standard.patch.yml suffixHits=1
+MISSING [-] .runtime/dsh-home/storages/session_projcache/sessions/session-4e0b08f3-….json  (docs: 03-ui-wiring-and-docs.md)  tried=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/.runtime/dsh-home/storages/session_projcache/sessions/session-4e0b08f3-.json suffixHits=0
+MISSING [-] docs/adr/0002-...md  (docs: 02-tools-and-messaging.md)  tried=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/docs/adr/0002-...md suffixHits=0
+MISSING [-] DSH_SESSION_ID/session.v4.jsonl.zstd  (docs: 04-live-session-evidence.md)  tried=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/DSH_SESSION_ID/session.v4.jsonl.zstd suffixHits=169
+MISSING [-] subagent/.../manager.ts  (docs: 02-tools-and-messaging.md)  tried=/root/.jiuwenswarm/agent/workspace/work/jiuwen/dsh-swarm/subagent/.../manager.ts suffixHits=2

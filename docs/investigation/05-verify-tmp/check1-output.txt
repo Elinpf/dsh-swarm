@@ -1,0 +1,13 @@
+PASS task-graph: 自阻塞 -> cycle
+PASS task-graph: 重复 blocker -> duplicate
+PASS task-graph: 缺失 blocker -> missing
+PASS task-graph: deleted blocker 等同 missing
+PASS task-graph: 两节点环 -> cycle
+PASS task-graph: 合法 DAG 不抛
+PASS taskReady: 仅 completed blocker 满足
+PASS view.ready = pending && 全部 blocker completed
+PASS view.writeScopeWarnings 由 in_progress 兄弟任务触发（含 pending 主体）
+PASS scopesOverlap 按路径段：src 与 srclib 不重叠
+PASS ownerName: ownerId === state.id -> lead，未知 owner 省略字段
+
+check1: 11/11 passed
