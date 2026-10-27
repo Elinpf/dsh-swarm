@@ -185,3 +185,43 @@ grep -n '唤醒' /root/.jiuwenswarm/.agent_teams/jiuwen_team_web_1a1765709a5_5ff
 - **改前红态原始输出保留**：`.runtime/probe/p46-nativeWait.json`（阶段1 版本，含 `wait_agent`）。
 - **时序**：红 = **改前**（阶段1，§6：tool_calls 含 `wait_agent`）；绿 = **改后**（阶段2，§8：同提示 tool_calls 不含）。
 - 三条独立信号：①改前红态原始输出；②改后**同一提示**不调；③改后**中立提示**也不调。
+
+
+---
+
+## 9. P56 复查：P54 探针里的高频 `wait_agent` —— 是否回归/是否覆盖不到（事实/推断分离）
+
+**结论：判定为 (b) —— 带着 P46 的新提示仍高频 `wait_agent`**（非「headless 未装配提示」）。原因=**P46 提示在真实聚合场景下强度不足 + 渐进披露使起手窗口无此指引**；**不是** P46 代码回归。
+
+### 9.1 事实层（静态取证 + P54 tool_call 证据）
+
+- **headless 确实装配了我们的 bundle 与 team-prompt**：`$DSH_HOME/profiles/headless/package.json` 含 `@elinpf/dsh-swarm-bundle`（link 到 `packages/bundle`）；team-prompt 构建产物含 P46 文本「结束你的轮次」。
+- **P46 文本仍在**：`packages/team-prompt/src/index.ts:131-140` 的 `team:dispatch` 在 `leaderWaitModel='event-wake'`（bundle 未传 → 默认）下明写「**派发或发消息后请结束你的轮次**……**不要用 wait_agent 长阻塞**（仅当同一轮必须聚合多个成员结果时才用）」。
+- **P54 真实会话证据**（`.runtime/probe/p54-behavior-headless.json`，profile=headless，真实模型）：tool_call 序列 `spawn_teammate` 首现 idx3 → … → **`wait_agent` 首现 idx17**，随后 wait/task_list/list_agents **轮询到 idx44**，之后才是成员执行的 web_fetch。⇒ **派发后仍长时间 `wait_agent` 轮询**。
+
+### 9.2 关键结构性事实（为何「新提示仍没压住」）
+
+- **【事实】`team:dispatch` 被渐进披露延迟**：`DEFERRED_BEFORE_TEAM=['team:dispatch','team:task-state']`（`src/index.ts:80`）——**在「团队未建」前会从 prompt 摘掉**（`:198`）。⇒ **leader 起手阶段（尚未 spawn 成员时）看不到「事件唤醒/别长阻塞」**；而**起手恰是最容易自己动手或起手等待的窗口**。
+- **【事实】P46 的 wait 口径只挂在 `team:dispatch`**：新增的 `team:leader`（P54，order 10）**不含**任何等待/轮次措辞（grep 未见 wait/等待/聚合）。⇒ 承载「不默认等待」的只有**被延迟**的那一段。
+- **【事实】上游强句仍在**：`tool-agent-team/src/index.ts:41` 末尾「**The Lead must wait for required teammates before giving the final answer.**」——与「别长阻塞」**方向相反**，且**不在我们的可延迟段内**（原生段常驻）。
+- **【推断】提示留了「合法口子」被当作许可**：`team:dispatch` 写「**仅当同一轮必须同步聚合多个成员结果时才用 wait_agent**」；真实任务（出简报）本就需聚合结果 → 模型判为「必须聚合」而 wait，并表现为**长时间轮询**（远超「一次短 wait」）。⇒ **提示是「有例外的软约束」，非「默认禁止」**。
+- **【事实】P54 headless 未加载 persona**（`preset-swarm` pending `agentPresets`；见 `verification.md §E`），故本次**无**「You are a coding agent…」persona 参与；但 web 集群 preset **会**加载它。
+
+### 9.3 判定与差异定位
+
+- **不是回归**：P46 代码/文本在；P46 阶段2 的「不再调 `wait_agent`」结论**只覆盖 trivial 场景**（spawn+报告），**未覆盖「真实聚合」场景**。
+- **是覆盖/强度不足**：(i) 承载指引的段被渐进披露延迟；(ii) 上游常驻「必须 wait」句与之冲突；(iii) 指引以「有例外」表述，真实任务自然踩进例外并长轮询。
+- **未实测点（诚实登记）**：P54 产物只存 tool_call/status，**未存 system prompt 文本**，故「idx17 那一刻 `team:dispatch` 是否已在 prompt」属**推断**（按 `teamBuilt` 于 idx3 起为真，推断「在」）。**免模型复核法**：下次探针落盘时把 `system-prompt` 文本一并存下即可判定。
+
+### 9.4 persona 是否应改（建议，未自行改；属 bundle → 先报 Leader）
+
+- **建议改**：web 集群 preset 的 persona（`packages/bundle/presets/swarm.patch.yml:15`「You are a coding agent powered by the {{model}} model.」）与「leader 不亲自执行 + 不默认等待」**均冲突**（编码代理默认倾向「直接做完」）。
+- 对照 Jiuwen：其 leader persona 明写「你是 TeamLeader……**你自己不执行任务**」。
+- **建议**：把集群 preset 的 persona prefix 改为 leader 语义（或按角色分流），**但属 `bundle`，改前先报 Leader**（本次不动）。
+
+### 9.5 修复方向（建议，未改码）
+
+1. **把「不默认等待/事件唤醒」从被延迟的 `team:dispatch` 提升到常驻的 `team:leader`**（起手即见）——最小、最直接。
+2. 措辞由「有例外的软约束」改「**默认禁止长阻塞；聚合也用『短 wait_agent（单次、有上限）』，绝不轮询**」，压低被当许可的空间。
+3. 与上游 `tool-agent-team:41`「Lead must wait…」**做显式调和**（我们的段里点明：wait 只用于短暂聚合，收尾靠事件唤醒）。
+4. persona 同步（§9.4）。
