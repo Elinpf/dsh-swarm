@@ -199,6 +199,44 @@ export const SCENARIOS = {
       'Do NOT send any direct messages to alice or bob.',
     modelExpect: { minToolCalls: 5, tools: ['spawn_teammate', 'broadcast', 'wait_agent'] },
   },
+  S8: {
+    id: 'S8',
+    title: '计划闸（执行前审批）：入闸 → 未批不能执行 → 驳回带理由 → 批准 → 执行',
+    covers: '计划闸合法性 + 「未批准不能执行」不变量（P30）；需 --plan-gate on',
+    planGate: true,
+    stub: [
+      { op: 'spawn', args: { name: 'alice', desc: 'author' } },
+      { op: 'taskCreate', args: { ref: 't1', subject: 'plan-gated job' } },
+      // 入闸（pending → planned）
+      { op: 'taskOpenPlan', args: { ref: 't1' } },
+      // 负向：计划闸中 claim **必须被拒**（未批准不能执行）
+      { op: 'taskExpectReject', args: { ref: 't1', action: 'claim', owner: 'alice' } },
+      // 提交计划 → 驳回（带理由）→ 再提交
+      { op: 'taskSubmitPlan', args: { ref: 't1', plan: 'v1: do X then Y' } },
+      { op: 'taskRejectPlan', args: { ref: 't1', feedback: '缺少回滚方案，请补充' } },
+      { op: 'taskSubmitPlan', args: { ref: 't1', plan: 'v2: do X then Y; rollback via Z' } },
+      // 批准 → 回到可执行（pending）
+      { op: 'taskApprovePlan', args: { ref: 't1' } },
+      // 批准后方可执行
+      { op: 'taskClaim', args: { ref: 't1', owner: 'alice' } },
+      { op: 'taskComplete', args: { ref: 't1' } },
+    ],
+    model:
+      'Do these in order and report each raw tool result verbatim (plan actions go through team_task_update action=…; ' +
+      'if a tool/action is unavailable, say so explicitly and continue): ' +
+      "1) spawn_teammate name='alice' description='author' prompt='Reply with exactly OK'; " +
+      "2) team_task_create subject='plan-gated job' description='needs a plan'; " +
+      "3) team_task_update id='<id>' action='open_plan'; " +
+      "4) team_task_update id='<id>' action='claim' owner='alice'  (EXPECT this to be rejected: 未批准不能执行); " +
+      "5) team_task_update id='<id>' action='submit_plan' plan='v1: do X then Y'; " +
+      "6) team_task_update id='<id>' action='reject_plan' feedback='缺少回滚方案'; " +
+      "7) team_task_update id='<id>' action='approve_plan'; " +
+      "8) team_task_update id='<id>' action='claim' owner='alice'; 9) team_task_get id='<id>'.",
+    modelExpect: {
+      minToolCalls: 6,
+      tools: ['spawn_teammate', 'team_task_create', 'team_task_update'],
+    },
+  },
 }
 
 export const ALL_SCENARIO_IDS = Object.keys(SCENARIOS)

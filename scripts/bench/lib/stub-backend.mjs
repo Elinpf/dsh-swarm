@@ -205,11 +205,13 @@ export async function runStubScenario(scenario, opts = {}) {
     stale: opts.stale ?? 'on',
     schedMode: opts.schedMode ?? 'autonomous',
     broadcastFanout: opts.broadcastFanout ?? 'dm',
+    planGate: opts.planGate ?? 'off',
   }
   const schedulerOn = variant.scheduler === 'on'
   const reviewGate = variant.review === 'gate'
   const deliveryImpl = variant.delivery
   const staleSelfHeal = variant.stale === 'on'
+  const planGateOn = variant.planGate === 'on'
 
   const notes = []
   const rec = new Recorder()
@@ -248,7 +250,13 @@ export async function runStubScenario(scenario, opts = {}) {
   const scheduler = await load('packages/team-scheduler/lib/index.js')
   const toolSwarm = await load('packages/tool-swarm/lib/index.js')
 
-  await rootCtx.plugin(core, { backend: 'auto', maxMembers: 16, maxTasks: 256, maxMessageBytes: 65536 })
+  await rootCtx.plugin(core, {
+    backend: 'auto',
+    maxMembers: 16,
+    maxTasks: 256,
+    maxMessageBytes: 65536,
+    planGate: planGateOn,
+  })
   await rootCtx.plugin(bus, { maxFanout: 64, maxMessageBytes: 65536 })
   await rootCtx.plugin(review, {
     pools: reviewGate ? [{ kind: 'binary', rule: 'veto', roles: ['verifier', 'challenger'] }] : [],
@@ -398,6 +406,56 @@ export async function runStubScenario(scenario, opts = {}) {
           blockedBy: (a.blockedBy ?? []).map((r) => taskRefs.get(r)),
         })
         break
+      // ── 计划闸（P30）：执行前审批。动作在 team-core 端口内处理（原生无此态/动作）──
+      case 'taskOpenPlan':
+      case 'taskSubmitPlan':
+      case 'taskApprovePlan':
+      case 'taskRejectPlan': {
+        const action = {
+          taskOpenPlan: 'open_plan',
+          taskSubmitPlan: 'submit_plan',
+          taskApprovePlan: 'approve_plan',
+          taskRejectPlan: 'reject_plan',
+        }[step.op]
+        const id = taskRefs.get(a.ref)
+        const pt = await rootCtx.teamCore.updateTask(lead, {
+          taskId: id,
+          expectedRevision: rootCtx.teamCore.getTask(lead, id).revision,
+          action,
+          plan: a.plan,
+          feedback: a.feedback,
+        })
+        rec.event({ kind: 'plan', t: now(), ref: a.ref, action, status: pt.status })
+        break
+      }
+      case 'taskExpectReject': {
+        // 负向断言：计划闸中执行**非计划动作必须被拒**（不变量「未批准不能执行」）
+        let rejected = false
+        let code = ''
+        try {
+          await rootCtx.teamCore.updateTask(lead, {
+            taskId: taskRefs.get(a.ref),
+            expectedRevision: rootCtx.teamCore.getTask(lead, taskRefs.get(a.ref)).revision,
+            action: a.action ?? 'claim',
+            owner: a.owner,
+          })
+        } catch (e) {
+          rejected = true
+          code = String(e.message).split(':')[0]
+        }
+        rec.event({
+          kind: 'plan_expect_reject',
+          t: now(),
+          ref: a.ref,
+          action: a.action ?? 'claim',
+          rejected,
+          code,
+        })
+        if (!rejected) {
+          notes.push(`taskExpectReject 未如期被拒（ref=${a.ref}, action=${a.action ?? 'claim'}）`)
+        }
+        break
+      }
       case 'reviewSubmit':
         // review='none' 时 pools 为空 → submitForReview 直接完成（无闸）
         await rootCtx.teamReview.submitForReview(lead, taskRefs.get(a.ref))
@@ -528,6 +586,13 @@ function computeStubMetrics({ rec, sends, seam, scanReports, e2eMs, memBefore, m
   const escalations = rec.events.filter((e) => e.kind === 'send' && /escalation/i.test(e.text ?? '')).length
   const reviewRounds = rec.events.filter((e) => e.kind === 'review_settle').length
 
+  // 计划闸（P30）：合法转换序列 + 非法转换被拒计数（不变量「未批准不能执行」）
+  const planEvents = rec.events.filter((e) => e.kind === 'plan')
+  const planExpect = rec.events.filter((e) => e.kind === 'plan_expect_reject')
+  const planIllegalRejected = planExpect.filter((e) => e.rejected).length
+  const planIllegalNotRejected = planExpect.filter((e) => !e.rejected).length
+  const planTransitions = planEvents.map((e) => `${e.action}→${e.status}`)
+
   return {
     backend: 'stub',
     e2eMs,
@@ -555,6 +620,10 @@ function computeStubMetrics({ rec, sends, seam, scanReports, e2eMs, memBefore, m
     staleNudged,
     escalations,
     reviewRounds,
+    planActions: planEvents.length,
+    planTransitions,
+    planIllegalRejected,
+    planIllegalNotRejected,
     scans: scanReports,
     process: {
       rssBeforeBytes: memBefore.rss,

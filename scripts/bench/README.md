@@ -32,7 +32,8 @@ bash scripts/bench/exp-idle-wakeup.sh --arm both --members alice,bob,carol \
 **A/B 与消融开关**（仅桩后端；默认=基线全开）：`--scheduler on|off`、`--review gate|none`、
 `--delivery bus|n-dm`（广播实现：team-bus 扇出 / N 次 DM）、`--stale on|off`（stale 自愈）、
 `--sched-mode autonomous|scheduled`、`--broadcast-fanout dm|record-only`（广播扇出：逐人 DM / 仅落库可拉取，
-对应 `team-bus` 的 `fanout` 参数，见 `docs/optimization-log.md §2`）。它们只切换**配置/实现路径**，
+对应 `team-bus` 的 `fanout` 参数，见 `docs/optimization-log.md §2`）、`--plan-gate on|off`（计划闸，P30；
+默认按场景：`S8` 为 `on`、其余 `off`）。它们只切换**配置/实现路径**，
 不裁剪场景、不改指标口径。
 
 `run.sh` 会 `source scripts/env.sh` 进入隔离环境（隔离 Node/HOME/`DSH_HOME`，无代理直连），
@@ -92,6 +93,9 @@ bash scripts/bench/exp-idle-wakeup.sh --arm both --members alice,bob,carol \
 - `staleNudged`：`teamScheduler.scan()` 报告里 `staleNudged` 之和（卡住任务自催）。
 - `escalations`：内容含 `[escalation]` 的投递数（stale 连续无果升级 Lead）。
 - `reviewRounds`：评审裁决次数（`reviewSettle` / model 下 `review_submit`+`review_vote`）。
+- `planActions` / `planTransitions`（计划闸，P30，仅 stub）：合法计划动作次数与 `action→status` 序列
+  （如 `open_plan→planned`、`approve_plan→pending`）。`planIllegalRejected` = 计划闸中**非计划动作被拒**的次数
+  （不变量「未批准不能执行」）；`planIllegalNotRejected` 应为 0（否则记 failure note）。开关 `--plan-gate on|off`。
 
 **LLM（model 专有）**
 
@@ -131,7 +135,8 @@ bash scripts/bench/exp-idle-wakeup.sh --arm both --members alice,bob,carol \
    - `model`：交给 lead 会话的中文指令（要求模型逐步执行并原样回报工具结果）。
    - `modelExpect`：松断言（最少工具调用数、期望出现的工具名）。
 2. stub 步骤 ops：`spawn / dm / broadcast / multicast / taskCreate / taskClaim / taskComplete /
-taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm / wait`。
+taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm / wait /
+taskOpenPlan / taskSubmitPlan / taskApprovePlan / taskRejectPlan / taskExpectReject`（后 5 个为计划闸，P30）。
 3. 跑 `--no-model` 验证；确认指标合理后，再用小 `--token-cap` 跑 model 验证。
 4. 在 `docs/benchmark.md` 追加基线行与口径说明。
 
@@ -161,7 +166,7 @@ taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm 
 scripts/bench/
   run.sh               # 一键入口（source 隔离环境后 exec bench-run.mjs）
   bench-run.mjs        # CLI 编排：场景×repeat×后端，成本门禁，导出
-  scenarios.mjs        # 场景集 S1–S5（声明式，stub 计划 + model 指令）
+  scenarios.mjs        # 场景集 S1–S8（声明式，stub 计划 + model 指令；S8=计划闸/P30）
   lib/stub-backend.mjs # 离线桩：真实插件 + 仪表化端口 mock
   lib/model-backend.mjs# 真实模型：dsh headless --json 解析 + 门禁
   lib/metrics.mjs      # 口径聚合 + JSON/CSV/markdown 导出

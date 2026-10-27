@@ -46,6 +46,7 @@ function parseArgs(argv) {
     stale: 'on',
     schedMode: 'autonomous',
     broadcastFanout: 'dm',
+    planGate: undefined, // undefined → 按场景默认（S8 planGate:true → on；其余 off）
   }
   // 带值参数表：命中后统一消费下一个 argv（i++），避免逗号表达式触发 no-unused-expressions
   const VALUE_FLAGS = {
@@ -84,6 +85,9 @@ function parseArgs(argv) {
     },
     '--broadcast-fanout': (a, v) => {
       a.broadcastFanout = v
+    },
+    '--plan-gate': (a, v) => {
+      a.planGate = v
     },
   }
   for (let i = 0; i < argv.length; i++) {
@@ -160,6 +164,7 @@ async function main() {
           stale: args.stale,
           schedMode: args.schedMode,
           broadcastFanout: args.broadcastFanout,
+          planGate: args.planGate ?? (scenario.planGate ? 'on' : 'off'),
         })
         samples.push({
           repeatIndex: r,
@@ -205,6 +210,7 @@ async function main() {
               stale: args.stale,
               schedMode: args.schedMode,
               broadcastFanout: args.broadcastFanout,
+              planGate: args.planGate ?? (scenario.planGate ? 'on' : 'off'),
             }
           : null,
       tokensCap: backend === 'model' ? args.tokenCap : null,
