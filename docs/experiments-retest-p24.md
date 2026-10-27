@@ -12,7 +12,7 @@
 
 | 项 | 结果 |
 |---|---|
-| **#5 scheduler 三臂（P39，arming 后）** | 前置成立：`scheduled` **真派发**（→`in_progress`）、`autonomous` **真 nudge**、`off` 静默。**`scheduled` 开销更低**（teammate 3 轮 vs autonomous 反复 nudge **9 轮**）→ **默认必选倾向【成立】（附前置：claim 归属 `owner=lead` 异常待确认）**。旧「无差异」记录见 §1.0。 |
+| **#5 scheduler 三臂（P39，arming 后）** | 前置成立：`scheduled` **真派发**（→`in_progress`）、`autonomous` **真 nudge**、`off` 静默。**`scheduled` 开销更低**（teammate 3 轮 vs autonomous 反复 nudge **9 轮**）→ **默认必选倾向【成立】（附前置）**。**解锁条件：P42 修复派发归属后复核**。旧「无差异」记录见 §1.0。 |
 | **#6 计划闸** | 真实 profile **无工具入口**：`team_task_update action='open_plan'` 被原生工具 enum 直接拒绝（`must be one of [claim,release,edit,set_dependencies,complete,reopen,reassign,delete]`）。→ **仍不可判定（前置缺失）**。 |
 | **#6 评审闸** | 可 `review_submit`→任务进 `in_review`✅；但 **`settle()` 无调用入口**（无工具、无自动触发），且 lead 认领导致自验被拒。→ **仍不可判定（前置缺失）**。 |
 | **#6 stale 自愈** | 依赖 `teamScheduler.scan` → 因 **未 arm** 而不运行。→ **仍不可判定（前置缺失，同 #5）**。 |
@@ -101,6 +101,7 @@ done
 **③ 判定与异常**
 
 - **`scheduled` 默认必选 → 倾向【成立】（附前置）**：scheduled **能真派发**，且 teammate 开销（3 轮）**远低于** autonomous 的 nudge 反复（9 轮）→ 无人值守场景下 scheduled 的**开销/信噪更好**。
+  **【解锁条件】P42 修复派发归属后复核**：本判定的「真派发给成员」依赖 `owner` 正确落到成员；`owner=lead` 异常（下条）由 **P42（P0）** 修复后，需**轻量复核** scheduled 臂的归属与指标（若不变则结论照旧，若变则更新）。
 - ⚠️ **异常（待确认，非我改码）**：scheduled 派发后任务 **`ownerName=lead`**（非空闲成员 alice/bob）。源码意图是 `updateTask(action='claim', owner:m.name)`（`team-scheduler/src/index.ts:371`），但**原生 `claim` 以「调用者」为 owner、忽略 `owner` 参数**（同 #6 评审探针：`claim owner='alice'` → `ownerName:"lead"`）⇒ **“派发”可能未真正指派到成员**（任务归 lead、成员未被赋予），**存在停滞风险**。
 - **【结论】**：scheduled 在**能派发 + 开销低**上成立，可作默认候选；但在**「claim 归属」确认/修复前，不写成“完全成立”**——建议 dev 侧核 `team-scheduler` 派发的 owner 语义（是否应改用 native 支持的 reassign，或领任务用成员身份）。
 
@@ -170,7 +171,7 @@ stale 由 `teamScheduler.scan` 的 `staleSweep` 产生；#5 已证 **scheduler �
 
 | # | 结论（出处） | 原结论（时序） | 真实 profile 重测（【P30·P31 后】） | 判定 |
 |---|---|---|---|---|
-| 1 | scheduler `scheduled` 自动派发（P13 §2 AB2/§3 Ab2） | 桩 `scan.started=2`【stub】；旧真实=无差异(未 arm)【no-op 时代】 | **P39（arming 后）**：真派发（→`in_progress`）✅ | **【成立】（附前置：claim 归属异常待确认）** |
+| 1 | scheduler `scheduled` 自动派发（P13 §2 AB2/§3 Ab2） | 桩 `scan.started=2`【stub】；旧真实=无差异(未 arm)【no-op 时代】 | **P39（arming 后）**：真派发（→`in_progress`）✅ | **【成立】（附前置；解锁条件=P42 修复派发归属后复核）** |
 | 2 | scheduler `autonomous` 只 nudge | 桩 `scan.started=0`【stub】；旧真实=无差异 | **P39**：真 nudge ✅；但**反复 nudge**（9 轮 vs scheduled 3 轮） | **【成立】**（并记录 autonomous 的 nudge 开销更高） |
 | 3 | 解锁→唤醒延迟上界 + 不存活风险 + push | 未采集 | 机制级：测试档≈201ms／生产 30000ms；不 arm()⇒0；push≈0ms | **成立（机制级）**；真实 profile 未触发 |
 | 4 | 计划闸合法性 + 「未批不能执行」（P30 新） | 桩 S8：`open_plan→planned…approve→pending`；`illegalRejected=1`【stub】 | 真实：`action='open_plan'` 被 enum 拒绝 → **无工具入口** | **仍不可判定（前置缺失）** |
