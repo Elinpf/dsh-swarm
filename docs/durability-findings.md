@@ -44,3 +44,14 @@ GREEN：emitDurable(session,'swarm/core/review-entered',{taskId}) → true；
 - **O1 式真实 profile 端到端 + 真实重启 replay**（先红后绿）待跑（预算先报）。
 - 文档修正未做：`ADR-0002 §3` / `docs/state-durability.md` / `docs/final-acceptance.md` 的「durable/已修复」表述。
 - `team-bus` 摺合待 analyst P47 push 后 rebase 复核。
+
+## 5. 证据分级（口径 · 宁降不升）
+
+- **【session 级 已验证】**：真实 `@deepseek-ai/dsh-session` + jsonl 持久化，`emitDurable → appendPluginRecord("plugin:swarm/…")` **真落盘**（直读磁盘文件确认），`durableRecordOf` 可读回，且**新 Context 重挂载重读仍可取回**（O2 GREEN③）。analyst 的真 Session 验证为互补旁证。
+- **【profile 级 端到端 未验】**：**无可达的 swarm emit 触发点**（默认工具集不触达 `team-core/review/plan`、`team-memory`、`team-skills` 的 emit；原生 `team/message/*` 又非 durable），故未做 profile 级端到端。**不将其升级为【已验证】**。待 **P49 后 tool-swarm 可用**时顺带补（或在 demo profile 下免模型直调插件 API）。
+
+## 6. 未接完（诚实登记）
+
+- `team-bus`：已由 analyst 接同一入口；**待其 P47 push 后 rebase 复核一致性**。
+- `team-skills.visibility`（`declare` 无 agent）：**仅进程内 emit**（无 session 可 append）。
+- `team-review` 无 `session/event` replay 订阅（其 `recover()` 由外部调用；本任务未改其恢复入口）。

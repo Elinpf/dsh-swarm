@@ -9,6 +9,7 @@
 > → **`appendPluginRecord("plugin:swarm/…")`**（通道 A），并在 `@deepseek-ai/dsh-session` 落地 plugin record；
 > `durableRecordOf(ev)` 供 replay fold。证据与逐类判定见 `docs/durability-findings.md`。
 > 下文若与「已修复」相关表述冲突，**以本条为准**（历史叙述：曾为 emit-only 不可恢复 → P52 修为真持久）。
+> 证据分级：**【session 级 已验证】**（真实 `dsh-session` 真落盘 + 新 Context 重挂载重读仍可取回，O2 GREEN③）；**【profile 级 端到端 未验】**（无可达的 swarm emit 触发点，未做；待 P49 后 tool-swarm 可用时顺带补，或走免模型路径）。未接完：`team-bus` 待 analyst P47 push 后 rebase 复核；`team-skills.visibility`（`declare` 无 agent）仅进程内 emit。
 
 > 素材边界：**只整合 `dsh-swarm/docs/` 下已落盘产物 + 仓库实际状态**，不新增未经证据支持的结论。
 > 证据强度标记：**【已验证】**＝**真实 profile 下、真实栈、端到端**（或真实 OS 进程级）实测；**【单测级】**＝vitest 行为单测 / **进程内**集成冒烟（含端口 mock / 记录型 seam）；**【未验证】**＝仅有设计、推断或真实 profile 缺入口。
