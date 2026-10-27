@@ -29,9 +29,22 @@ const LEGACY_ROWS = [
 ]
 
 describe('@elinpf/dsh-swarm-bundle', () => {
-  it('bundle 身份：dsh.bundle.patch + 导出 ./cordis.patch.yml', () => {
-    expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
+  it('bundle 身份：dsh.bundle.patch（数组）+ 导出 ./cordis.patch.yml 与 swarm preset', () => {
+    expect(manifest.dsh?.bundle?.patch).toEqual(['./cordis.patch.yml', './presets/swarm.patch.yml'])
     expect(manifest.exports['./cordis.patch.yml']).toBe('./cordis.patch.yml')
+    expect(manifest.exports['./presets/swarm.patch.yml']).toBe('./presets/swarm.patch.yml')
+  })
+
+  it('swarm preset（P44）：id/name/order + 插件集（与 standard 同构由 dump-config 逐 id diff 校验）', () => {
+    const swarm = readFileSync(join(pkgDir, 'presets/swarm.patch.yml'), 'utf8')
+    expect(swarm).toMatch(/- id:\s*preset-swarm\b/)
+    expect(swarm).toMatch(/^\s*id:\s*swarm\s*$/m)
+    expect(swarm).toContain("name: '集群模式'")
+    expect(swarm).toMatch(/^\s*order:\s*0\s*$/m)
+    expect(swarm).toMatch(/^\s*plugins:\s*$/m)
+    for (const k of ['persona', 'agent-instructions', 'tool-bash', 'tool-fs', 'tool-skill', 'tool-todo', 'tool-web', 'present']) {
+      expect(swarm).toMatch(new RegExp(`- id:\\s*${k}\\b`))
+    }
   })
 
   it('先 disabled 关掉 4 个 legacy tool-subagent* 行', () => {

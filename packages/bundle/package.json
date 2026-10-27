@@ -11,16 +11,21 @@
       "default": "./lib/index.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
+    "./presets/swarm.patch.yml": "./presets/swarm.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "presets/swarm.patch.yml"
   ],
   "license": "MIT",
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./presets/swarm.patch.yml"
+      ]
     }
   },
   "scripts": {

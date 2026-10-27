@@ -243,12 +243,23 @@ for (const p of PACKAGES) {
     const mod = await import(pathToFileURL(resolve(root, p.file)).href)
     assert(Object.keys(mod).length === 0, 'bundle 运行时零代码（纯 patch）')
     const manifest = JSON.parse(readFileSync(resolve(root, 'packages/bundle/package.json'), 'utf8'))
-    assert(manifest.dsh?.bundle?.patch === './cordis.patch.yml', 'dsh.bundle.patch 声明存在')
+    const patches = manifest.dsh?.bundle?.patch
+    assert(
+      Array.isArray(patches) &&
+        patches.includes('./cordis.patch.yml') &&
+        patches.includes('./presets/swarm.patch.yml'),
+      'dsh.bundle.patch 数组声明（cordis + swarm preset）',
+    )
     const yml = readFileSync(resolve(root, 'packages/bundle/cordis.patch.yml'), 'utf8')
     assert((yml.match(/disabled:\s*true/g) ?? []).length === 4, '先 disabled 关掉 4 个 legacy 行')
     assert(
       yml.includes('- insert:') && yml.includes("name: '@elinpf/dsh-swarm-team-core'"),
       'insert 了团队插件行',
+    )
+    const swarmPreset = readFileSync(resolve(root, 'packages/bundle/presets/swarm.patch.yml'), 'utf8')
+    assert(
+      swarmPreset.includes('id: swarm') && swarmPreset.includes("name: '集群模式'"),
+      'swarm preset（集群模式）声明存在',
     )
     continue
   }

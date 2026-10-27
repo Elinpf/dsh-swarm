@@ -16,6 +16,11 @@
 - id: tool-subagent-fork
   disabled: true
 
+# —— dsh-swarm：默认选中「集群模式」preset（覆盖 agent-preset-registry 的 `default`；该行由 dsh-web-app 提供）——
+- id: agent-preset-registry
+  config:
+    default: swarm
+
 - insert:
     # —— dsh-swarm：端口 + 协作内核补全（原生团队域由 agent-team-profile 提供，不在此重复）——
     - id: team-core
