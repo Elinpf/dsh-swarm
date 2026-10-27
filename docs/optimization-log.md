@@ -76,7 +76,7 @@ $ bash scripts/bench/run.sh --no-model --scenario S2 --repeat 7 --broadcast-fano
 - **诚实边界**：本改动消除的是**结构性投递/唤醒放大**；「空转成员是否真省 LLM 轮」在 P13 §4 记为**未证实**（headless 单根轮截断），本轮同样**不据此下强结论**——需长驻运行才能确证。e2eMs 差异在噪声内，不作为收益。
 
 ### 2.5 复测所需的极小 bench 补丁（可复现说明）
-`scripts/bench/` 当前是**他人在研的未跟踪目录**（P11/P13 harness），为避免把别人的 WIP 裹进本次提交，本 A/B 开关未随本提交入库。复现只需对该目录做如下**追加式**改动（其余不变）：
+**（P16-repo-hygiene 更新）** 当时 `scripts/bench/` 是**他人在研的未跟踪目录**（P11/P13 harness），为避免把别人的 WIP 裹进 P14 提交，本 A/B 开关未随 P14 入库。**现 bench 作者已收工，整个 harness（含 `--broadcast-fanout`）已随 P16 正式入库**（见 `scripts/bench/bench-run.mjs` / `lib/stub-backend.mjs`），§2.3 的两条命令**可直接复现**，无需再打补丁。以下保留原始补丁说明仅供追溯：
 
 ```diff
 # scripts/bench/bench-run.mjs
@@ -88,8 +88,7 @@ $ bash scripts/bench/run.sh --no-model --scenario S2 --repeat 7 --broadcast-fano
 +            fanout: variant.broadcastFanout,          // broadcast op → teamBus.broadcast
 ```
 
-打上补丁后按 §2.3 两条命令即可复现上表（桩模式，零模型成本）。
-> 注：入库版本（`packages/team-bus` / `packages/tool-swarm`）的**单元级 A/B** 已可复现同一结论——`team-bus` 单测断言：默认 `dm` 投递=2、`record-only` 投递=0、`history` 可拉取。
+> 注：入库版本（`packages/team-bus` / `packages/tool-swarm`）的**单元级 A/B** 已可复现同一结论——`team-bus` 单测断言：默认 `dm` 投递=2、`record-only` 投递=0、`history` 可拉取。`--broadcast-fanout dm|record-only` 的口径与 `team-bus` 的 `fanout:'dm'|'record-only'` 一一对应（开关只透传该参数）。
 
 ---
 
