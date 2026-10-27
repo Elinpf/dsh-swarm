@@ -232,7 +232,7 @@ async function main() {
     process.exit(ok ? 0 : 1)
   }
   if (args.list) {
-    console.log('arms: broadcast, n_dm')
+    console.log('arms: broadcast, n_dm, broadcast_record   (both = broadcast+n_dm)')
     return
   }
 

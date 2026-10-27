@@ -53,9 +53,13 @@ bash scripts/bench/exp-idle-wakeup.sh --arm both --members alice,bob,carol \
 **长驻观测后端（`exp-idle-wakeup`，P17 新增）**：`scripts/bench/exp-idle-wakeup.{sh,mjs}` + `lib/longres.mjs`。
 它专治「`dsh headless` 在 root 轮结束即退出 → teammate 可能在广播后被唤醒但来不及跑下一轮」的**窗口截断**：
 让 lead 在广播/DM 后**反复 `wait_agent` 至静默**，再按成员归属读 durable 会话，逐成员给出 `turns / tokens / relayInbound(是否收到 team 转发消息) / 额外轮`。
+
 - **口径**：teammate 初始轮 = spawn 初始 prompt 的 `turn=1`；**唤醒后额外轮 = `turns-1`**，并与 `relayInboundCount>0`（durable 里 `user/message.source.kind==='agent-message'`）交叉核对。
 - **注意**：`wait_agent` 在**无活跃 peer** 时**立即**返回 `{"timedOut":false,"noProgress":{"reason":"no-active-peer"}}`（不等满 timeout）；对「唤醒事件」的观测体现为**返回非 `no-active-peer` 的一次变化**。
-- 结论见 `docs/experiments-idle-wakeup.md`（含一个**高价值反例**：真实 profile 下协作插件栈与原生 `ctx.agentTeams` 未打通）。
+- **三臂**：`--arm broadcast`（默认 `dm` 扇出）/ `n_dm`（N 次 DM 对照）/ `broadcast_record`（`record-only`，仅落库可拉取）。
+- 结论见 `docs/experiments-idle-wakeup.md`。**P22 修复后端接通后的定论（§7）**：真实 profile 下**广播 ≡ N 次 DM**
+  （3/3 成员各 +1 轮，**不省轮**）；`record-only` = **不投递/不唤醒**（0/3）——当前实现**无「唤醒但不投消息」原语**。
+  （P22 前的广播臂「0 唤醒」是 **no-op 时代**产物，已被推翻，见该文顶部更正声明。）
 
 ## 3. 指标口径（每个数字到底怎么算）
 
@@ -132,6 +136,12 @@ taskSetDeps / reviewSubmit / reviewVote / reviewSettle / scan / sleep / flakyDm 
 4. 在 `docs/benchmark.md` 追加基线行与口径说明。
 
 ## 6. 已知局限（哪些指标不能直接跨系统对比）
+
+> **硬规则（P24 起）：stub（`--no-model`）结论一律「不可外推到真实运行」。**
+> stub 用**端口 mock**模拟 `ctx.agentTeams`，只证明「端口在 mock 语义下」的行为，**不等于真实 profile 可达**。
+> 反例（P17/P22）：真实 profile 下 `team-core` 曾**永久 no-op** → `broadcast` 扇出到 0 人；而 stub 一切「正常」。
+> 因此：**任何关于真实运行的可信结论，必须在 model 后端重测**；引用时须**显式标注时序**（**【no-op 时代】** = P22 前，不可引用；【P22 后】= 可信）。
+> 相关：`docs/experiments-stage1.md §9`（P24 重测对照表）、`docs/experiments-idle-wakeup.md §7`。
 
 1. **stub 无 LLM**：`llmTurns`/`tokens` 在 stub 为 `null`。任何「轮次/token」对比必须在 model 后端、且对齐模型与提示词规模。
 2. **model 只投影 root 会话**：`dsh headless --json` 只输出 **lead（root）** 的事件；teammate 各自的 turn/token **不在流内**。

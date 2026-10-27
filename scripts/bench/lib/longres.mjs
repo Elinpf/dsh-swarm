@@ -47,6 +47,10 @@ export function buildPrompt(arm, members) {
     lines.push(
       `${n + 2}) Call broadcast with content='FYI standup moved to 5pm; no action required.' topic='announce'.`,
     )
+  } else if (arm === 'broadcast_record') {
+    lines.push(
+      `${n + 2}) Call broadcast with content='FYI standup moved to 5pm; no action required.' topic='announce' fanout='record-only'.`,
+    )
   } else {
     members.forEach((m, idx) =>
       lines.push(
@@ -54,7 +58,7 @@ export function buildPrompt(arm, members) {
       ),
     )
   }
-  const after = arm === 'broadcast' ? n + 3 : n + 2 + members.length
+  const after = arm === 'n_dm' ? n + 2 + members.length : n + 3
   lines.push(
     `${after}) Now keep the run resident: repeatedly call wait_agent with timeout_ms=20000. Call it at least 4 times, and keep calling it while the returned result shows timedOut=false (i.e. until you observe one timedOut=true). This gives teammates time to finish before you stop.`,
   )

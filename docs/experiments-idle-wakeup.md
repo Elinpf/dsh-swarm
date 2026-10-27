@@ -7,7 +7,20 @@
 
 ---
 
+> ## ⚠️ P24 更正声明（2026-10-27，**阅读本文前必读**）
+>
+> 本文 **§0–§6 的实测数字全部采于 P22 修复之前**。当时 `team-core` 在真实 profile 下**永久 no-op**（构造期一次性取
+> `ctx.agentTeams`；根因见 §3.4），导致 `team-bus.broadcast` **扇出到 0 个成员**。因此：
+> - **§0 命题 1、§2 广播臂（“广播 0 唤醒”）、§3.1 判定，以及 §3.4 的缺陷描述，均为【no-op 时代】产物**；
+> - 其中 **§3.4 的缺陷已被修复**（`69e791c`「真实 profile 下响应式接通 ctx.agentTeams」），
+>   **§0/§2/§3.1 的结论已被推翻**（见 §7 真实 profile 重测）。
+> - 本文**原始数字一律保留、不静默篡改**；凡标 **【no-op 时代】** 的均**不可再引用**。以 **§7** 为准。
+
+---
+
 ## 0. 结论速览（TL;DR）
+
+> 【no-op 时代】本节结论已被 §7 推翻，保留仅作历史记录。
 
 | 命题 | 判定 |
 |---|---|
@@ -235,3 +248,85 @@ P
 机器可读结果：`.runtime/bench/exp-idle-wakeup/result-<arm>.{json,csv}`、`raw-<arm>.jsonl`、`stderr-<arm>.log`、`SUMMARY.md`。
 
 > 诚实边界：本报告给出**明确结论（证伪于当前实现；真因是后端 no-op）**，而非「不可判定」——因为广播的 0 唤醒已由「同运行 `team_summary=0` vs `list_agents=3`」定位到明确原因，可直接复现。
+>
+> ⚠️ 但该结论的**真因**（后端 no-op）是**系统缺陷**，不是设计属性；缺陷已由 P22 修复，故以上 §0/§2/§3.1 结论**已被 §7 推翻**。
+
+---
+
+## 7. P24 重测（真实 profile，P22 修复后）——**本节为当前有效结论**
+
+> 触发：P22（`69e791c`）修复了「真实 profile 下 `team-core` 永久 no-op」。此后 §0/§2 的观测前提消失，**必须重测**。
+> 纪律：**只报告 P24 新采的数据**；凡引用 §0–§6 的数字，显式标注 **【no-op 时代】**。
+
+### 7.1 前置：修复已生效（可复现）
+
+诊断探针（spawn×2 → `team_summary` → `broadcast` → `team_summary` → `list_agents`）**修复前后对比**：
+
+| | 修复前【no-op 时代】 | 修复后（P22） |
+|---|---|---|
+| `team_summary`（走 `team-core`） | `members=0` | **`members=3`** |
+| 原生 `list_agents` | 3 人 | 3 人 |
+
+→ `team-core` 已真正接通 `ctx.agentTeams`。原始输出：`.runtime/bench/probe-summary.json`（前）/ `probe-summary2.json`（后）。
+
+### 7.2 重测：长驻观测，三臂对照
+
+```bash
+bash scripts/bench/exp-idle-wakeup.sh --arm broadcast,n_dm,broadcast_record \
+     --members alice,bob,carol --token-cap 500000 --timeout-ms 600000 \
+     --out .runtime/bench/exp-idle-wakeup-p24
+```
+
+| 臂 | 额外 teammate LLM 轮 | 消费唤醒成员 | 收到 relay | root token | teammate token | 合计 |
+|---|---|---|---|---|---|---|
+| **broadcast**（默认 `dm` 扇出） | **3**（3/3 各 +1） | 3/3 | [2]×3 | 79,991 | 41,473 | **121,464** |
+| **n_dm**（3 次 DM） | **3**（3/3 各 +1） | 3/3 | [2]×3 | 97,818 | 41,535 | **139,353** |
+| **broadcast `record-only`** | **0** | 0/3 | 无 | 88,544 | 20,528 | **109,072** |
+
+原始：`.runtime/bench/exp-idle-wakeup-p24/result-<arm>.{json,csv}`、`raw-<arm>.jsonl`。
+
+### 7.3 结论：**命题 1 终于可判 → 证伪（干净）**
+
+1. **广播 = N 次 DM，在 teammate LLM 轮上完全等价（3 = 3）**。→ 广播**不省** teammate LLM 轮。
+   本场景 N=3，若设计声称「1 人广播省 N−1=2 轮」，实测**省 0 轮**。
+2. **原因（源码级）**：dsh-swarm 的广播 = **1 次落库 + 逐人 DM**（`team-bus.fanout`）；**每个成员都收到「自己的消息」**
+   → 广播中**不存在**「被叫醒但无自己消息」的成员，故该声明**无适用对象**，更谈不上省轮。
+3. **`record-only` 语义重核**：修复后**仍不投递、不唤醒**（0/3、无 relay）。
+   → §3.1 的观察**仍然成立**：**当前实现里不存在「唤醒但不投消息」的原语**；要 0 轮只能 `record-only`，而那连唤醒都没有。
+   （源码：`packages/team-bus/src/index.ts` `fanout==='record-only'` 分支仅 `notifySubscribers`，不逐人 DM。）
+
+### 7.4 更新后的判定（替换 §0）
+
+| 命题 | 【no-op 时代】旧判定 | **P24 重测后（当前有效）** |
+|---|---|---|
+| 1. 广播后未寻址成员是否产生额外 LLM 轮 | 「证伪于当前实现，真因后端 no-op」 | **证伪（干净）：广播≡N DM，每成员各 +1 轮，省 0 轮**；无「唤醒但不投消息」原语 |
+| 2. 省轮量级 | 不适用（0 唤醒） | **不省轮（0）**；要 0 轮须 `record-only`（=不唤醒） |
+| 3. 窗口截断 | 已解决 | **仍成立**（长驻观测有效，P24 复现） |
+
+### 7.5 P24 成本（本轮 / 5M）
+
+| 批次 | 消耗 token | 时序 |
+|---|---|---|
+| 诊断探针（修复后） | 96,472（root 61,583 + teammate 34,889） | P22 后 |
+| 长驻实验 broadcast + n_dm | 260,817 | P22 后 |
+| 长驻实验 broadcast_record | 109,072 | P22 后 |
+| **P24 实测小计** | **≈ 466k** | **≈ 9.3% / 5M** |
+
+> 全程未触发门禁（cap 500k/臂，实际 96k–139k/臂）。
+
+## 8. P24 复现清单
+
+```bash
+cd <项目>/dsh-swarm
+# ① 零成本：采集管道自检
+bash scripts/bench/exp-idle-wakeup.sh --self-test
+# ② 诊断：确认后端已接通（期望 team_summary=members=3）
+bash scripts/bench/exp-idle-wakeup.sh --arm broadcast --members alice,bob --token-cap 200000 --timeout-ms 300000
+# ③ 三臂长驻重测（本报告 §7）
+bash scripts/bench/exp-idle-wakeup.sh --arm broadcast,n_dm,broadcast_record \
+     --members alice,bob,carol --token-cap 500000 --timeout-ms 600000 \
+     --out .runtime/bench/exp-idle-wakeup-p24
+```
+
+> 诚实边界（P24）：结论基于**单次取数**（每臂 1 次，成本约束）；但三臂差异为结构性（3 vs 3 vs 0）且方向与源码一致，稳健。
+> teammate token 仍为 durable `assistant/message.usage` 累加（重试 attempt 未计，轻微低估）。
