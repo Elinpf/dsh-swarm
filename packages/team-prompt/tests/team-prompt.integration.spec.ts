@@ -102,3 +102,20 @@ describe('P54 真实装配：team:leader 进入渲染后的系统提示词', () 
     expect(prompt).toContain('不亲自执行任务')
   })
 })
+
+describe('P62 真实装配：协同质量引导进入渲染后的系统提示词（团队未建时也在）', () => {
+  it('团队未建时，prompt 已含「广播/多播发起 + 收口期追问」引导', async () => {
+    const { names, prompt } = await renderTeamPrompt({
+      locales: 'cn',
+      leaderProgressiveDisclosure: true,
+      sections: [],
+    })
+    // 常驻段在，且真的渲染进了 prompt 文本
+    expect(names).toContain('team:leader')
+    expect(prompt).toContain('multicast(targets=')
+    expect(prompt).toContain('少而重')
+    expect(prompt).toContain('追问')
+    // 对照组：协作约定段（team:dispatch）仍在被延迟状态
+    expect(names).not.toContain('team:dispatch')
+  })
+})

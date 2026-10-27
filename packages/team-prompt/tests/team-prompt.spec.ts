@@ -307,3 +307,59 @@ describe('P57 修 teamBuilt 判定 bug（渐进披露形状错配 → 永久过�
     expect(names).not.toContain('team:dispatch')
   })
 })
+
+describe('P62 协同质量判据（广播/多播发起 + 收口期追问，常驻 team:leader）', () => {
+  it('① 发起协同判据：三类通道 + 影响面判据 + broadcast 少而重 + DSH 无 @', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader).toBeDefined()
+    // 三类通道都点名
+    expect(leader.text).toContain('broadcast')
+    expect(leader.text).toContain('multicast(targets=')
+    expect(leader.text).toContain('send_message')
+    // 影响面判据
+    expect(leader.text).toContain('影响面')
+    // 广播「少而重」+ 唤醒全体非发送者（防把广播变刷屏）
+    expect(leader.text).toContain('少而重')
+    expect(leader.text).toContain('唤醒全体非发送者')
+    // DSH 无 @/mention 工具 → 点名落 targets；@ 仅人类可读
+    expect(leader.text).toContain('没有 `@`')
+    expect(leader.text).toContain('targets')
+  })
+
+  it('④ 收口期追问：向成员 DM 追问、不自己重做、不直接收口、含追问模板', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('收口')
+    expect(leader.text).toContain('追问')
+    expect(leader.text).toContain('不自己重做')
+    expect(leader.text).toContain('请补充')
+  })
+
+  it('新引导在常驻段、团队未建时也渲染（不被渐进披露过滤）', async () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    // 注册处文本（非占位 assembly）含新引导
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('multicast(targets=')
+    expect(leader.text).toContain('追问')
+    // 团队未建时 team:leader 仍在，被延迟的 team:dispatch 不在（对照）
+    const assemble = ctx._handlers['system-prompt/assemble']![0]!
+    const next = async () => assembly()
+    const before = await assemble(assembly(), {}, next)
+    expect(before.sections.some((s: any) => s.name === 'team:leader')).toBe(true)
+    expect(before.sections.some((s: any) => s.name === 'team:dispatch')).toBe(false)
+  })
+
+  it('英文语种下同样含发起判据与追问引导', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, { ...config, locales: 'en' })
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('blast radius')
+    expect(leader.text).toContain('few and heavy')
+    expect(leader.text).toContain('no `@`/mention tool')
+    expect(leader.text).toContain('follow up')
+  })
+})
