@@ -15,6 +15,7 @@
     "verify": "pnpm run build && node scripts/verify-load.mjs",
     "verify:e2e": "pnpm run build && node scripts/verify-e2e.mjs",
     "verify:wiring": "pnpm run build && node scripts/verify-native-wiring.mjs",
+    "verify:durability": "pnpm run build && node scripts/verify-durability.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

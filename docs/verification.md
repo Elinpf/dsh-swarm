@@ -781,3 +781,44 @@ $ bash scripts/e2e-profile.sh --no-model
 - `team-distributed` 的 out-of-process 成员执行复用 `ctx.subagents` provider 的接线**未实测**（spec §9.2）；副本持久化用 `ctx.storage` forms **未接**（spec §9.3），当前 journal 为内存 seam（测试注入同一实例模拟崩溃恢复）。
 - `team-human` 的宿主桥接面为 seam（`ctx.teamHumanBridge`），**Web UI 未写**（spec §2.2 明确不做）；真实前端在线/离线补投未联调。
 - `team-skills` scope 接线、`team-memory` storage forms 两项阶段 2 遗留**未在本轮收尾**（超出新增包范围）。
+
+---
+
+# P23-state-durability：内存态持久化审计（一类缺陷）
+
+> 执行人：dsh-plugin-dev ｜ 时间：2026-10-27 ｜ 项目 `dsh-swarm`
+> 结论：审计清单完成（`docs/state-durability.md`，逐字段 + 行号 + 分类）；「必须持久」**6 项全部未持久化**（缺陷），已如实登记（本文件 + README「跨重启状态」表）。
+> 修复涉及**跨包 durable 事件契约**（接口层）——按任务约束「改变接口设计先问 Leader」，已 `send_message` 请示机制后再实施。
+
+## A. 缺陷清单（「必须持久」，丢了会导致错误行为）
+
+| # | 包 | 字段（行号） | 丢失后果 |
+|---|---|---|---|
+| 1 | team-core | `reviewing`（`src/index.ts:129`） | `in_review`→`in_progress`：重复派发 / 绕过验证闸 |
+| 2 | team-review | `states`（`src/index.ts:96`） | 恢复后 `in_review` 任务无法 settle（`TEAMREVIEW_NOT_SUBMITTED`）；票清零 |
+| 3 | team-bus | `durable`+`seq`（`src/index.ts:108-109`） | `history()` 拉不到历史；`record-only` 扇出消息彻底丢 |
+| 4 | team-skills | `docs`+`grants`（`src/index.ts:67-68`） | 文档缺失=unrestricted（可能越权可见）；授权失效 |
+| 5 | team-memory | `shared`+`private`+`seq`（`src/index.ts:40-42`） | 团队/成员记忆丢失 |
+| 6 | team-completion | `unread`（`src/index.ts:53`） | 重启归零 → 可能提前判团队完成 |
+
+> 「天然短暂/可接受」项（TTL 锁、`review_stall` 计时、上升沿 `emitted`、stale 计数、后端 seam 等）逐条理由见 `docs/state-durability.md §1`。
+
+## B. 可执行诊断（先红 —— 证明缺陷真实存在）
+
+```console
+$ pnpm verify:durability         # 非发布门禁；模拟「置态 → 重建服务」
+[durability] team-core in_review: before-restart=in_review after-restart=in_progress
+❌ in_review 重启丢失（退化为 in_progress）——内存态未持久化，见 docs/state-durability.md §2
+```
+
+即 **P18 登记的 `in_review` 实例已被真实复现**：置入 `in_review` → 重建服务 → 退化为 `in_progress`。修复后本诊断应变绿（`after-restart=in_review`）。
+
+## C. 能力边界表（哪些状态跨重启保持）
+
+见 `README.md`「跨重启状态（持久化边界，P23 审计）」段：缺陷 6 项 =「不保持」；TTL 锁等 =「不保持（有意/可接受）」；`team-core` 后端挂接 =「响应式自动重挂」。
+
+## D. 上报（接口决策）/ 未决
+
+统一机制建议（复用既有约定、不另造存储层）：对齐 `team-distributed.recover()` —— 每个「必须持久」变更 `emit('swarm/<domain>/*')`（durable）+ 包内 `fold` 折叠回内存态。此方案**新增跨包事件契约**（事件名/schema），属接口层变更，**已上报 Leader 确认后实施**；若确认，将按「每项 + 一条未修复时会失败、修复后转绿的恢复测试」落地。
+
+> 说明：本条与 P18 §E 的旧判断衔接——`review_stall`「重启后再升一次」的结论基于**未持久化**现状；本项一旦持久化，该行为将随之改变，届时同步更新 P18 §E 与 README 能力边界描述。

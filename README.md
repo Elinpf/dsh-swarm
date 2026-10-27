@@ -151,6 +151,25 @@ corepack pnpm format:check
 
 **任务状态机与 `in_review` 能力边界**：`ctx.teamCore` 的任务状态在原生 `pending|in_progress|completed|deleted` 之上**叠加显式评审态 `in_review`**（对齐 JiuwenSwarm 的 `in_progress → in_review → completed`）：提交评审 → 进入；裁决 `pass` → 完成；`fail` → 返工回 `in_progress`；非法转换（如 `pending → in_review`）被拒（`TEAMCORE_INVALID_TRANSITION`）。`in_review` 期间**团队完成判定不判完成**、**调度器不重复派发**，并对其做 `review_stall` 超时升级。**已知限制（如实登记）**：`in_review` 是 `team-core` 的**进程内叠加态、未持久化**——进程重启 / 跨进程 / 崩溃恢复后，卡在评审的任务会**退化为 `in_progress`**，后果为：可能被**重复派发**、可能**绕过验证闸**直接被完成、`review_stall` 计时归零后会**再升级一次**；`reviewSince`/`reviewEscalated` 同类。持久化修复见 P23（内存态审计）。细节见 `docs/verification.md` P18 节。
 
+### 跨重启状态（持久化边界，P23 审计）
+
+> 全仓**无任何包声明 storage/durable 依赖**；约定是「durable 事件即真相」，但阶段 0/1/2 多数包只 emit 不 fold → 重启即丢。完整清单/行号见 `docs/state-durability.md`。
+
+| 状态                                       | 跨重启                 | 说明                                                             |
+| ------------------------------------------ | ---------------------- | ---------------------------------------------------------------- |
+| `team-core.in_review` 叠加态               | **不保持（缺陷）**     | 重启退化为 `in_progress`（重复派发 / 绕过验证闸）                |
+| `team-review` 评审轮次/票/verdict          | **不保持（缺陷）**     | 重启后 `in_review` 任务无法 settle（`TEAMREVIEW_NOT_SUBMITTED`） |
+| `team-bus` 广播记录（`history`）           | **不保持（缺陷）**     | 重启后拉不到历史；`record-only` 消息彻底丢                       |
+| `team-skills` 可见性声明 / 授权            | **不保持（缺陷）**     | 重启后文档缺失=unrestricted（可能越权可见）/ 授权失效            |
+| `team-memory` 共享 & 成员私有记忆          | **不保持（缺陷）**     | 重启即丢                                                         |
+| `team-completion.unread` 台账              | **不保持（缺陷）**     | 重启归零，可能提前判团队完成                                     |
+| `team-workspace` 写域锁（带 TTL）          | 不保持（**有意正确**） | TTL 锁重启即失效避免死锁                                         |
+| `team-scheduler` `review_stall`/stale 计时 | 不保持（可接受）       | 至多重升/早催一次，非正确性                                      |
+| `team-completion.emitted` 上升沿           | 不保持（可接受）       | 至多重复发一次 `swarm/team/completed`                            |
+| `team-core` 后端挂接（seam）               | 自动重挂               | 响应式 `ctx.inject`（P22），非持久化问题                         |
+
+诊断：`pnpm verify:durability`（**非发布门禁**）模拟「置态 → 重建服务」；当前对上述「缺陷」项为红。
+
 **端口隔离（ADR-0001，方案 C）**：6 个能力包**只从 `@elinpf/dsh-swarm-team-core-contract` 取类型**，不得 import `@elinpf/dsh-swarm-team-core` 的内部实现——契约与实现物理分离，约束在编译期成立。`team-core` 是**唯一**接触实验性 `ctx.agentTeams` 的包，且用本地结构化的 seam 接口描述它（不 import 实验包类型）。
 
 ### 后端选择（`team-core`）
