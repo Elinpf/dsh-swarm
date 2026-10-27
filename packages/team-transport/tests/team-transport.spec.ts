@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import TeamTransportService, {
@@ -325,6 +325,67 @@ describe('@elinpf/dsh-swarm-team-transport', () => {
     b.dispose()
     expect(existsSync(join(dir, 'A.json'))).toBe(false)
     expect(existsSync(join(dir, 'B.json'))).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('local-listen 租约 GC：陈旧端点（死进程/超租约）在启动时被清理', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-gc-'))
+    writeFileSync(
+      join(dir, 'dead.json'),
+      JSON.stringify({
+        endpoint: 'dead',
+        path: join(dir, 'dead.sock'),
+        pid: 999999,
+        heartbeatAt: 0,
+      }),
+    )
+    writeFileSync(join(dir, 'dead.sock'), '')
+    const { ctx } = makeCtx()
+    const a = new TeamTransportService(
+      ctx,
+      cfg({ backend: 'local-listen', endpoint: 'A', registryDir: dir, leaseTtlMs: 1000 }),
+    )
+    await sleep(100)
+    expect(existsSync(join(dir, 'dead.json'))).toBe(false)
+    expect(existsSync(join(dir, 'dead.sock'))).toBe(false)
+    a.dispose()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('local-listen 握手令牌：未授权拨入被拒，正确令牌可投递', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-auth-'))
+    const { ctx: cb } = makeCtx()
+    const b = new TeamTransportService(
+      cb,
+      cfg({ backend: 'local-listen', endpoint: 'B', registryDir: dir, listenToken: 'secret' }),
+    )
+    await sleep(100)
+    const got: number[] = []
+    b.onFrame((_p, f) => got.push((f.payload as any).n))
+
+    const { ctx: cbad } = makeCtx()
+    const bad = new TeamTransportService(
+      cbad,
+      cfg({ backend: 'local-listen', endpoint: 'A', registryDir: dir, listenToken: 'wrong' }),
+    )
+    await sleep(100) // 等自身监听就绪（factory 装配）
+    await bad.send('B', frame('event', 1))
+    await sleep(200)
+    expect(got).toEqual([]) // 未授权被拒（不静默接受）
+
+    const { ctx: cgood } = makeCtx()
+    const good = new TeamTransportService(
+      cgood,
+      cfg({ backend: 'local-listen', endpoint: 'A2', registryDir: dir, listenToken: 'secret' }),
+    )
+    await sleep(100)
+    await good.send('B', frame('event', 2))
+    await sleep(200)
+    expect(got).toEqual([2]) // 正确令牌可投递
+
+    bad.dispose()
+    good.dispose()
+    b.dispose()
     rmSync(dir, { recursive: true, force: true })
   })
 

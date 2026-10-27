@@ -19,7 +19,7 @@
 
 import { fileURLToPath } from 'node:url'
 import { createServer, connect as netConnect, type Server, type Socket } from 'node:net'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
@@ -437,13 +437,53 @@ interface RegistryEntry {
   endpoint: string
   path: string
   pid: number
+  /** 心跳时间（ms epoch）；租约过期判据（P32 遗留修复）。 */
+  heartbeatAt: number
 }
 
 function sanitizeEndpoint(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
-/** 一条 socket 链路（JSONL 帧 + 首行 hello 握手定对端名）。 */
+/** 进程是否存活（`kill(pid,0)`）。 */
+function isPidAlive(pid: number): boolean {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 清理**陈旧端点**（P32 遗留）：持锁进程已死或心跳超租约 → 删除其 `.json`/`.sock`，
+ * 避免其它进程「发现」到僵尸端点后反复拨号失败。返回清理条数。
+ */
+function gcStaleEndpoints(dir: string, leaseTtlMs: number): number {
+  if (!existsSync(dir)) return 0
+  let removed = 0
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith('.json')) continue
+    const file = join(dir, name)
+    let entry: RegistryEntry | undefined
+    try {
+      entry = JSON.parse(readFileSync(file, 'utf8')) as RegistryEntry
+    } catch {
+      entry = undefined
+    }
+    const stale =
+      !entry || !isPidAlive(entry.pid) || Date.now() - (entry.heartbeatAt ?? 0) > leaseTtlMs
+    if (stale) {
+      rmSync(file, { force: true })
+      if (entry?.path) rmSync(entry.path, { force: true })
+      removed += 1
+    }
+  }
+  return removed
+}
+
+/** 一条 socket 链路（JSONL 帧 + 首行 hello 握手定对端名 + 可选令牌）。 */
 class SocketLink implements RawLink {
   private msgCb: ((m: WireFrame) => void) | undefined
   private closeCb: (() => void) | undefined
@@ -451,6 +491,8 @@ class SocketLink implements RawLink {
   private pending: WireFrame[] = []
   private buffer = ''
   private helloSeen = false
+  /** 对端 hello 携带的令牌（鉴权用）。 */
+  helloToken: string | undefined
   remoteId: string
 
   constructor(remoteId: string, private readonly sock: Socket) {
@@ -466,14 +508,14 @@ class SocketLink implements RawLink {
   onReady(cb: (l: SocketLink) => void): void {
     this.readyCb = cb
   }
-  /** 客户端连接后主动发 hello；服务端在收到 hello 后才算就绪。 */
-  sendHello(endpoint: string): void {
+  /** 客户端连接后主动发 hello（可带令牌）；服务端在收到 hello 后才算就绪。 */
+  sendHello(endpoint: string, token?: string): void {
     this.helloSeen = true
-    this.sock.write(`${JSON.stringify({ t: 'hello', endpoint })}\n`)
+    this.sock.write(`${JSON.stringify({ t: 'hello', endpoint, token })}\n`)
   }
 
   private onLine(line: string): void {
-    let m: WireFrame & { endpoint?: string }
+    let m: WireFrame & { endpoint?: string; token?: string }
     try {
       m = JSON.parse(line)
     } catch {
@@ -482,6 +524,7 @@ class SocketLink implements RawLink {
     if (!this.helloSeen) {
       if (m.t === ('hello' as string)) {
         this.helloSeen = true
+        this.helloToken = m.token
         if (!this.remoteId && m.endpoint) this.remoteId = m.endpoint
         this.readyCb?.(this)
       }
@@ -518,13 +561,20 @@ class SocketLink implements RawLink {
   }
 }
 
-/** 本机监听服务端：在 `<registryDir>/<endpoint>.sock` 上 accept 入站连接。 */
+/**
+ * 本机监听服务端：在 `<registryDir>/<endpoint>.sock` 上 accept 入站连接。
+ * - **租约**：周期性刷新 registry 的 `heartbeatAt`（心跳），供其它进程判断存活。
+ * - **鉴权**：配置 `token` 后，hello 令牌不匹配 → **拒绝**（销毁连接，不 attach）。
+ */
 class LocalListenServer {
   private server: Server | undefined
+  private heartbeat: ReturnType<typeof setInterval> | undefined
   constructor(
     private readonly dir: string,
     private readonly endpoint: string,
     private readonly onConnection: (link: RawLink) => void,
+    private readonly token?: string,
+    private readonly heartbeatMs = 10000,
   ) {}
 
   async start(): Promise<void> {
@@ -536,16 +586,47 @@ class LocalListenServer {
       this.server!.once('error', reject)
       this.server!.listen(sockPath, () => resolve())
     })
-    const entry: RegistryEntry = { endpoint: this.endpoint, path: sockPath, pid: process.pid }
-    writeFileSync(join(this.dir, `${sanitizeEndpoint(this.endpoint)}.json`), JSON.stringify(entry))
+    this.writeEntry(sockPath)
+    if (this.heartbeatMs > 0) {
+      this.heartbeat = setInterval(() => this.writeEntry(sockPath), this.heartbeatMs)
+      ;(this.heartbeat as { unref?: () => void }).unref?.()
+    }
+  }
+
+  private writeEntry(sockPath: string): void {
+    const entry: RegistryEntry = {
+      endpoint: this.endpoint,
+      path: sockPath,
+      pid: process.pid,
+      heartbeatAt: Date.now(),
+    }
+    try {
+      writeFileSync(
+        join(this.dir, `${sanitizeEndpoint(this.endpoint)}.json`),
+        JSON.stringify(entry),
+      )
+    } catch {
+      /* ignore */
+    }
   }
 
   private handle(sock: Socket): void {
     const link = new SocketLink('', sock)
-    link.onReady((l) => this.onConnection(l))
+    link.onReady((l) => {
+      if (this.token && l.helloToken !== this.token) {
+        // 鉴权失败：拒绝并断开，不 attach 到运行时（防止未授权拨入）
+        l.close()
+        return
+      }
+      this.onConnection(l)
+    })
   }
 
   dispose(): void {
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat)
+      this.heartbeat = undefined
+    }
     try {
       this.server?.close()
     } catch {
@@ -558,9 +639,18 @@ class LocalListenServer {
   }
 }
 
-/** 拨号工厂：从 registry **发现**端点地址并连接（端点发现）。 */
+/**
+ * 拨号工厂：从 registry **发现**端点地址并连接。
+ * - **过期判据**：心跳超 `leaseTtlMs` 或持有进程已死 → 清理并返回 undefined（不连僵尸）。
+ * - **鉴权**：hello 携带 `token`（与服务端 `listenToken` 一致才被接受）。
+ */
 class LocalListenDialFactory implements LinkFactory {
-  constructor(private readonly dir: string, private readonly self: string) {}
+  constructor(
+    private readonly dir: string,
+    private readonly self: string,
+    private readonly token?: string,
+    private readonly leaseTtlMs = 30000,
+  ) {}
 
   async create(peerId: string): Promise<RawLink | undefined> {
     const file = join(this.dir, `${sanitizeEndpoint(peerId)}.json`)
@@ -571,13 +661,20 @@ class LocalListenDialFactory implements LinkFactory {
     } catch {
       return undefined
     }
+    // 陈旧端点：进程已死或心跳超租约 → 清理 + 不拨号
+    const stale = !isPidAlive(entry.pid) || Date.now() - (entry.heartbeatAt ?? 0) > this.leaseTtlMs
+    if (stale) {
+      rmSync(file, { force: true })
+      if (entry.path) rmSync(entry.path, { force: true })
+      return undefined
+    }
     return await new Promise<RawLink | undefined>((resolve) => {
       const sock = netConnect(entry.path)
       const link = new SocketLink(peerId, sock)
       const done = (v: RawLink | undefined) => resolve(v)
       sock.once('error', () => done(undefined))
       sock.once('connect', () => {
-        link.sendHello(this.self)
+        link.sendHello(this.self, this.token)
         done(link)
       })
     })
@@ -612,6 +709,12 @@ export interface Config {
   childCwd?: string
   /** local-listen 后端的端点注册/发现目录（默认 `<cwd>/.runtime/xproc-registry`）。 */
   registryDir?: string
+  /** local-listen 端点**租约**：心跳超此值视为陈旧（死端点，GC/拒绝拨号）。 */
+  leaseTtlMs?: number
+  /** local-listen 心跳间隔（ms；≤0 关闭）。 */
+  heartbeatMs?: number
+  /** local-listen **握手令牌**：两端一致才接受拨入（缺省则不校验，仅靠 socket 文件权限）。 */
+  listenToken?: string
 }
 
 interface OutboundFrame {
@@ -659,6 +762,9 @@ export class TeamTransportService extends Service implements TeamTransport {
     childRelayPath: z.string(),
     childCwd: z.string(),
     registryDir: z.string(),
+    leaseTtlMs: z.number().step(1).min(1),
+    heartbeatMs: z.number().step(1),
+    listenToken: z.string(),
   })
 
   private config: Config
@@ -713,11 +819,23 @@ export class TeamTransportService extends Service implements TeamTransport {
     if (requested === 'local-listen') {
       // 服务端监听 + 端点注册/发现（P32）
       const dir = this.config.registryDir ?? join(process.cwd(), '.runtime', 'xproc-registry')
-      this.listenServer = new LocalListenServer(dir, this.selfEndpoint, (link) =>
-        this.acceptInbound(link),
+      const leaseTtlMs = this.config.leaseTtlMs ?? 30000
+      // 启动即清理陈旧端点（死进程/超租约），避免发现僵尸
+      gcStaleEndpoints(dir, leaseTtlMs)
+      this.listenServer = new LocalListenServer(
+        dir,
+        this.selfEndpoint,
+        (link) => this.acceptInbound(link),
+        this.config.listenToken,
+        this.config.heartbeatMs ?? 10000,
       )
       await this.listenServer.start()
-      factory = new LocalListenDialFactory(dir, this.selfEndpoint)
+      factory = new LocalListenDialFactory(
+        dir,
+        this.selfEndpoint,
+        this.config.listenToken,
+        leaseTtlMs,
+      )
     } else {
       factory = this.makeFactory(requested)
     }

@@ -20,6 +20,7 @@ const TR_LIB = fileURLToPath(new URL('../../packages/team-transport/lib/index.js
 const { default: TeamTransportService } = await import(TR_LIB)
 
 const [endpoint, registryDir, mode, sink, target] = process.argv.slice(2)
+const listenToken = process.env.LISTEN_TOKEN || undefined
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /** 最小假 ctx（Service 基类只需 reflect/effect/get/logger）。 */
@@ -45,6 +46,7 @@ const svc = new TeamTransportService(makeCtx(), {
   reconnectIntervalMs: 200,
   ackTimeoutMs: 500,
   autoReconnect: true,
+  listenToken,
 })
 
 if (mode === 'receiver') {

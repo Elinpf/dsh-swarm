@@ -12,7 +12,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import { fileURLToPath } from 'node:url'
 import { spawn as nodeSpawn, execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -376,6 +376,61 @@ console.log('\n== E. local-listen：两个独立启动的进程自动互连并�
     existsSync(doneFile) && readFileSync(doneFile, 'utf8').includes('"found":true'),
     'A 经 registry 发现到 B（found=true，无预置守护进程）',
   )
+  recv.kill('SIGKILL')
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
+}
+
+console.log('\n== F. local-listen 租约 GC + 握手鉴权（P32 遗留收紧）==')
+
+{
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-auth-'))
+  const sink = join(dir, 'sink.jsonl')
+  const PEER = join(root, 'scripts/xproc/listen-peer.mjs')
+
+  // 预置**陈旧端点**（死进程 + 旧心跳）
+  writeFileSync(
+    join(dir, 'dead.json'),
+    JSON.stringify({ endpoint: 'dead', path: join(dir, 'dead.sock'), pid: 999999, heartbeatAt: 0 }),
+  )
+  writeFileSync(join(dir, 'dead.sock'), '')
+
+  // 进程 B 带令牌启动（同时触发启动期 GC）
+  const recv = nodeSpawn(process.execPath, [PEER, 'B', dir, 'receiver', sink], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, LISTEN_TOKEN: 'secret' },
+  })
+  for (let i = 0; i < 120 && !existsSync(join(dir, 'B.json')); i++) await sleep(50)
+  assert(!existsSync(join(dir, 'dead.json')), '陈旧端点（死进程/超租约）被 GC 清理')
+
+  // 未授权拨入（错误令牌）→ 被拒，不投递
+  const bad = nodeSpawn(process.execPath, [PEER, 'A', dir, 'sender', sink, 'B'], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, LISTEN_TOKEN: 'wrong' },
+  })
+  await new Promise((res) => bad.on('close', res))
+  await sleep(300)
+  const after1 = existsSync(sink) ? readFileSync(sink, 'utf8').trim() : ''
+  assert(after1.length === 0, '未授权拨入被拒绝（无投递，不静默接受）')
+
+  // 正确令牌 → 投递
+  const good = nodeSpawn(process.execPath, [PEER, 'A2', dir, 'sender', sink, 'B'], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, LISTEN_TOKEN: 'secret' },
+  })
+  await new Promise((res) => good.on('close', res))
+  await sleep(300)
+  const frames = existsSync(sink)
+    ? readFileSync(sink, 'utf8').trim().split('\n').filter(Boolean)
+    : []
+  assert(
+    frames.some((l) => l.includes('dm-1')),
+    '正确令牌可投递（鉴权通过）',
+  )
+
   recv.kill('SIGKILL')
   try {
     rmSync(dir, { recursive: true, force: true })
