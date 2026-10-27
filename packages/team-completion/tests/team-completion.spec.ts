@@ -98,4 +98,17 @@ describe('@elinpf/dsh-swarm-team-completion', () => {
     handlers['session/event']![0]!({}, { type: 'team/message/queued' })
     expect((await c.evaluate(lead)).completed).toBe(true)
   })
+
+  it('有 in_review 任务 → 不完成（评审态非终态，防提前判完成；通过后才完成）', async () => {
+    const inReviewTask = { ...doneTask, status: 'in_review' }
+    const { ctx, emitted } = makeCtx({ tasks: [inReviewTask], members: [idleMember] })
+    const c = new TeamCompletionService(ctx, { blockOnUnread: true })
+    expect((await c.evaluate(lead)).completed).toBe(false)
+    expect(emitted).toEqual([])
+
+    // 评审通过（in_review → completed）后才算完成
+    ;(ctx.teamCore as { listTasks: () => unknown }).listTasks = () => [{ ...doneTask }]
+    expect((await c.evaluate(lead)).completed).toBe(true)
+    expect(emitted).toEqual(['swarm/team/completed'])
+  })
 })

@@ -46,7 +46,12 @@ export interface TaskView {
   revision: number
   subject: string
   description: string
-  status: 'pending' | 'in_progress' | 'completed' | 'deleted'
+  /**
+   * `in_review` 是本端口在原生 `pending|in_progress|completed|deleted` 之上的**叠加态**：
+   * 原生没有评审态，故由 `team-core` 侧记录（任务在原生仍是 `in_progress`），
+   * 经本端口的读/写一律呈现为 `in_review`（对齐 JiuwenSwarm 的显式评审态）。
+   */
+  status: 'pending' | 'in_progress' | 'in_review' | 'completed' | 'deleted'
   blockedBy: string[]
   ownerName?: string
   ready: boolean
@@ -112,6 +117,10 @@ export interface TeamCore {
         | 'reopen'
         | 'assign'
         | 'delete'
+        /** 进入评审：`in_progress → in_review`（仅 in_progress 合法，其余被拒）。 */
+        | 'submit_review'
+        /** 评审返工：`in_review → in_progress`（仅 in_review 合法，其余被拒）。 */
+        | 'reject_review'
       subject?: string
       description?: string
       blockedBy?: string[]

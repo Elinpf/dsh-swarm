@@ -158,6 +158,15 @@ assert(claimed.status === 'in_progress', '任务认领 → in_progress')
 // ── 4. 评审放行（一票否决池，全 pass → completed）───────────────────────────
 await rootCtx.teamReview.submitForReview(lead, task.id)
 assert(rootCtx.teamReview.inspect(task.id)?.round === 1, '进入评审 round=1')
+assert(
+  rootCtx.teamCore.getTask(lead, task.id).status === 'in_review',
+  '提交评审 → 任务 in_review（显式评审态）',
+)
+// 评审态非终态：in_review 期间团队完成判定不得误判为完成
+assert(
+  (await rootCtx.teamCompletion.evaluate(lead)).completed === false,
+  'in_review 期间不判团队完成',
+)
 await rootCtx.teamReview.vote({ id: 'verifier', name: 'verifier' }, task.id, {
   kind: 'binary',
   decision: 'pass',

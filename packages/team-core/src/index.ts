@@ -119,6 +119,12 @@ export class TeamCoreService extends Service implements TeamCore {
   private readonly config: Config
   private readonly seam: AgentTeamsSeam | undefined
   private readonly _backend: 'native' | 'owned'
+  /**
+   * 处于评审态（`in_review`）的任务集。原生 `ctx.agentTeams` 只有
+   * `pending|in_progress|completed|deleted`，**没有评审态**，故评审态由本端口自行维持，
+   * 并在所有读/写出口叠加（{@link overlay}）。任务在原生仍为 `in_progress`。
+   */
+  private readonly reviewing = new Set<string>()
 
   constructor(
     ctx: Context,
@@ -154,6 +160,7 @@ export class TeamCoreService extends Service implements TeamCore {
     ctx.effect(
       () => () => {
         // 无自有资源需要释放；保留生命周期钩子以便未来 owned 后端挂恢复折叠。
+        this.reviewing.clear()
       },
       'teamCore.lifecycle()',
     )
@@ -249,16 +256,16 @@ export class TeamCoreService extends Service implements TeamCore {
     caller: Agent,
     req: { subject: string; description: string; blockedBy?: string[]; writeScopes?: string[] },
   ): Promise<TaskView> {
-    return this.require().createTask(caller, req)
+    return this.overlay(await this.require().createTask(caller, req))
   }
 
   getTask(caller: Agent, id: string): TaskView {
-    return this.require().getTask(caller, id)
+    return this.overlay(this.require().getTask(caller, id))
   }
 
   listTasks(caller: Agent): TaskView[] {
     if (!this.seam) return []
-    return this.seam.listTasks(caller)
+    return this.seam.listTasks(caller).map((t) => this.overlay(t))
   }
 
   async updateTask(
@@ -275,15 +282,57 @@ export class TeamCoreService extends Service implements TeamCore {
         | 'reopen'
         | 'assign'
         | 'delete'
+        | 'submit_review'
+        | 'reject_review'
       subject?: string
       description?: string
       blockedBy?: string[]
       owner?: string
     },
   ): Promise<TaskView> {
+    // 评审叠加态的两个转移在端口内处理（原生既无该动作、也无该态），其余委托原生。
+    if (req.action === 'submit_review') {
+      const cur = this.require().getTask(caller, req.taskId)
+      if (cur.revision !== req.expectedRevision) {
+        throw new TeamCoreError(
+          'TEAMCORE_REVISION_MISMATCH',
+          `task ${req.taskId} revision ${cur.revision} != expected ${req.expectedRevision}`,
+        )
+      }
+      // 合法入场只有 in_progress；pending/completed/deleted/in_review 一律拒绝（如 pending→in_review 非法）。
+      if (cur.status !== 'in_progress') {
+        throw new TeamCoreError(
+          'TEAMCORE_INVALID_TRANSITION',
+          `only an in-progress task can enter review (task ${req.taskId} is ${cur.status})`,
+        )
+      }
+      this.reviewing.add(req.taskId)
+      return this.overlay(cur)
+    }
+    if (req.action === 'reject_review') {
+      if (!this.reviewing.has(req.taskId)) {
+        throw new TeamCoreError(
+          'TEAMCORE_INVALID_TRANSITION',
+          `task ${req.taskId} is not in_review`,
+        )
+      }
+      this.reviewing.delete(req.taskId)
+      return this.overlay(this.require().getTask(caller, req.taskId))
+    }
+    // 评审中：只允许「离场」动作（complete=通过、reopen=返工、delete=撤销）；
+    // 其余动作（claim/release/edit/set_dependencies/assign）在评审期间被拒，避免评审对象被偷改。
+    if (this.reviewing.has(req.taskId)) {
+      if (req.action !== 'complete' && req.action !== 'reopen' && req.action !== 'delete') {
+        throw new TeamCoreError(
+          'TEAMCORE_INVALID_TRANSITION',
+          `action '${req.action}' not allowed while task ${req.taskId} is in_review`,
+        )
+      }
+      this.reviewing.delete(req.taskId)
+    }
     // 端口动作名 'assign' → 原生 'reassign'
     const action = req.action === 'assign' ? 'reassign' : req.action
-    return this.require().updateTask(caller, {
+    const updated = await this.require().updateTask(caller, {
       taskId: req.taskId,
       expectedRevision: req.expectedRevision,
       action,
@@ -292,6 +341,7 @@ export class TeamCoreService extends Service implements TeamCore {
       blockedBy: req.blockedBy,
       owner: req.owner,
     })
+    return this.overlay(updated)
   }
 
   async waitForChange(
@@ -308,6 +358,11 @@ export class TeamCoreService extends Service implements TeamCore {
   ): Promise<{ previousStatus: MemberView['status'] }> {
     const res = this.require().interrupt(caller, targetName)
     return { previousStatus: res.previousStatus === 'running' ? 'running' : 'inactive' }
+  }
+
+  /** 把评审叠加态套到原生任务视图上：在评审集内 → `in_review`，否则原样。 */
+  private overlay(task: TaskView): TaskView {
+    return this.reviewing.has(task.id) ? { ...task, status: 'in_review' } : task
   }
 
   /** 读侧在 no-op 模式下返回空；写侧抛 `TEAMCORE_UNAVAILABLE`，绝不阻断单 agent。 */

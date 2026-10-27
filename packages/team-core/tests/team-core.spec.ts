@@ -141,3 +141,142 @@ describe('@elinpf/dsh-swarm-team-core', () => {
     expect(await core.interrupt(agent, 'w')).toEqual({ previousStatus: 'running' })
   })
 })
+
+describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', () => {
+  /** 造一个任务状态可控的 seam mock（原生状态用 string，便于驱动各转换）。 */
+  function makeReviewCtx() {
+    const state = {
+      id: 't1',
+      revision: 0,
+      subject: 's',
+      description: '',
+      status: 'in_progress' as string,
+      blockedBy: [] as string[],
+      ready: true,
+      ownerName: 'w' as string | undefined,
+    }
+    const calls: any[] = []
+    const seam = {
+      membership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      tryMembership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      listMembers: () => [],
+      spawnTeammate: async () => ({ member: { id: 'w', name: 'w', role: 'teammate' } }),
+      sendMessage: async () => ({ messageId: 'm1' }),
+      createTask: async () => ({ ...state, status: 'pending' }),
+      getTask: () => ({ ...state }),
+      listTasks: () => [{ ...state }],
+      updateTask: async (_c: unknown, r: any) => {
+        calls.push(r)
+        if (r.action === 'complete') state.status = 'completed'
+        else if (r.action === 'reopen') state.status = 'in_progress'
+        else if (r.action === 'claim') {
+          state.status = 'in_progress'
+          state.ownerName = r.owner
+        } else if (r.action === 'release') state.status = 'pending'
+        return { ...state }
+      },
+      waitForChange: async () => ({ timedOut: false }),
+      interrupt: () => ({ previousStatus: 'running' as const }),
+    }
+    const ctx: any = {
+      get: (n: string) => (n === 'agentTeams' ? seam : undefined),
+      logger: { warn() {}, debug() {} },
+      reflect: { provide() {} },
+      effect: (fn: () => unknown) => fn(),
+    }
+    return { ctx, state, calls }
+  }
+
+  it('in_progress → in_review：读侧叠加为 in_review，原生仍 in_progress', async () => {
+    const { ctx, state } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    const view = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'submit_review',
+    })
+    expect(view.status).toBe('in_review')
+    expect(state.status).toBe('in_progress') // 原生枚举无评审态，不被改写
+    expect(core.getTask(agent, 't1').status).toBe('in_review')
+    expect(core.listTasks(agent)[0].status).toBe('in_review')
+  })
+
+  it('非法转换 pending → in_review 被拒（TEAMCORE_INVALID_TRANSITION）', async () => {
+    const { ctx, state } = makeReviewCtx()
+    state.status = 'pending'
+    const core = new TeamCoreService(ctx, cfg())
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+    expect(core.getTask(agent, 't1').status).toBe('pending') // 未被叠加
+  })
+
+  it('submit_review 的 revision 不符 → TEAMCORE_REVISION_MISMATCH', async () => {
+    const { ctx } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 9, action: 'submit_review' }),
+    ).rejects.toThrow(/TEAMCORE_REVISION_MISMATCH/)
+  })
+
+  it('in_review → completed：complete 离场并清除叠加', async () => {
+    const { ctx, state } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
+    const done = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'complete',
+    })
+    expect(done.status).toBe('completed')
+    expect(state.status).toBe('completed')
+    expect(core.getTask(agent, 't1').status).toBe('completed')
+  })
+
+  it('in_review → in_progress：reject_review 返工', async () => {
+    const { ctx, state } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
+    const back = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'reject_review',
+    })
+    expect(back.status).toBe('in_progress')
+    expect(state.status).toBe('in_progress')
+  })
+
+  it('reject_review 用在非 in_review 任务 → 被拒', async () => {
+    const { ctx } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'reject_review' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+  })
+
+  it('评审中 claim/release 被拒；reopen 允许并回到 in_progress', async () => {
+    const { ctx } = makeReviewCtx()
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'claim', owner: 'w' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'release' }),
+    ).rejects.toThrow(/TEAMCORE_INVALID_TRANSITION/)
+    const reopened = await core.updateTask(agent, {
+      taskId: 't1',
+      expectedRevision: 0,
+      action: 'reopen',
+    })
+    expect(reopened.status).toBe('in_progress')
+  })
+
+  it('无 seam 时 submit_review 抛 TEAMCORE_UNAVAILABLE（不阻断单 agent）', async () => {
+    const { ctx } = makeCtx(false)
+    const core = new TeamCoreService(ctx, cfg())
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' }),
+    ).rejects.toThrow(/TEAMCORE_UNAVAILABLE/)
+  })
+})

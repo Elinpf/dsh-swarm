@@ -30,6 +30,8 @@ export interface ScanReport {
   started: number
   reviewsDispatched: number
   staleNudged: number
+  /** 评审卡住（`in_review` 超过 `reviewStallMs`）向 Lead 升级的次数。 */
+  reviewStalled?: number
   converged: boolean
 }
 
@@ -50,7 +52,10 @@ export interface Config {
   pollMs: number
   staleClaimIdleMs: number
   staleEscalateStreak: number
-  busyTaskStatuses: Array<'pending' | 'in_progress'>
+  /** 视为「成员已占工」的状态；含 `in_review` 以维持「一人一活跃任务」不被评审任务破坏。 */
+  busyTaskStatuses: Array<'pending' | 'in_progress' | 'in_review'>
+  /** 评审卡住阈值：`in_review` 停留超过此毫秒数即向 Lead 升级（每次卡住的评审只升一次）。 */
+  reviewStallMs: number
 }
 
 const MAX_SCAN_PASSES = 4
@@ -65,8 +70,9 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     staleClaimIdleMs: z.number().step(1).min(1).default(600000),
     staleEscalateStreak: z.number().step(1).min(1).default(3),
     busyTaskStatuses: z
-      .array(z.union([z.const('pending'), z.const('in_progress')]))
-      .default(['pending', 'in_progress']),
+      .array(z.union([z.const('pending'), z.const('in_progress'), z.const('in_review')]))
+      .default(['pending', 'in_progress', 'in_review']),
+    reviewStallMs: z.number().step(1).min(1).default(1800000),
   })
 
   private readonly config: Config
@@ -78,6 +84,10 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
   private readonly lastNudge = new Map<string, number>()
   /** memberId → 连续无果次数。 */
   private readonly streak = new Map<string, number>()
+  /** taskId → 首次观测到 in_review 的时刻（用于 review_stall 计时）。 */
+  private readonly reviewSince = new Map<string, number>()
+  /** 已因评审卡住升级过的 taskId（每次卡住只升一次）。 */
+  private readonly reviewEscalated = new Set<string>()
 
   constructor(ctx: Context, config: Config = defaultConfig()) {
     super(ctx, 'teamScheduler')
@@ -95,6 +105,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
       started: 0,
       reviewsDispatched: 0,
       staleNudged: 0,
+      reviewStalled: 0,
       converged: false,
     }
     try {
@@ -109,6 +120,7 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
       }
 
       await this.staleSweep(agent, members, tasks, report)
+      await this.reviewStallSweep(agent, tasks, report)
       report.converged = true
       this.failures = 0
       return report
@@ -154,6 +166,8 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     this.armedAgent = undefined
     this.lastNudge.clear()
     this.streak.clear()
+    this.reviewSince.clear()
+    this.reviewEscalated.clear()
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────────────
@@ -214,7 +228,9 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     const now = Date.now()
     const busyBy = new Map<string, TaskView>()
     for (const t of tasks) {
-      if (this.isBusy(t.status) && t.ownerName) busyBy.set(t.ownerName, t)
+      // in_review 是「等待裁决」而非「等待推进」，不走「推进或释放」的常规 stale 催办（另有 reviewStallSweep）。
+      if (this.isBusy(t.status) && t.status !== 'in_review' && t.ownerName)
+        busyBy.set(t.ownerName, t)
     }
 
     for (const m of members) {
@@ -275,6 +291,60 @@ export class TeamSchedulerService extends Service implements TeamScheduler {
     return (this.config.busyTaskStatuses as string[]).includes(status)
   }
 
+  /**
+   * 评审卡住检测：`in_review` 停留超过 `reviewStallMs` → 向 Lead 升级（每次卡住只升一次）。
+   * 与常规 stale 分离：评审中的任务无人可「推进」，只有 Lead 介入才解冻。
+   */
+  private async reviewStallSweep(
+    agent: Agent,
+    tasks: TaskView[],
+    report: ScanReport,
+  ): Promise<void> {
+    const now = Date.now()
+    const inReview = new Set(tasks.filter((t) => t.status === 'in_review').map((t) => t.id))
+    // 已离开评审的：清计时与升级标记，使任务下次再入评审时重新计时
+    for (const id of [...this.reviewSince.keys()]) {
+      if (!inReview.has(id)) this.reviewSince.delete(id)
+    }
+    for (const id of [...this.reviewEscalated]) {
+      if (!inReview.has(id)) this.reviewEscalated.delete(id)
+    }
+
+    for (const t of tasks) {
+      if (t.status !== 'in_review') continue
+      const since = this.reviewSince.get(t.id)
+      if (since === undefined) {
+        this.reviewSince.set(t.id, now)
+        continue
+      }
+      if (now - since < this.config.reviewStallMs) continue
+      if (this.reviewEscalated.has(t.id)) continue
+      this.reviewEscalated.add(t.id)
+      report.reviewStalled = (report.reviewStalled ?? 0) + 1
+      await this.escalateReviewStall(agent, t)
+    }
+  }
+
+  private async escalateReviewStall(agent: Agent, task: TaskView): Promise<void> {
+    try {
+      await this.ctx.teamCore.send(agent, {
+        range: { kind: 'dm', to: 'lead' },
+        content: [
+          {
+            type: 'text',
+            text: `[review_stall] 任务 ${task.id} 在 in_review 停留超过阈值，评审疑似卡住，请介入裁决。`,
+          },
+        ],
+        delivery: 'wakeup',
+      })
+    } catch (e) {
+      this.ctx.logger?.warn?.(
+        'team-scheduler: review_stall escalate failed: %s',
+        String((e as Error)?.message),
+      )
+    }
+  }
+
   private readonly armedAt = Date.now()
 }
 
@@ -284,7 +354,8 @@ function defaultConfig(): Config {
     pollMs: 30000,
     staleClaimIdleMs: 600000,
     staleEscalateStreak: 3,
-    busyTaskStatuses: ['pending', 'in_progress'],
+    busyTaskStatuses: ['pending', 'in_progress', 'in_review'],
+    reviewStallMs: 1800000,
   }
 }
 

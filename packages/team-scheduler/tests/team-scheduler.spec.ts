@@ -68,7 +68,10 @@ const cfg = (over: Partial<any> = {}) => ({
   pollMs: 30000,
   staleClaimIdleMs: 600000,
   staleEscalateStreak: 3,
-  busyTaskStatuses: ['pending', 'in_progress'] as Array<'pending' | 'in_progress'>,
+  busyTaskStatuses: ['pending', 'in_progress', 'in_review'] as Array<
+    'pending' | 'in_progress' | 'in_review'
+  >,
+  reviewStallMs: 1800000,
   ...over,
 })
 
@@ -132,6 +135,32 @@ describe('@elinpf/dsh-swarm-team-scheduler', () => {
     await sch.scan(agent)
 
     expect(sent.some((s) => s.to === 'lead' && s.text.includes('escalation'))).toBe(true)
+  })
+
+  it('review_stall：in_review 停留超阈值 → 向 Lead 升级一次（不重复）', async () => {
+    vi.useFakeTimers()
+    const tasks = [
+      {
+        id: 't1',
+        revision: 1,
+        subject: 's',
+        description: '',
+        status: 'in_review',
+        blockedBy: [],
+        ownerName: 'w',
+        ready: false,
+      },
+    ]
+    const { ctx, sent } = makeCtx({ tasks })
+    const sch = new TeamSchedulerService(ctx, cfg({ mode: 'autonomous', reviewStallMs: 1000 }))
+    // 首扫只登记 in_review 起始时刻，尚未超阈值
+    expect((await sch.scan(agent)).reviewStalled).toBe(0)
+    vi.advanceTimersByTime(1001)
+    expect((await sch.scan(agent)).reviewStalled).toBe(1)
+    expect(sent.some((s) => s.to === 'lead' && s.text.includes('review_stall'))).toBe(true)
+    // 同一卡住的评审只升一次
+    vi.advanceTimersByTime(1001)
+    expect((await sch.scan(agent)).reviewStalled).toBe(0)
   })
 
   it('降级：scheduled 连续抛错 3 次 → mode 变为 autonomous', async () => {

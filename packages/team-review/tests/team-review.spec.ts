@@ -25,7 +25,10 @@ function makeCtx(ownerName = 'w') {
     backend: 'native' as const,
     getTask: () => ({ ...task }),
     updateTask: async (_c: unknown, req: any) => {
-      if (req.action === 'complete') {
+      // 模拟 team-core 的评审叠加态：submit_review → in_review；reject_review → in_progress；complete → completed
+      if (req.action === 'submit_review') task.status = 'in_review'
+      else if (req.action === 'reject_review') task.status = 'in_progress'
+      else if (req.action === 'complete') {
         task.status = 'completed'
         task.revision += 1
       }
@@ -80,7 +83,7 @@ describe('@elinpf/dsh-swarm-team-review', () => {
     expect(task.status).toBe('completed')
   })
 
-  it('配 reviewer → 拦截为评审态（round=1），任务保持 in_progress', async () => {
+  it('配 reviewer → 拦截为评审态 in_review（round=1）', async () => {
     const { ctx, task } = makeCtx()
     const rv = new TeamReviewService(ctx, {
       pools: binaryPools,
@@ -88,9 +91,10 @@ describe('@elinpf/dsh-swarm-team-review', () => {
       stallTimeoutMs: 1000,
     })
     const view = await rv.submitForReview(asCaller('w'), 't1')
-    expect(view.status).toBe('in_progress')
+    expect(view.status).toBe('in_review')
     expect(rv.inspect('t1')?.round).toBe(1)
-    expect(task.status).toBe('in_progress')
+    // 任务进入评审态（原生 in_progress 由 team-core 维持，读侧呈现 in_review——见 team-core 单测）
+    expect(task.status).toBe('in_review')
   })
 
   it('二元池一票否决：任一 fail → fail，任务不完成', async () => {
@@ -232,5 +236,48 @@ describe('@elinpf/dsh-swarm-team-review', () => {
     const v = await rv.settle(asCaller('lead'), 't1') // round>=max → escalate
     expect(v.kind).toBe('fail')
     expect(sent.some((s) => s.to === 'lead' && s.text.includes('escalated'))).toBe(true)
+  })
+
+  it('undecided：任务保持 in_review（未投完 → 不完成、不离场）', async () => {
+    const { ctx, task } = makeCtx()
+    const rv = new TeamReviewService(ctx, {
+      pools: binaryPools,
+      maxRounds: 3,
+      stallTimeoutMs: 1000,
+    })
+    await rv.submitForReview(asCaller('w'), 't1')
+    await rv.vote(asCaller('verifier'), 't1', {
+      kind: 'binary',
+      decision: 'pass',
+      role: 'verifier',
+    })
+    const v = await rv.settle(asCaller('lead'), 't1')
+    expect(v.kind).toBe('undecided')
+    expect(task.status).toBe('in_review')
+  })
+
+  it('返工：fail 后任务从 in_review 回到 in_progress，round 递增', async () => {
+    const { ctx, task } = makeCtx()
+    const rv = new TeamReviewService(ctx, {
+      pools: binaryPools,
+      maxRounds: 3,
+      stallTimeoutMs: 1000,
+    })
+    await rv.submitForReview(asCaller('w'), 't1')
+    expect(task.status).toBe('in_review')
+    await rv.vote(asCaller('verifier'), 't1', {
+      kind: 'binary',
+      decision: 'fail',
+      role: 'verifier',
+    })
+    await rv.vote(asCaller('challenger'), 't1', {
+      kind: 'binary',
+      decision: 'pass',
+      role: 'challenger',
+    })
+    const v = await rv.settle(asCaller('lead'), 't1')
+    expect(v.kind).toBe('fail')
+    expect(task.status).toBe('in_progress')
+    expect(rv.inspect('t1')?.round).toBe(2)
   })
 })

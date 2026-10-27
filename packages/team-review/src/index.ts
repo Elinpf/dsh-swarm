@@ -3,11 +3,12 @@
  *
  * 关键不变量（对照 JiuwenSwarm P8/P11）：
  * - **不可自验**：投票者若是任务作者 → `TEAMREVIEW_SELF_VOTE`。
- * - **评审态不进原生任务枚举**：任务在评审期间保持 `in_progress`；只有 `pass` 才调
- *   `teamCore.updateTask(action='complete')`，`fail` 则保持 `in_progress`（返工）。
+ * - **评审态显式化**：提交评审把任务从 `in_progress` 置为 **`in_review`**（经 `team-core` 的叠加态）；
+ *   `pass` → `in_review → completed`，`fail`（未超轮次）→ `in_review → in_progress`（返工）。
+ *   非法入场（如 `pending → in_review`）由 `team-core` 拒绝。
  * - **裁决数学**：二元池全员投完且任一 fail → fail（一票否决）；打分池全员投完且均值
- *   ≥ threshold → pass；任一池未投完 → undecided。
- * - **maxRounds** 超限 → 向 Lead 升级并停止自动返工环。
+ *   ≥ threshold → pass；任一池未投完 → undecided（任务保持 `in_review`）。
+ * - **maxRounds** 超限 → 向 Lead 升级并停止自动返工环（任务保持在 `in_review` 等待介入）。
  *
  * 只依赖契约包类型（ADR-0001）。
  *
@@ -113,8 +114,14 @@ export class TeamReviewService extends Service implements TeamReview {
       })
     }
     const task = this.ctx.teamCore.getTask(caller, taskId)
+    // 显式进入评审态：in_progress → in_review（非法源态如 pending/completed 由 team-core 拒绝）。
+    const view = await this.ctx.teamCore.updateTask(caller, {
+      taskId,
+      expectedRevision: task.revision,
+      action: 'submit_review',
+    })
     this.states.set(taskId, { round: 1, votes: new Map() })
-    return task
+    return view
   }
 
   async vote(caller: Agent, taskId: string, v: ReviewVote): Promise<void> {
@@ -152,10 +159,18 @@ export class TeamReviewService extends Service implements TeamReview {
 
     if (verdict.kind === 'fail') {
       if (state.round >= this.config.maxRounds) {
+        // 超过最大轮次：保持 in_review，交 Lead 介入（不自动返工）
         await this.escalate(caller, taskId, `评审连续 ${state.round} 轮未通过，已停止自动返工。`)
         return verdict
       }
-      state.round += 1 // 返工一轮；任务保持 in_progress
+      // 返工：in_review → in_progress
+      const task = this.ctx.teamCore.getTask(caller, taskId)
+      await this.ctx.teamCore.updateTask(caller, {
+        taskId,
+        expectedRevision: task.revision,
+        action: 'reject_review',
+      })
+      state.round += 1
       return verdict
     }
     return verdict
