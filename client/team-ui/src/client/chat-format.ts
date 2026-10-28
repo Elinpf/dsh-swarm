@@ -34,6 +34,8 @@ export interface MessageLike {
   readonly content?: ReadonlyArray<{ type?: string; text?: string }>
   readonly targets?: readonly string[]
   readonly seq?: number
+  /** 事件时间（毫秒）。 */
+  readonly ts?: number
   /** 防御式：若消息流出现 task 指派形态。 */
   readonly task?: { id?: string; subject?: string; assignee?: string }
 }
@@ -59,17 +61,91 @@ export function looksLikeDisplayName(value: string | undefined): boolean {
 }
 
 /**
- * 发言人显示名：
- * 1) 含 CJK 的 `displayName`；2) 像人名的中文 `title`（会话标题）；3) 其它 `displayName`；4) 回退 `name`（英文 ID）。
- * —— 优先"干净的中文名"；`sessionTitle` 若是 spawn 提示前缀（长/含空白）会被**拒绝**，避免把整段提示当名字。
+ * **本地 slug → 中文显示名** 映射（P66）。**非数据侧真值**——数据侧若提供真正的
+ * `displayName`/中文 `title`，则优先用数据侧（见 {@link displayNameOf}）。
+ * 做成可传参覆盖：`displayNameOf(member, myMap)` 或整体替换本常量。
  */
-export function displayNameOf(member: Pick<MemberLike, 'name' | 'displayName' | 'title'>): string {
+export const LOCAL_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  lead: '团队负责人',
+  'researcher-models': '模型调研员',
+  'researcher-industry': '行业调研员',
+  'researcher-research': '学术调研员',
+  'researcher-deepinfer': 'DeepInfer 调研员',
+  'researcher-upstream': '上游调研员',
+  'researcher-downstream': '下游调研员',
+  'researcher-lead': '调研组长',
+  synthesizer: '汇总员',
+  'doc-writer': '文档撰写员',
+  'test-designer': '设计成员',
+  'pkg-scout': '包侦察员',
+  'global-labs': '全局实验室',
+}
+
+/**
+ * 发言人显示名（**优先真值，回退本地映射，再回退 ID**）：
+ * 1) 含 CJK 的 `displayName`（数据侧真值）；
+ * 2) 像人名的中文 `title`（会话标题，数据侧）；
+ * 3) 其它 `displayName`（数据侧）；
+ * 4) **本地 `slug → 中文名` 映射**（`localNames[name]`）；**本轮为本地映射、非数据侧真值**；
+ * 5) 回退英文 ID（`name`）。
+ * @param member - 成员（含 name/displayName/title）。
+ * @param localNames - 本地映射表；默认 {@link LOCAL_DISPLAY_NAMES}；传 `{}` 可禁用。
+ */
+export function displayNameOf(
+  member: Pick<MemberLike, 'name' | 'displayName' | 'title'>,
+  localNames: Readonly<Record<string, string>> = LOCAL_DISPLAY_NAMES,
+): string {
   const displayName = nonEmpty(member.displayName) ? member.displayName.trim() : undefined
   const title = nonEmpty(member.title) ? member.title.trim() : undefined
   if (displayName !== undefined && isCjk(displayName)) return displayName
   if (title !== undefined && looksLikeDisplayName(title)) return title
   if (displayName !== undefined) return displayName
+  const mapped = localNames[member.name]
+  if (nonEmpty(mapped)) return mapped
   return member.name
+}
+
+/** Jiuwen `TeamMemberAvatar` 的 24 色底池（`utils/teamMemberAvatar.ts:33-58`）。 */
+export const AVATAR_BG_COLORS = [
+  '#D7F4EE', '#FCE0E0', '#E3E9FF', '#FFF0D6', '#E8F5E9', '#F3E5F5',
+  '#E0F7FA', '#FFF3E0', '#EDE7F6', '#FBE9E7', '#E8EAF6', '#F1F8E9',
+  '#FDE7F0', '#E0F2F1', '#FFF8E1', '#EDF7ED', '#EEE6F9', '#E6F4FF',
+  '#FDF0E6', '#EAF6EF', '#F0EAF9', '#E6F7F4', '#F9EAEA', '#EAF0F6',
+] as const
+
+/** 头像类别（Jiuwen 五类派生：lead/user/cli/human/member）。 */
+export function avatarKind(name: string, role?: string): 'leader' | 'user' | 'cli' | 'human' | 'member' {
+  const n = name.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (role === 'lead' || n === 'team_leader' || n === 'teamleader' || n === 'lead') return 'leader'
+  if (n === 'user') return 'user'
+  if (n === 'claude' || n === 'codex') return 'cli'
+  if (n === 'human') return 'human'
+  return 'member'
+}
+
+/** FNV-1a 32bit（Jiuwen 同款风格）：确定性把串映射到色池下标。 */
+function fnv1a(input: string): number {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
+/** 头像底色：由 `id:avatar-bg` 确定性派生（与成员 id 稳定绑定）。 */
+export function avatarBackground(id: string): string {
+  return AVATAR_BG_COLORS[fnv1a(`${id}:avatar-bg`) % AVATAR_BG_COLORS.length] ?? '#F2F3F5'
+}
+
+/** leader/user/cli/human 用中性底（Jiuwen cli 中性底 `#F2F3F5`），其余用哈希色。 */
+export function avatarStyleFor(
+  member: Pick<MemberLike, 'id' | 'name' | 'role'>,
+  displayName: string,
+): { initial: string; background: string; kind: ReturnType<typeof avatarKind> } {
+  const kind = avatarKind(member.name, member.role)
+  const background = kind === 'cli' ? '#F2F3F5' : avatarBackground(member.id)
+  return { initial: avatarInitial(displayName), background, kind }
 }
 
 /** 头像首字母：中文取首字，英文取首字母大写。 */
@@ -94,6 +170,16 @@ export interface Segment {
   readonly value: string
   /** mention 是否命中已知成员名（用于高亮样式）。 */
   readonly known?: boolean
+  /** 定向 chip 的色调（仅前导定向段）：p2p 蓝 / broadcast 橙。 */
+  readonly tone?: 'p2p' | 'broadcast'
+}
+
+/** 时间显示：`HH:mm:ss`（本地时区，Jiuwen `formatTeamEventTime` 同形）。 */
+export function formatClock(ts: number | undefined): string {
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) return ''
+  const d = new Date(ts)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
 /**
@@ -153,14 +239,27 @@ export function renderMessage(
   }
 
   const body = parseMentions(textOf(message), knownNames)
-  if (message.kind === 'outbound') {
+  if (message.kind === 'broadcast') {
+    // 广播 → 前导「@所有人」（broadcast 橙）
+    return {
+      senderName: message.senderName ?? leadName,
+      avatar: avatarInitial(message.senderName ?? leadName),
+      leading: [{ type: 'mention', value: '所有人', known: false, tone: 'broadcast' }],
+      body,
+    }
+  }
+  if (message.kind === 'outbound' || message.kind === 'multicast') {
     const targets = (message.targets ?? []).filter(nonEmpty)
     const leading: Segment[] = targets.length === 0
-      ? [{ type: 'text', value: '→' }]
+      ? [{ type: 'text', value: '→', tone: 'p2p' }]
       : [
-          { type: 'text', value: '→ ' },
           ...targets.flatMap((target, i): Segment[] =>
-            (i === 0 ? [] : [{ type: 'text', value: ', ' }]).concat({ type: 'mention', value: target, known: knownNames.includes(target) }),
+            (i === 0 ? [] : [{ type: 'text', value: ' ' }]).concat({
+              type: 'mention',
+              value: target,
+              known: knownNames.includes(target),
+              tone: 'p2p',
+            }),
           ),
         ]
     return { senderName: message.senderName ?? leadName, avatar: avatarInitial(message.senderName ?? leadName), leading, body }

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  avatarBackground,
   avatarInitial,
+  avatarKind,
+  avatarStyleFor,
   displayNameOf,
+  formatClock,
   isCjk,
   knownNamesOf,
   orderMessages,
@@ -24,21 +28,36 @@ describe('P63 chat-format（发言人 / @chip / 定向 / 排序）', () => {
     expect(isCjk(undefined)).toBe(false)
   })
 
-  it('① 发言人：优先中文 displayName，次选 title，无则回退英文 ID', () => {
+  it('① 发言人：优先中文 displayName，次选 title，再本地映射，最后回退英文 ID', () => {
     expect(displayNameOf({ name: 'researcher-models', displayName: '提示词工程分析师' })).toBe('提示词工程分析师')
     expect(displayNameOf({ name: 'researcher-models', title: '调研分析师' })).toBe('调研分析师')
-    // displayName 是英文、title 是中文 → 仍优先中文
     expect(displayNameOf({ name: 'x', displayName: 'Bob', title: '调研员' })).toBe('调研员')
-    // 全英文 → 回退 ID
-    expect(displayNameOf({ name: 'researcher-models' })).toBe('researcher-models')
-    // 空 displayName 忽略
-    expect(displayNameOf({ name: 'synthesizer', displayName: '  ' })).toBe('synthesizer')
-    // sessionTitle 是 spawn 提示前缀（含空白/过长）→ 拒绝，回退 ID
-    expect(
-      displayNameOf({ name: 'researcher-models', title: '你是团队中的调研成员 researche' }),
-    ).toBe('researcher-models')
-    // 干净的短中文标题 → 可用
-    expect(displayNameOf({ name: 'researcher-models', title: '调研分析师' })).toBe('调研分析师')
+    // 无数据侧真值 → 本地 slug→中文 映射
+    expect(displayNameOf({ name: 'researcher-models' })).toBe('模型调研员')
+    expect(displayNameOf({ name: 'synthesizer' })).toBe('汇总员')
+    // 本地映射可禁用（传 {}）→ 回退英文 ID
+    expect(displayNameOf({ name: 'researcher-models' }, {})).toBe('researcher-models')
+    expect(displayNameOf({ name: 'unknown-slug' })).toBe('unknown-slug')
+    // 空 displayName 忽略 → 本地映射
+    expect(displayNameOf({ name: 'synthesizer', displayName: '  ' })).toBe('汇总员')
+    // sessionTitle 是 spawn 提示前缀（含空白/过长）→ 拒绝，落到本地映射
+    expect(displayNameOf({ name: 'researcher-models', title: '你是团队中的调研成员 researche' })).toBe('模型调研员')
+  })
+
+  it('头像派生：类别 + 确定性底色 + 首字母', () => {
+    expect(avatarKind('lead', 'lead')).toBe('leader')
+    expect(avatarKind('team-leader')).toBe('leader')
+    expect(avatarKind('claude')).toBe('cli')
+    expect(avatarKind('user')).toBe('user')
+    expect(avatarKind('researcher-models')).toBe('member')
+    // 确定性：同 id 同色；不同 id 大概率不同
+    expect(avatarBackground('a')).toBe(avatarBackground('a'))
+    const st = avatarStyleFor({ id: 'a', name: 'researcher-models', role: 'teammate' }, '模型调研员')
+    expect(st.initial).toBe('模')
+    expect(st.kind).toBe('member')
+    expect(st.background).toMatch(/^#[0-9A-Fa-f]{6}$/)
+    // cli 中性底
+    expect(avatarStyleFor({ id: 'c', name: 'claude' }, 'Claude').background).toBe('#F2F3F5')
   })
 
   it('头像首字母：中文取首字、英文取首字母大写、空取 ?', () => {
@@ -71,21 +90,31 @@ describe('P63 chat-format（发言人 / @chip / 定向 / 排序）', () => {
     ])
   })
 
-  it('③ outbound → 前导「→ @目标…」；正文照常出 chip', () => {
+  it('③ outbound → 前导「@目标」定向 chip（p2p 色调）；正文照常出 chip', () => {
     const m = renderMessage(
       msg({ id: 'o1', kind: 'outbound', senderName: 'lead', targets: ['researcher-models', 'synthesizer'], content: [{ type: 'text', text: '@researcher-models 开工' }] }),
       ['researcher-models', 'synthesizer'],
       'lead',
     )
     expect(m.senderName).toBe('lead')
-    // 前导：'→ ' + mention(researcher-models) + ', ' + mention(synthesizer)
-    expect(m.leading.map((s) => [s.type, s.value])).toEqual([
-      ['text', '→ '],
-      ['mention', 'researcher-models'],
-      ['text', ', '],
-      ['mention', 'synthesizer'],
+    expect(m.leading.map((s) => [s.type, s.value, s.tone])).toEqual([
+      ['mention', 'researcher-models', 'p2p'],
+      ['text', ' ', undefined],
+      ['mention', 'synthesizer', 'p2p'],
     ])
     expect(m.body[0]).toEqual({ type: 'mention', value: 'researcher-models', known: true })
+  })
+
+  it('③ broadcast → 前导「@所有人」（broadcast 色调）', () => {
+    const m = renderMessage(msg({ id: 'b1', kind: 'broadcast', senderName: 'lead', content: [{ type: 'text', text: '大家好' }] }), [])
+    expect(m.leading).toEqual([{ type: 'mention', value: '所有人', known: false, tone: 'broadcast' }])
+    expect(m.body).toEqual([{ type: 'text', value: '大家好' }])
+  })
+
+  it('formatClock → HH:mm:ss', () => {
+    const ts = new Date(2026, 9, 28, 9, 5, 7).getTime()
+    expect(formatClock(ts)).toBe('09:05:07')
+    expect(formatClock(undefined)).toBe('')
   })
 
   it('③ task 指派形态（防御式）→「@某人 收到任务：<标题>」', () => {

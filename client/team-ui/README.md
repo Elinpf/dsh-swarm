@@ -153,3 +153,11 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
 3. **解锁条件**：**由数据侧在成员上暴露一个真正的中文 `display_name` 字段**（或把中文角色名写进 wire 可读字段）。届时 **本包解析器已就绪、`零代码改动`即可优先取用**（`displayNameOf` 的 ① 分支）。
 4. **不建议**为此改 `team-bus`：spawn 走原生 `tool-agent-team`，我们**截不到 spawn 参数**，改 bus 也解决不了。
 
+## P66：像素级对齐 Jiuwen 群聊详情区
+
+- 按 `docs/jiuwen-chat-ui-spec.md` 在 `TeamChatTab.tsx` 重建**群聊详情区**：容器 `px-7 py-6` + 内层 `max-w-[820px] space-y-5`、消息行 `gap-3`、发送者名 16/28/600、正文 14/24、头像 32×32 rounded-xl、定向 chip（p2p 蓝/broadcast 橙）、正文 `@` 链接蓝、空态「暂无群聊消息」、置底+40px 阈值、时间 `HH:mm:ss`。
+- **逐条 checklist + 与 Jiuwen 对比自查表**：见 [`P66-CHECKLIST.md`](./P66-CHECKLIST.md)（含 in/out-of-scope 归因）。
+- **中文显示名（本地映射，非数据侧真值）**：`chat-format.ts` 的 `LOCAL_DISPLAY_NAMES`（`slug→中文名`）在数据侧无真值时兜底；**可配置**（传参覆盖/传 `{}` 禁用）；数据侧若提供 `displayName`/中文 `title` 则**优先取用**。**显式标注：本地映射、非数据侧真值。**
+- **头像适配**：Jiuwen 用 svg 资产；本包**无资产**，改用**首字符 + 24 色哈希底**（形状/尺寸/色值对齐）。
+- **不在本插件范围**（显式，见 checklist）：左 240px 侧栏/成员列表/成员·子话题 Tab → **P67**；输入框 composer 的 `@`/`$` 候选下拉 → **P68**；主对话流 `team-member-message` 镜像 → **待上游**。
+
