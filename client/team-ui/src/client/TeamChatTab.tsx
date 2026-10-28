@@ -20,6 +20,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { NS } from './locales.ts'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   avatarStyleFor,
   displayNameOf,
@@ -31,6 +33,15 @@ import {
   type MessageLike,
   type Segment,
 } from './chat-format.ts'
+
+/**
+ * Markdown chrome labels（复用宿主 `MarkdownText`）。**reference-stable**（模块级常量），
+ * 以免流式渲染缓存被新 identity 丢弃。**内容视为不可信**：宿主渲染器**禁 raw HTML、链接安全化**。
+ */
+const MARKDOWN_LABELS: MarkdownLabels = {
+  code: { copyLabel: '复制', copiedLabel: '已复制' },
+  footnotes: '脚注',
+}
 
 /** Full props of the team chat tab body. */
 export type TeamChatTabProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
@@ -70,10 +81,6 @@ function statusColor(phase: string): string {
     default:
       return '#777777'
   }
-}
-
-function BodyMention({ seg }: { seg: Segment }): JSX.Element {
-  return <span style={{ color: '#0067d1' }}>{`@${seg.value}`}</span>
 }
 
 function TargetChip({ seg }: { seg: Segment }): JSX.Element {
@@ -256,6 +263,7 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
           <div style={{ margin: '0 auto', maxWidth: 820, display: 'flex', flexDirection: 'column', gap: 20 }}>
             {ordered.map((m) => {
               const model = renderMessage(m, knownNames, leadName)
+              const bodyText = model.body.map((s) => (s.type === 'mention' ? `@${s.value}` : s.value)).join('')
               const sender = byName.get(model.senderName)
               const member: MemberRow =
                 sender ?? ({ id: model.senderName, name: model.senderName, role: 'teammate', phase: 'active' } as MemberRow)
@@ -270,13 +278,12 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
                         <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: '#808080' }}>{clock}</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 14, lineHeight: '24px', color: '#191919', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    <div style={{ fontSize: 14, lineHeight: '24px', color: '#191919', wordBreak: 'break-word' }}>
                       {model.leading.map((seg, i) =>
                         seg.type === 'mention' ? <TargetChip key={`l${i}`} seg={seg} /> : <span key={`l${i}`}>{seg.value}</span>,
                       )}
-                      {model.body.map((seg, i) =>
-                        seg.type === 'mention' ? <BodyMention key={`b${i}`} seg={seg} /> : <span key={`b${i}`}>{seg.value}</span>,
-                      )}
+                      {/* 正文：复用宿主 MarkdownText（与主对话流同源；禁 raw HTML / 链接安全化） */}
+                      <MarkdownText text={bodyText} labels={MARKDOWN_LABELS} variant="compact" />
                     </div>
                   </div>
                 </div>

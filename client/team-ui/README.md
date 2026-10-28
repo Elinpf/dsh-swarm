@@ -192,3 +192,11 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
   1. **B（真·定向发成员 / 结构化 targets / human seat 或 lead 身份）→ 需新增服务端 remote**（超出只改 `client/team-ui`，归属待定；见 [`P68-PROPOSAL.md`](./P68-PROPOSAL.md)）；
   2. **主对话流 `team-member-message` 协作消息镜像 → 待上游**（见 [`docs/p61-upstream-request.md`](../../docs/p61-upstream-request.md)）。
 
+## P75：群聊消息开启 Markdown 渲染（复用宿主 + XSS 防护）
+
+- **渲染方式：复用宿主渲染器**（非自实现）——`@deepseek-ai/dsh-client-ui-primitives` 的 **`MarkdownText`**（**与主对话流同源**；doc 自称 "**Untrusted** assistant-Markdown renderer"，mdast→React 管线）。群聊消息**正文**由 `<MarkdownText text={…} labels={MARKDOWN_LABELS} variant="compact" />` 渲染 ⇒ 支持 粗体/斜体/行内代码/代码块/列表/标题/链接/段落（GFM）。
+- **样式**：沿用宿主 prose；消息行**发送者名 16/28/600、正文 14/24 不变**。
+- **⚠️ 安全（硬要求，内容视为不可信）**：① **禁 raw HTML**——宿主无 HTML 解析入口（`render.tsx` `case 'html'`：raw HTML 保持**字面文本**）；② **链接安全化**——`sanitizeUrl`（`render.tsx:53`）仅放行 `http/https/mailto`（挡 `javascript:`），外链 `rel="noopener noreferrer"`；③ **XSS 反例单测** `tests/markdown-safety.spec.ts`（**2/2**）。
+- **取舍（如实标注）**：复用宿主 ⇒ 正文 `@name` 随 Markdown 渲染为**文本**；`@chip` 仅保留于前导定向段。
+- **验证**：`markdown-safety` 2/2 + `chat-format` 14/14；原型 bundle HTTP 200 含 `MarkdownText` 引用、composer 标记=0。
+
