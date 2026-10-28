@@ -1853,3 +1853,79 @@ team_task_update action=complete → status:completed,revision:3            # �
 - **缺陷（P80 审计）**：`team-bus/src/index.ts` 广播调 `fanout(caller,targetIds,snap)` **漏第 4 参** ⇒ 默认 `'directed'` ⇒ **公告被计入未读/pending**（与 `multicast` 显式传 `'directed'` 不对称；`team-core` 要求 `'broadcast'` 不计入）。
 - **先红后绿**：先加断言（广播后每条投递 `origin==='broadcast'`、多播 `'directed'`）→ **红**（broadcast 的 origin 非 broadcast）；修 `:237` 补 `'broadcast'` → **绿**（16/16）。
 - **回归**：build / verify（加载）/ verify:e2e 全绿；不改 P51 未读闸语义（仅让广播正确取 `'broadcast'`）。
+
+
+## P79. 独立复核：自建任务工具集 `tool-task`（**不采信自报，自读自跑自判**）
+
+> 复核人：bench-qa-engineer ｜ 时间：2026-10-28 ｜ 对象：`packages/tool-task`（工作树含 P82 改名 `731bc07`：`team_task_*→swarm_task_*`）。
+> 与 P77 自报（§N/§O）**分开记录，不拼接**。只读 + 测试；**未改任何代码**。
+
+### 一句话 verdict：**不通过**
+
+- **阻断项（P0）**：`tool-task` **未接入 bundle/profile** ⇒ 真实 profile 下我们的任务工具**根本不加载**（§P79.5）。P77 的「profile 级收口」**未成立**（单测/进程内成立，profile 不成立）。
+- 其余校验：真走 team-core、进程内先红后绿 **通过**；动作对齐 / 命名 / 接线有 **缺口项**，逐条如下。
+
+### P79.1 真走 team-core（无 native 旁路）——**通过（静态）**
+
+- `grep -rn agentTeams packages/tool-task/{src,lib}` 仅命中**注释**，**无任何 `ctx.agentTeams` 使用**；4 工具全经 `ctx.get('teamCore')`：`:84`（取核心）、`:104`(createTask)、`:123`(listTasks)、`:137`(getTask)、`:174`(updateTask)。
+- ⇒ 「全走 `ctx.teamCore`、无直写 `agentTeams`」**成立**。
+
+### P79.2 先红后绿复现（独立，≥3 轮）——**进程内通过；profile 未成立**
+
+**自建最小复现**（真实 `team-core` 构建产物 + **无闸 seam**（模拟原生直写））：`.runtime/bench/p79-repro.mjs`。3 轮**零方差**：
+
+| 轮 | 注册工具 | 绿：经 tool-task→team-core | 红：直写 seam（绕过） | open_plan | cancel |
+|---|---|---|---|---|---|
+| 1/2/3 | swarm_task_create/list/get/update | **`TEAMCORE_REVIEW_REQUIRED`** | **bypassed→completed** | **false** | false |
+
+- **绿**：`claim→submit_review(→in_review)→update(complete)` 经我们的工具走**真实 team-core** ⇒ 抛 `TEAMCORE_REVIEW_REQUIRED`（team-core `:497-511` B2 硬闸）。
+- **红**：直接 `seam.updateTask(complete)`（等价原生 `tool-agent-team` 直写）⇒ **成功 completed**（绕过）。⇒ §N.1 红态在真实 team-core + 无闸 seam 下可复现。
+- **单测**：`tool-task` 4 用例 **3 轮采样全绿**（`vitest run`×3 → `Tests 4 passed (4)`，零方差）。
+- ⚠️ **绿仅「进程内」成立**；**profile 级**因 §P79.5 未接线而**不成立**。
+
+### P79.3 动作对齐表——**核心 8 动作无缺口；2 处不一致需修**
+
+| 动作 | 原生 `team_task_*`(8) | 本包 `swarm_task_update`(13) | team-core | 备注 |
+|---|---|---|---|---|
+| claim/release/complete/reopen/set_dependencies/edit/delete | ✅ | ✅ | ✅ | 对齐 |
+| reassign | ✅ | ✅（名=`assign`，team-core 映射 assign→reassign） | ✅ | 仅命名差 |
+| cancel | ❌（原生无） | ❌（取消=`delete`） | ❌ | **对齐** |
+| submit_review/reject_review | ❌ | ✅ | ✅ | 本包新增 |
+| submit_plan/approve_plan/reject_plan | ❌ | ✅ | ✅ | 本包新增 |
+| **open_plan** | ❌ | **❌（缺）** | ✅（`:382`） | ⚠️ **缺口**：无法经本工具进入计划闸（须先 open_plan 才能 submit_plan）；当前 bundle `planGate:false` 故未激活 |
+
+**「原生有、我们无」缺口**：**核心 8 动作全覆盖（无缺口）**；真实不一致 = **`open_plan` 未暴露** + **提示词命名错配**（下条）。
+
+### P79.4 边界核查（读源码）——**未见破坏；1 处非 durable 需知悉**
+
+- **命名错配（需修）**：`packages/team-prompt/src/index.ts:184-185` 仍写 `team_task_update(...)` 与 `open_plan`；工具名已是 `swarm_task_*` ⇒ **提示与工具名不一致**（P78 后模型按提示调 `team_task_*` 会找不到工具）。
+- **P51 未读闸**：本包不发消息、不写未读台账；唯一间接发消息是 team-core `reassign` 向原 owner 发 1 条 wakeup DM（`:175-184`，**有意**）⇒ 不破坏。
+- **P42 归属**：本包 `claim/assign` 透传 `owner`；team-core 以 `before.ownerName` 记录改派（`:521-552`）⇒ 不破坏（不重复实现）。
+- **P31 解锁事件**：终态经 team-core 发 `swarm/task/terminal`（`:564-566`）供 scheduler 即时重算 ⇒ 不破坏。
+- **通道 A**：team-core `emitDurable→appendPluginRecord("plugin:swarm/…")`（`team-durable/src/index.ts:108-115`）覆盖 plan-*/revision-requested/review-entered/review-left；**`released/revoked/terminal` 走 `emitEvent`（非 durable，仅进程内广播）**（team-core `:166-189` 自陈）——**非通道 A**。本包自身不 emit。
+
+### P79.5 【阻断性发现】`tool-task` 未接入 bundle/profile
+
+- `packages/bundle/cordis.patch.yml` 的 `insert:` **无 tool-task 行**；`packages/bundle/package.json` 依赖**无** `@elinpf/dsh-swarm-tool-task`；`dsh --profile headless --dump-config` **无 tool-task 行**。
+- bundle **未 disable 原生 `tool-agent-team`**（只 disable 了 legacy `tool-subagent*`）⇒ 当前 profile：**原生 `team_task_*` 在、我们的工具不在** ⇒ 模型仍走**原生（无闸）**路径。
+- ⇒ **P77「收口」在真实 profile 未生效**；若此时执行 P78「disable 原生」，将出现 **profile 下无任何任务工具**（P0 回归）。
+
+### P79.6 同名遮蔽（必查项）——**结构上已解；profile 探针未做**
+
+- 原生 `tool-agent-team` 为**成员 scoped** 注册：`lib/index.js:228 const scoped = agent.ctx` + `:250 scoped.tools.register(...)`；本包为**全局** `ctx.tools.register`。改名后名字不同（`swarm_task_*` vs 原生 `team_task_*`）⇒ **结构上不再同名遮蔽**。
+- **未做**：真实 profile「成员可见工具表」探针——因 §P79.5 未接线，现在跑无意义；应在**接线（P82/P78）落地后**用最小探针（真实 profile，预算 ≤0.15M）确认成员 scoped 下可见 `swarm_task_*` 且原生已 disable。
+
+### P79.7 最小反例（可复现）
+
+```bash
+cd <项目>/dsh-swarm
+# ① 未接线（阻断）
+grep -n "tool-task" packages/bundle/cordis.patch.yml packages/bundle/package.json    # → 无输出
+source scripts/env.sh && .runtime/dsh-cli-npm/node_modules/.bin/dsh --profile headless --dump-config | grep -n "tool-task\|swarm_task"   # → 无输出
+# ② 进程内红/绿（3 轮）
+source scripts/env.sh && node .runtime/bench/p79-repro.mjs 3
+# ③ 命名错配
+grep -n "team_task_update\|open_plan" packages/team-prompt/src/index.ts | head
+```
+
+> **处置建议（不由本复核改码）**：① 把 `tool-task` 接入 bundle（insert 行 + deps）；② 同步 `team-prompt` 工具名与 `open_plan` 暴露；③ 接线 + P78 后补**真实 profile 成员可见性/收口探针**（先报预算）。
