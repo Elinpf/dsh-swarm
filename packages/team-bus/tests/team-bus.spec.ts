@@ -9,15 +9,15 @@ function makeCtx() {
     { id: 'a', name: 'a', role: 'teammate', phase: 'active', status: 'idle' },
     { id: 'b', name: 'b', role: 'teammate', phase: 'active', status: 'idle' },
   ]
-  const sent: Array<{ from: string; to: string }> = []
+  const sent: Array<{ from: string; to: string; origin?: string }> = []
   const disposers: Array<() => void> = []
   const services: Record<string, unknown> = {}
   const teamCore = {
     backend: 'native' as const,
     listMembers: () => members,
     tryMembership: (agent: { id?: string }) => members.find((m) => m.id === agent?.id),
-    send: async (caller: { id: string }, req: { range: { to: string } }) => {
-      sent.push({ from: caller.id, to: req.range.to })
+    send: async (caller: { id: string }, req: { range: { to: string }; origin?: string }) => {
+      sent.push({ from: caller.id, to: req.range.to, origin: req.origin })
       return { messageId: `m-${sent.length}`, status: 'accepted' as const }
     },
   }
@@ -283,64 +283,52 @@ describe('@elinpf/dsh-swarm-team-bus', () => {
   it('P61：swarmBus 折叠原生 relay（agent/inbox/spliced）+ lead outbound（tool/call send_message）', () => {
     const def = swarmBusProjectionDefinition
     let s = def.init({ id: 'lead' } as never, 0 as never)
-    s = def.apply(
-      s,
-      ({
-        type: 'agent/inbox/spliced',
-        seq: 1,
-        time: 1001,
-        data: {
-          inserted: [
-            {
-              id: 'm1',
-              content: [
-                { type: 'text', text: 'Team message from synthesizer:' },
-                { type: 'text', text: 'synthesizer 已就绪' },
-              ],
-              source: { kind: 'agent-message', form: 'relay', senderSessionId: 'sess-syn' },
-              role: 'user',
-            },
-          ],
-        },
-      }) as never,
-    )
-    s = def.apply(
-      s,
-      ({
-        type: 'tool/call',
-        seq: 2,
-        time: 1002,
-        data: {
-          name: 'send_message',
-          callId: 'call_1',
-          arguments: JSON.stringify({ target: 'researcher-a', message: '请核查' }),
-        },
-      }) as never,
-    )
+    s = def.apply(s, {
+      type: 'agent/inbox/spliced',
+      seq: 1,
+      time: 1001,
+      data: {
+        inserted: [
+          {
+            id: 'm1',
+            content: [
+              { type: 'text', text: 'Team message from synthesizer:' },
+              { type: 'text', text: 'synthesizer 已就绪' },
+            ],
+            source: { kind: 'agent-message', form: 'relay', senderSessionId: 'sess-syn' },
+            role: 'user',
+          },
+        ],
+      },
+    } as never)
+    s = def.apply(s, {
+      type: 'tool/call',
+      seq: 2,
+      time: 1002,
+      data: {
+        name: 'send_message',
+        callId: 'call_1',
+        arguments: JSON.stringify({ target: 'researcher-a', message: '请核查' }),
+      },
+    } as never)
     // 非 relay 的 spliced（model/tool）→ 原状态引用不变
-    const same = def.apply(
-      s,
-      ({
-        type: 'agent/inbox/spliced',
-        seq: 3,
-        time: 1003,
-        data: {
-          inserted: [{ id: 'x', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model' } }],
-        },
-      }) as never,
-    )
+    const same = def.apply(s, {
+      type: 'agent/inbox/spliced',
+      seq: 3,
+      time: 1003,
+      data: {
+        inserted: [{ id: 'x', content: [{ type: 'text', text: 'hi' }], source: { kind: 'model' } }],
+      },
+    } as never)
     expect(same).toBe(s)
     // 其它工具调用不误收
     expect(
-      def.apply(
-        s,
-        ({
-          type: 'tool/call',
-          seq: 4,
-          time: 1004,
-          data: { name: 'list_agents', callId: 'c2', arguments: '{}' },
-        }) as never,
-      ),
+      def.apply(s, {
+        type: 'tool/call',
+        seq: 4,
+        time: 1004,
+        data: { name: 'list_agents', callId: 'c2', arguments: '{}' },
+      } as never),
     ).toBe(s)
 
     const view = def.wire.view(s)
@@ -349,5 +337,19 @@ describe('@elinpf/dsh-swarm-team-bus', () => {
       ['outbound', 'lead'],
     ])
     expect(view.messages[1]!.targets).toEqual(['researcher-a'])
+  })
+})
+
+describe('P81：广播 origin=broadcast（公告不计入未读/pending）', () => {
+  it('★广播带 origin=broadcast；多播带 origin=directed（对称）', async () => {
+    const { ctx, sent } = makeCtx()
+    const bus = new TeamBusService(ctx, { maxFanout: 64, maxMessageBytes: 65536 })
+    const text = [{ type: 'text', text: 'announcement' }]
+    await bus.broadcast(caller, { content: text, delivery: 'wakeup' })
+    expect(sent.length).toBeGreaterThan(0)
+    expect(sent.every((s) => s.origin === 'broadcast')).toBe(true)
+    sent.length = 0
+    await bus.multicast(caller, { targets: ['a'], content: text, delivery: 'wakeup' })
+    expect(sent.every((s) => s.origin === 'directed')).toBe(true)
   })
 })

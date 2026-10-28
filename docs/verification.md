@@ -1846,3 +1846,10 @@ team_task_update action=complete → status:completed,revision:3            # �
 - **接线（P78，dev-1）**：preset/bundle `disabled` 原生 4 行 + enable 本包 4 工具；**接线完成后再跑 profile 级收口探针**（先报预算）。
 - **【P77 更正 · 2026-10-28】同名遮盖缺陷（保留原结论，仅更正）**：原实现用**全局** `ctx.tools.register` 注册**与原生同名**的 `team_task_*`；而原生 4 个 `team_task_*` 是**成员 scoped**注册（`tool-agent-team:225 const scoped=agent.ctx`），**成员 scope 覆盖全局** ⇒ 我们的工具**被原生遮盖、profile 下未生效**（「绿」只在单测成立）。
   **已修**：改名 **`swarm_task_create/list/get/update`**（避免与原生及 `list_agents`/`wait_agent`/`send_message`/`spawn_*` 同名；取消语义仍=`delete`）。单测同步改名并绿。原「先红后绿」结论**保留**（§N.1 红态仍成立；绿态在**改名后 + P78 接线**的 profile 下才成立，待 P79 独立复核）。
+
+
+## P. team-bus.broadcast 漏传 origin='broadcast'（P81 修复）
+
+- **缺陷（P80 审计）**：`team-bus/src/index.ts` 广播调 `fanout(caller,targetIds,snap)` **漏第 4 参** ⇒ 默认 `'directed'` ⇒ **公告被计入未读/pending**（与 `multicast` 显式传 `'directed'` 不对称；`team-core` 要求 `'broadcast'` 不计入）。
+- **先红后绿**：先加断言（广播后每条投递 `origin==='broadcast'`、多播 `'directed'`）→ **红**（broadcast 的 origin 非 broadcast）；修 `:237` 补 `'broadcast'` → **绿**（16/16）。
+- **回归**：build / verify（加载）/ verify:e2e 全绿；不改 P51 未读闸语义（仅让广播正确取 `'broadcast'`）。

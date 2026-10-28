@@ -234,7 +234,9 @@ export class TeamBusService extends Service implements TeamBus {
       // 仅落库 + 通知本进程订阅者；不逐人 DM（成员按需 history 拉取）。
       this.notifySubscribers(targetIds, snap)
     } else {
-      await this.fanout(caller, targetIds, snap)
+      // P81：广播是「公告」——显式传 origin='broadcast'，使 team-core **不计入未读/pending 台账**
+      // （与 multicast 显式传 'directed' 对称；缺第 4 参会取默认 'directed' ⇒ 公告被误计入 pending）。
+      await this.fanout(caller, targetIds, snap, 'broadcast')
     }
     return { messageId: snap.id }
   }
