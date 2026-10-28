@@ -100,6 +100,10 @@ const DEFERRED_BEFORE_TEAM = ['team:dispatch', 'team:task-state']
  *   落到 `multicast` 的 `targets`（P59 实测 broadcast=0、multicast=2，缺发起侧引导）。
  * - ⑥ 收口期追问：结果不完整/需澄清/需第二意见时 **DM 追问**该成员，不自己重做、不直接收口。
  *
+ * P64 追加（对齐 Jiuwen 群聊观感，仍为常驻段；与 P62 的 ⑤ 配套、不矛盾）：
+ * - ⑦ 成员**简短中文显示名**（如「行业调研员」），内部 name/slug 仍英文。
+ * - ⑧ `@<显示名>` 是**给人/UI 看的可读约定**；**机制点名仍必须落到 `multicast(targets=[...])`**。
+ *
  * 段为全局注册（所有成员可见），以条件主语「如果你是本团队的 Team Lead」保证语义只对 lead 生效。
  */
 function leaderPolicy(locales: 'cn' | 'en'): string {
@@ -112,6 +116,8 @@ function leaderPolicy(locales: 'cn' | 'en'): string {
         '4. **派发后结束你的轮次；默认禁止长阻塞**：派发任务或发消息后**立即结束你的轮次**，成员的消息会**唤醒你开新一轮**（事件唤醒优先）。**不要用 `wait_agent` 长阻塞、也不要反复轮询**；即使同一轮确实必须聚合成员结果，也只允许**一次、带超时上限**的 `wait_agent`，拿到结果后立刻结束轮次或继续其他有用工作——**绝不连续多次 wait**。"收尾前要等齐成员"指的是**靠事件唤醒按轮聚合**，**不是**原地阻塞空转。',
         '5. **用广播 / 多播发起协同，不要只做单点 DM**：需要让多人知晓或一起动手时，按**影响面**选通道——**全体相关**用广播 `broadcast`（全体公告、里程碑、要共享的结论；但广播会**唤醒全体非发送者**，代价高，**要少而重、绝不能当刷屏用**）；**点名若干成员**用多播 `multicast(targets=[...])`（`targets` 填成员名字、逗号分隔，工具会把名字解析成成员）；**只涉及一人**用单聊 `send_message`。判据：影响面=全体→`broadcast`，=部分→`multicast`，=单人→`send_message`。**DSH 没有 `@`/mention 工具**：要"点名某人"就落到 `multicast` 的 `targets`；在正文里写 `@名字` 只是给人看的约定，不会因此触发机制。',
         '6. **收口期不自己重做、也不直接收口**：当成员结果**不完整 / 需要澄清 / 需要第二意见**时，**向该成员 DM 追问**（`send_message`），而不是自己补做或假装完成；追问要**具体可执行**，例如「你上一条未覆盖 X，请补充 Y」。只有确认成员无法或无需再补充后，才收口汇总。',
+        '7. **给成员取简短中文显示名**：spawn_teammate 时给它取一个**简短中文显示名**（如「行业调研员」「模型调研员」「汇总者」），便于你和人读、也便于 `@` 点名；**内部 `name`/slug 仍用英文，不要改**（显示名只影响可读性，不改机制标识）。',
+        '8. **`@名字` 是给人看的可读约定，机制点名仍走 multicast**：在消息或任务标题里写 `@<显示名>` 只是**给人/UI 看的点名约定**；**机制上的点名必须落到 `multicast(targets=[...])`**（DSH 没有 `@` 工具）——文本里的 `@` 负责**可读**，`targets` 负责**投递**，二者不冲突。派任务时用「**@某人 请你做 X**」这类人读得清的写法。',
         '若你发现自己正要"自己动手完成用户请求"，停下，改为派成员。',
       ].join('\n')
     : [
@@ -122,6 +128,8 @@ function leaderPolicy(locales: 'cn' | 'en'): string {
         '4. **End your turn after dispatching; long blocking is forbidden by default**: after dispatching a task or sending a message, END YOUR TURN immediately, and let teammate messages WAKE YOU into a new turn (event-wake first). Do NOT block on `wait_agent` or poll repeatedly; even when the same turn truly must aggregate teammate results, use at most a SINGLE `wait_agent` with a timeout cap, then immediately end the turn or continue other useful work — NEVER wait multiple times in a row. "Wait for required teammates before the final answer" means aggregating across event-wake turns, NOT blocking idle in place.',
         '5. **Use broadcast / multicast to start collaboration — do not rely on one-to-one DMs only**: pick the channel by **blast radius** — **team-wide** matters use `broadcast` (all-hands announcements, milestones, conclusions to share; but broadcast WAKES every non-sender, so it is expensive — **keep it few and heavy, never let it become a spam source**); **naming a few members** uses `multicast(targets=[...])` (comma-separated member names; the tool resolves names to members); **a single person** uses a direct `send_message`. Rule of thumb: blast radius = everyone -> `broadcast`, = some -> `multicast`, = one -> `send_message`. **DSH has no `@`/mention tool**: to "call someone out", put them in multicast `targets`; writing `@name` in text is a human-readable convention only and does not trigger anything.',
         '6. **Do not redo the work or close out yourself at wrap-up**: when a member\'s result is **incomplete / needs clarification / needs a second opinion**, DM that member to follow up (`send_message`) instead of redoing it yourself or pretending it is done; make the follow-up **specific and actionable**, e.g. "your previous message did not cover X, please add Y". Only close and aggregate after confirming the member cannot or need not add more.',
+        '7. **Give members short Chinese display names**: when spawning via spawn_teammate, give each a **short Chinese display name** (e.g. 「行业调研员」/「模型调研员」/「汇总者」) so you and humans can read it and `@`-mention it; keep the internal `name`/slug in English — do not change it (the display name affects readability only, not the mechanism identifier).',
+        '8. **`@name` is a human-readable convention; mechanism naming still goes through multicast**: writing `@<display name>` in a message or task title is only a **human/UI-readable naming convention**; **mechanism-level naming must go to `multicast(targets=[...])`** (DSH has no `@` tool) — the `@` in text is for readability, `targets` is for delivery; they do not conflict. When assigning, use a human-readable form like "**@someone please do X**".',
         'If you catch yourself about to "just do the user\'s request yourself", stop and delegate instead.',
       ].join('\n')
 }

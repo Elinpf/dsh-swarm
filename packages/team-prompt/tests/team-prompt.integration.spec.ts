@@ -119,3 +119,17 @@ describe('P62 真实装配：协同质量引导进入渲染后的系统提示词
     expect(names).not.toContain('team:dispatch')
   })
 })
+
+describe('P64 真实装配：显示名 + @ 可读约定进入渲染后的系统提示词（团队未建时也在）', () => {
+  it('团队未建时 prompt 含中文显示名与 @ 约定', async () => {
+    const { names, prompt } = await renderTeamPrompt({
+      locales: 'cn',
+      leaderProgressiveDisclosure: true,
+      sections: [],
+    })
+    expect(names).toContain('team:leader')
+    expect(prompt).toContain('中文显示名')
+    expect(prompt).toContain('@<显示名>')
+    expect(prompt).toContain('multicast(targets=')
+  })
+})

@@ -363,3 +363,46 @@ describe('P62 协同质量判据（广播/多播发起 + 收口期追问，常�
     expect(leader.text).toContain('follow up')
   })
 })
+
+describe('P64 显示名 + @ 可读约定（常驻 team:leader，与 P62 配套）', () => {
+  it('⑦ 中文显示名：给示例，并要求内部 name/slug 仍英文', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('中文显示名')
+    expect(leader.text).toContain('行业调研员')
+    expect(leader.text).toContain('slug')
+    expect(leader.text).toContain('仍用英文')
+  })
+
+  it('⑧ @名字 可读约定：文本 @ 给人看、机制点名仍走 multicast(targets)', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('@<显示名>')
+    expect(leader.text).toContain('multicast(targets=')
+    expect(leader.text).toContain('给人')
+    expect(leader.text).toContain('请你做 X')
+  })
+
+  it('新句在常驻段、团队未建也渲染（不被渐进披露过滤）', async () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('中文显示名')
+    const assemble = ctx._handlers['system-prompt/assemble']![0]!
+    const next = async () => assembly()
+    const before = await assemble(assembly(), {}, next)
+    expect(before.sections.some((s: any) => s.name === 'team:leader')).toBe(true)
+    expect(before.sections.some((s: any) => s.name === 'team:dispatch')).toBe(false)
+  })
+
+  it('英文语种含 display name 与 @ convention', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, { ...config, locales: 'en' })
+    const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
+    expect(leader.text).toContain('short Chinese display name')
+    expect(leader.text).toContain('human-readable')
+    expect(leader.text).toContain('multicast(targets=')
+  })
+})

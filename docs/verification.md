@@ -1725,3 +1725,35 @@ $ node scripts/verify-e2e.mjs ; bash scripts/e2e-profile.sh --no-model   # PASS=
 **【解锁条件】** 需要**更多轮的对照采样**，且采样里必须**包含明确的「全体相关」场景**（全体公告 / 里程碑 / 要共享的结论），
 并**对照「无 ⑤ 引导」的基线**，才能判定 ⑤ 是「按预期抑制了不当广播」还是「引导过弱、该广播也没广播」。
 在此之前，**不得**把 `broadcast=0` 读成「引导有效」或「引导无效」。
+
+---
+
+# P64 — 提示词补两句：成员中文显示名 + `@名字` 可读点名约定（team-prompt）
+
+## A. 改动面（只改 `packages/team-prompt`）
+
+- `src/index.ts`：**常驻段 `team:leader`**（与 P62 的 ⑤⑥ 同段、不矛盾）追加两条：
+  - ⑦ **给成员取简短中文显示名**（如「行业调研员」「模型调研员」「汇总者」），便于人读与 `@` 点名；**内部 `name`/slug 仍英文、不改**。
+  - ⑧ **`@<显示名>` 是给人/UI 看的可读约定**；**机制上的点名仍必须落到 `multicast(targets=[...])`**（DSH 无 `@` 工具）——
+    文本 `@` 负责**可读**、`targets` 负责**投递**；派任务用「**@某人 请你做 X**」这类人读得清的写法。
+- `tests/team-prompt.spec.ts`（+4）、`tests/team-prompt.integration.spec.ts`（+1）。
+- **未改** `client/*`（UI 属 P63）/ `team-bus` / `bundle` / `tool-swarm` / `scripts/bench/*` / `verify-e2e.mjs` / `final-acceptance.md`。
+
+## B. 验证（无模型）
+
+- team-prompt 单测 + 集成：**29 passed**（24 + 5）。覆盖：**常驻段**渲染 / **团队未建时也渲染** / **中英双语** /
+  真实 `@deepseek-ai/dsh-system-prompt` 装配（非 mock）。
+- 全仓 `pnpm -r test`：**20 test files 全绿**（exit 0，无 FAIL）。
+- `pnpm run verify`（真实 cordis 加载）：✅ 加载验证通过。
+- `pnpm run verify:e2e`（进程内链路）：✅ 集成冒烟通过。
+- `bash scripts/e2e-profile.sh --no-model`：**PASS=7 FAIL=0**。
+
+## C. 未跑真实模型（说明）
+
+- 本任务为**措辞补充**，按任务「**不强制跑真实模型**」未跑 P62 式 3 轮探针（**未复测** P62 基线 `broadcast=0/multicast=1/send_message=6`）。
+- 「引导进了渲染后的提示词」由**真实 `dsh-system-prompt` 集成测试**证明（非 mock），**未再做 profile 级 prompt 落盘**。
+- 如需 profile 级落盘证据（同 P62 §C），可另跑 1 次（预算 ~7k，**先报**）。
+
+## D. 边界
+
+- **未碰 demo**（重启由 team-leader 做）；仅隔离环境跑无模型回归。
