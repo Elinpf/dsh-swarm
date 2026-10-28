@@ -47,6 +47,7 @@
 | review | `swarm/review/vote` | durable | `{ taskId, reviewer, vote }` | emit `:143`；fold `:228` |
 | review | `swarm/review/settled` | durable | `{ taskId, verdict }` | emit `:153`；fold `:236` |
 | review | `swarm/review/round` | durable | `{ taskId, round }` | emit `:182`；fold `:232` |
+| review | `swarm/review/escalated` | durable | `{ taskId, reason, round }` | emit `team-review/src/index.ts`（P74-B4，验收升级：轮尽/超时）；fold 置 `stalled` |
 | bus | `swarm/bus/broadcast` | durable | `BroadcastSnapshot`（id/from/topic/targets/text/ts） | emit `team-bus/src/index.ts:205,:249`；fold `:130` |
 | skills | `swarm/skills/visibility` | durable | `{ teamId, map }` | emit `team-skills/src/index.ts:140`；fold `:105` |
 | skills | `swarm/skills/grant` | durable | `{ memberId, names }` | emit `:157`；fold `:109` |

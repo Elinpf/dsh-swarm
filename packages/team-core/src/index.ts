@@ -497,7 +497,15 @@ export class TeamCoreService extends Service implements TeamCore {
     // 评审中：只允许「离场」动作（complete=通过、reopen=返工、delete=撤销）；
     // 其余动作（claim/release/edit/set_dependencies/assign）在评审期间被拒，避免评审对象被偷改。
     if (this.reviewing.has(req.taskId)) {
-      if (req.action !== 'complete' && req.action !== 'reopen' && req.action !== 'delete') {
+      // B2：in_review 期间**硬拒绝**直接 complete —— 必须先经 team-review.settle(pass)
+      // （走 `completeAfterReview`）。否则「验收闸」形同虚设。
+      if (req.action === 'complete') {
+        throw new TeamCoreError(
+          'TEAMCORE_REVIEW_REQUIRED',
+          `task ${req.taskId} is in_review; complete must go through review settle (completeAfterReview)`,
+        )
+      }
+      if (req.action !== 'reopen' && req.action !== 'delete') {
         throw new TeamCoreError(
           'TEAMCORE_INVALID_TRANSITION',
           `action '${req.action}' not allowed while task ${req.taskId} is in_review`,
@@ -506,12 +514,7 @@ export class TeamCoreService extends Service implements TeamCore {
       this.reviewing.delete(req.taskId)
       this.emitDurable(caller, 'swarm/core/review-left', {
         taskId: req.taskId,
-        outcome:
-          req.action === 'complete'
-            ? 'completed'
-            : req.action === 'delete'
-            ? 'deleted'
-            : 'reopened',
+        outcome: req.action === 'delete' ? 'deleted' : 'reopened',
       })
     }
     // 端口动作名 'assign' → 原生 'reassign'
@@ -632,6 +635,28 @@ export class TeamCoreService extends Service implements TeamCore {
     } catch (e) {
       this.ctx.logger?.warn?.('team-core: emit %s failed: %s', type, String((e as Error)?.message))
     }
+  }
+
+  /**
+   * B2：**经评审放行的完成**（唯一合法出口）。`in_review` 任务不可被 `updateTask('complete')` 直接完成；
+   * 仅 `team-review.settle(pass)` 调本方法：先离场（review-left completed）再委托原生 complete。
+   */
+  async completeAfterReview(caller: Agent, taskId: string): Promise<TaskView> {
+    if (!this.reviewing.has(taskId)) {
+      throw new TeamCoreError(
+        'TEAMCORE_INVALID_TRANSITION',
+        `task ${taskId} is not in_review (completeAfterReview)`,
+      )
+    }
+    this.reviewing.delete(taskId)
+    this.emitDurable(caller, 'swarm/core/review-left', { taskId, outcome: 'completed' })
+    const cur = this.require().getTask(caller, taskId)
+    const updated = await this.require().updateTask(caller, {
+      taskId,
+      expectedRevision: cur.revision,
+      action: 'complete',
+    })
+    return this.overlay(updated)
   }
 
   async waitForChange(

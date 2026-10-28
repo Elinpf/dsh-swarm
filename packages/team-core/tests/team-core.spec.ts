@@ -255,15 +255,16 @@ describe('@elinpf/dsh-swarm-team-core · in_review 叠加态与合法转换', ()
     ).rejects.toThrow(/TEAMCORE_REVISION_MISMATCH/)
   })
 
-  it('in_review → completed：complete 离场并清除叠加', async () => {
+  it('P74-B2：in_review 期间 updateTask(complete) 被拒；completeAfterReview 离场并完成', async () => {
     const { ctx, state } = makeReviewCtx()
     const core = new TeamCoreService(ctx, cfg())
     await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
-    const done = await core.updateTask(agent, {
-      taskId: 't1',
-      expectedRevision: 0,
-      action: 'complete',
-    })
+    // B2 硬闸：in_review 期间禁止直接 complete（旧行为=直接完成，已按新语义改）
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'complete' }),
+    ).rejects.toThrow(/REVIEW_REQUIRED/)
+    // 唯一合法出口：评审放行
+    const done = await core.completeAfterReview(agent, 't1')
     expect(done.status).toBe('completed')
     expect(state.status).toBe('completed')
     expect(core.getTask(agent, 't1').status).toBe('completed')
@@ -543,5 +544,53 @@ describe('P51② 定向消息超时重投/升级（防风暴）', () => {
       core.send(agent, { range: { kind: 'broadcast' } as never, content: text, delivery: 'quiet' }),
     ).rejects.toThrow(/RANGE_UNSUPPORTED/)
     expect(core.pendingMessageCount).toBe(0)
+  })
+})
+
+describe('P74-B2：in_review 硬闸（评审放行是唯一完成出口）', () => {
+  it('in_review 期间 complete 被拒（TEAMCORE_REVIEW_REQUIRED）；completeAfterReview 放行', async () => {
+    const state: any = {
+      id: 't1',
+      revision: 0,
+      subject: 's',
+      description: '',
+      status: 'in_progress',
+      blockedBy: [],
+      ready: true,
+      ownerName: 'w',
+    }
+    const seam = {
+      membership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      tryMembership: () => ({ id: 'lead', role: 'lead', name: 'lead' }),
+      listMembers: () => [],
+      spawnTeammate: async () => ({ member: { id: 'w', name: 'w', role: 'teammate' } }),
+      sendMessage: async () => ({ messageId: 'm1' }),
+      createTask: async () => ({ ...state, status: 'pending' }),
+      getTask: () => ({ ...state }),
+      listTasks: () => [{ ...state }],
+      updateTask: async (_c: unknown, r: any) => {
+        if (r.action === 'complete') state.status = 'completed'
+        else if (r.action === 'reopen') state.status = 'in_progress'
+        return { ...state }
+      },
+      waitForChange: async () => ({ timedOut: false }),
+      interrupt: () => ({ previousStatus: 'running' as const }),
+    }
+    const ctx: any = {
+      get: (n: string) => (n === 'agentTeams' ? seam : undefined),
+      logger: { warn() {}, debug() {}, info() {} },
+      reflect: { provide() {} },
+      effect: (fn: () => unknown) => fn(),
+      inject: () => () => {},
+      on: () => () => {},
+      emit() {},
+    }
+    const core = new TeamCoreService(ctx, cfg())
+    await core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'submit_review' })
+    await expect(
+      core.updateTask(agent, { taskId: 't1', expectedRevision: 0, action: 'complete' }),
+    ).rejects.toThrow(/REVIEW_REQUIRED/)
+    const done = await core.completeAfterReview(agent, 't1')
+    expect(done.status).toBe('completed')
   })
 })

@@ -340,3 +340,64 @@ describe('@elinpf/dsh-swarm-team-review', () => {
     ).toBe(true)
   })
 })
+
+describe('P74 验收闸一组（B1/B4）', () => {
+  // ★ 第一条（先红后绿）：不卡死——有池但无人投票，超时 → escalated + leader DM
+  it('B4 不卡死：reviewer 超时未投 → checkStall 升级 leader（swarm/review/escalated）', async () => {
+    const { ctx, task, sent, emitted } = makeCtx()
+    const rv = new TeamReviewService(ctx, {
+      pools: binaryPools,
+      maxRounds: 3,
+      stallTimeoutMs: 100,
+    })
+    await rv.submitForReview(asCaller('w'), 't1')
+    expect(task.status).toBe('in_review')
+
+    const t0 = 1_000_000
+    expect(await rv.checkStall(asCaller('lead'), t0)).toBe(0) // 首次仅记时
+    expect(await rv.checkStall(asCaller('lead'), t0 + 200)).toBe(1) // 超时 → 升级
+    expect(emitted.some((e) => e.type === 'swarm/review/escalated')).toBe(true)
+    expect(sent.some((s) => s.to === 'lead')).toBe(true)
+    // 幂等：再次扫描不重复升级（防风暴）
+    expect(await rv.checkStall(asCaller('lead'), t0 + 10_000)).toBe(0)
+  })
+
+  it('B1 inspector 计票：score 池达标 → pass；不达标 → fail', async () => {
+    const pools = [
+      { kind: 'score' as const, rule: 'veto' as const, threshold: 0.8, roles: ['inspector'] },
+    ]
+    const hi = makeCtx()
+    const rvHi = new TeamReviewService(hi.ctx, { pools, maxRounds: 3, stallTimeoutMs: 1000 })
+    await rvHi.submitForReview(asCaller('w'), 't1')
+    await rvHi.vote(asCaller('inspector'), 't1', { kind: 'score', value: 0.9, role: 'inspector' })
+    expect((await rvHi.settle(asCaller('lead'), 't1')).kind).toBe('pass')
+
+    const lo = makeCtx()
+    const rvLo = new TeamReviewService(lo.ctx, { pools, maxRounds: 3, stallTimeoutMs: 1000 })
+    await rvLo.submitForReview(asCaller('w'), 't1')
+    await rvLo.vote(asCaller('inspector'), 't1', { kind: 'score', value: 0.5, role: 'inspector' })
+    expect((await rvLo.settle(asCaller('lead'), 't1')).kind).toBe('fail')
+  })
+
+  it('回归：settle(pass) 仍把任务完成（经 review 出口）', async () => {
+    const { ctx, task } = makeCtx()
+    const rv = new TeamReviewService(ctx, {
+      pools: binaryPools,
+      maxRounds: 3,
+      stallTimeoutMs: 1000,
+    })
+    await rv.submitForReview(asCaller('w'), 't1')
+    await rv.vote(asCaller('verifier'), 't1', {
+      kind: 'binary',
+      decision: 'pass',
+      role: 'verifier',
+    })
+    await rv.vote(asCaller('challenger'), 't1', {
+      kind: 'binary',
+      decision: 'pass',
+      role: 'challenger',
+    })
+    expect((await rv.settle(asCaller('lead'), 't1')).kind).toBe('pass')
+    expect(task.status).toBe('completed')
+  })
+})

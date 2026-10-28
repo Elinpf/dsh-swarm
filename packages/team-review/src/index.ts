@@ -62,6 +62,8 @@ export interface TeamReview {
   submitForReview(caller: Agent, taskId: string): Promise<TaskView>
   vote(caller: Agent, taskId: string, v: ReviewVote): Promise<void>
   settle(caller: Agent, taskId: string, feedback?: string): Promise<ReviewVerdict>
+  /** B4：超时重催/升级扫描（有界幂等）；返回本次升级数。 */
+  checkStall(caller: Agent, now?: number): Promise<number>
   inspect(
     taskId: string,
   ): { round: number; votes: ReviewVote[]; verdict?: ReviewVerdict } | undefined
@@ -71,6 +73,10 @@ interface ReviewState {
   round: number
   votes: Map<string, ReviewVote>
   verdict?: ReviewVerdict
+  /** B4：首次观测到 in_review 的时刻（stall 计时）。 */
+  since?: number
+  /** B4：已因超时升级过（防重复升级）。 */
+  stalled?: boolean
 }
 
 export class TeamReviewError extends Error {
@@ -168,12 +174,20 @@ export class TeamReviewService extends Service implements TeamReview {
     })
 
     if (verdict.kind === 'pass') {
-      const task = this.ctx.teamCore.getTask(caller, taskId)
-      await this.ctx.teamCore.updateTask(caller, {
-        taskId,
-        expectedRevision: task.revision,
-        action: 'complete',
-      })
+      // B2：评审放行是**唯一合法完成出口**——优先走 team-core 的 completeAfterReview（硬闸）
+      const core = this.ctx.teamCore as unknown as {
+        completeAfterReview?: (c: Agent, t: string) => Promise<TaskView>
+      }
+      if (typeof core.completeAfterReview === 'function') {
+        await core.completeAfterReview(caller, taskId)
+      } else {
+        const task = this.ctx.teamCore.getTask(caller, taskId)
+        await this.ctx.teamCore.updateTask(caller, {
+          taskId,
+          expectedRevision: task.revision,
+          action: 'complete',
+        })
+      }
       return verdict
     }
 
@@ -223,6 +237,28 @@ export class TeamReviewService extends Service implements TeamReview {
     }
   }
 
+  async checkStall(caller: Agent, now: number = Date.now()): Promise<number> {
+    let n = 0
+    for (const [taskId, st] of this.states) {
+      if (st.verdict || st.stalled) continue
+      const task = this.ctx.teamCore.getTask(caller, taskId)
+      if (task.status !== 'in_review') {
+        st.since = undefined
+        continue
+      }
+      if (st.since === undefined) {
+        st.since = now
+        continue
+      }
+      if (now - st.since >= this.config.stallTimeoutMs) {
+        st.stalled = true
+        await this.escalate(caller, taskId, `reviewer 超时未投（>${this.config.stallTimeoutMs}ms）`)
+        n += 1
+      }
+    }
+    return n
+  }
+
   inspect(
     taskId: string,
   ): { round: number; votes: ReviewVote[]; verdict?: ReviewVerdict } | undefined {
@@ -254,6 +290,10 @@ export class TeamReviewService extends Service implements TeamReview {
         'swarm/review/settled': (_s, p) => {
           const st = typeof p.taskId === 'string' ? this.states.get(p.taskId) : undefined
           if (st && p.verdict) st.verdict = p.verdict as ReviewVerdict
+        },
+        'swarm/review/escalated': (_s, p) => {
+          const st = typeof p.taskId === 'string' ? this.states.get(p.taskId) : undefined
+          if (st) st.stalled = true
         },
       },
       { onUnknownEvent: () => {}, onUnsupportedVersion: () => {} },
@@ -316,7 +356,17 @@ export class TeamReviewService extends Service implements TeamReview {
     return { kind: 'pass' }
   }
 
+  /**
+   * B4：验收升级（有界）——轮数耗尽 / reviewer 超时时调用。发 `swarm/review/escalated`（通道 A）
+   * + 定向 DM **leader inbox**（不进用户主对话，R6）。
+   */
   private async escalate(caller: Agent, taskId: string, reason: string): Promise<void> {
+    const st = this.states.get(taskId)
+    this.emitDurable(
+      (caller as unknown as { session?: unknown }).session,
+      'swarm/review/escalated',
+      { taskId, reason, round: st?.round ?? 0 },
+    )
     try {
       await this.ctx.teamCore.send(caller, {
         range: { kind: 'dm', to: 'lead' },
