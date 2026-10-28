@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { TEAM_CHAT_ID, teamChatDefinition } from './definition.ts'
 import { TeamChatTab } from './TeamChatTab.tsx'
+import { submitTeamPrompt } from './session-prompt.ts'
 import { en, NS, zh, type TeamKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -40,6 +41,8 @@ export function apply(ctx: ClientContext): void {
         name: 'sidebar.right.pane.tab',
         key: TEAM_CHAT_ID,
         locale: NS,
+        // P68-A：注入发送通道——把文本作为 user 消息注入 Lead 会话。
+        inject: () => ({ submit: (sessionId, text) => submitTeamPrompt(ctx, sessionId, text) }),
       },
       TeamChatTab,
     ),

@@ -172,3 +172,12 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
 - 左栏**只读**（不含 composer；composer 属 P68）。
 - 逐条见 [`P66-CHECKLIST.md`](./P66-CHECKLIST.md) 的「P67 增补」。
 
+## P68-A：composer（输入框 + `@` 候选下拉）——功能扩展，已按 A 落地
+
+- **通道（A）**：复用**会话提示 seam**（`dsh-api-session-controller/client` 的 `ctx.sessions.binding(id).session.prompt(text,'queue')`，与**主 composer 同源**）→ 把输入作为**一条 user 消息注入 Lead 会话**。**零后端、可逆**。
+- **⚠️ 语义限制（composer 上方显眼标注，非藏 README）**：此输入 = **向团队 Lead 说话**（等价主输入框）；**≠ 向某成员直发**；**不计入本栈未读/兜底**（P51 边界）；**会触发 Lead 一轮、计入 token**。
+- **UI（照 spec 数值）**：候选下拉 `min(360px,100%)` / 圆角 **14px** / item 高 **44px** / header **34px** / list `max-h 266px` / avatar **26×26**；inline chip 高 **24px** / 圆角 **6px** / 蓝渐变底；触发正则 `/([@$])([\p{L}\p{N}_\-\u4e00-\u9fa5]*)$/u`。
+- **`@` 语义**：候选来自成员名册；选中**插入 inline chip 文本**（展开为 **`@<name>`**，**非 UUID**——DSH id 不可读，**已标注**）；**A 只落文本**，结构化 `multicast targets` **仅 B（需后端）能做**。
+- **硬要求（已实现）**：**仅人工显式提交**（无自动发送）；**turn 进行中禁用**（读 `byId[id].running`）；**去重/限速**（1500ms，防 send→turn→send 自激）；**失败可见**（`role=alert` 错误行，不静默）；取不到 session 句柄时给**明确错误**（「会话通道不可用…未发送」）。
+- **B（全保真，需后端）暂缓**：结构化 `targets` + human seat/lead 身份 → 超出「只改 `client/team-ui`」，归属待定（见 [`P68-PROPOSAL.md`](./P68-PROPOSAL.md)）。
+
