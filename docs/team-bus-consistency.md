@@ -108,6 +108,12 @@
 
 **【推断】** 因此 §2.1 的 `origin` 缺陷**影响面**是：经 team-bus 广播（dm 扇出）才受影响；纯原生 DM 路径不受影响（因其本就不入台账）。
 
+### 3.1 P48（消息完整性）/ P52（durable 真持久化）残留核查 —— ✅ 一致
+
+- **P48 完整性**：`multicast` 整批原子（先落库+写 durable，任一步失败 `rollback(written)` 并抛 `TEAMBUS_TX_FAILED`，绝不部分投递）——`team-bus/src/index.ts:269-284,438-443`；`fanout` 单目标投递失败**只告警不打断**（内容已落库、可补投）——`:374-381`；广播**自过滤发送者**（`targets.filter(m=>m.id!==sender.id)`）——`:212`。⇒ 无「部分投递/串味/自投递」。
+- **P52 durable**：`team-bus` 的 `emitDurable` **既 `ctx.emit` 又 `appendDurable(session,...)` 真 append 会话日志**——`team-bus/src/index.ts:164-179`；`recover()` 折叠 `swarm/bus/broadcast`（幂等去重 + 恢复 `seq`）——`:146-162`；构造器监听 `session/event` 触发 recover——`:136-142`。⇒ P52「emit-only 不持久」在 team-bus 侧**已修复**。
+- **残留**：`#1 origin`（§2.1）是唯一与 P51 声明相悖处；P48/P52 侧未发现残留。
+
 ---
 
 ## 4. 已确认一致项（供 checklist）
