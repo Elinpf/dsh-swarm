@@ -1806,3 +1806,14 @@ $ node scripts/verify-e2e.mjs ; bash scripts/e2e-profile.sh --no-model   # PASS=
 ## G. 边界
 
 - 未碰 demo；未改其它包。P0/P1 已落，**P2（C12–C19）按 Leader 指示「观察后再补」**。
+
+
+## N. 验收闸一组 B1/B2/B4（P74）— 验证与证据分级
+
+- **实现**：B2 `team-core` 硬闸（`in_review` 时 `complete` → `TEAMCORE_REVIEW_REQUIRED`，唯一出口 `completeAfterReview`）；B1 `inspector` score 池计票；B4 `team-review` 有界升级（`swarm/review/escalated` 通道 A + leader DM inbox + `checkStall` 幂等）。
+- **先红后绿（真·先红）**：旧测试「`in_review` 可被 `complete`」在 B2 语义下**变红**，按新语义改绿 —— 见 `team-core` spec「P74-B2」。（首条先红后绿=**不卡死**：`team-review` spec「B4 不卡死」。）
+- **确定性多轮采样（≥3，防方差假绿）**：`team-review` 17 / `team-core` 29，**3 轮均全绿**。
+- **profile 接线回归（免模型）**：`bash scripts/e2e-profile.sh --no-model` → **PASS=7 FAIL=0**（profile 服务可用性 + 原生接通 + 无告警）。
+- **证据分级（宁降不升）**：
+  - **【确定性 级 已验证】**：①②③（B2 硬闸 / B4 超时升级幂等 / 不卡死：无池直接完成、有池有界到达终态或升级）由单测覆盖 + 3 轮采样稳定。
+  - **【profile 级 行为 未验】**：`review_submit` 工具受 **`tool-swarm.enableReview`** 门控（bundle 默认 `false`，P44/dev 地盘），默认 profile **无可达触发点**；故未做 profile 级行为端到端。**解锁**：经 overlay 开启 `enableReview`（需授权、避开 bundle 改动）后即可跑；或待 P49 后 tool-swarm 稳定。
