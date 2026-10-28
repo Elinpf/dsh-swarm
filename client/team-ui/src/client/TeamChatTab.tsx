@@ -1,22 +1,22 @@
 /**
- * Team chat tab body — **P66 像素级对齐 Jiuwen 群聊详情区**（`GroupChatDetail`）。
+ * Team chat tab body — **P66 像素级对齐 Jiuwen 群聊详情区** + **P67 面板内左侧栏**。
  *
- * 迁移范围（P66 in-scope，对照 `docs/jiuwen-chat-ui-spec.md` §5.1/§5.2/§5.4/§3.3）：
- * - 详情区容器：`px-7 py-6`（28/24）+ 内层 `mx-auto max-w-[820px] space-y-5`（gap 20px）；
- * - 消息行 `flex items-start gap-3`；发送者名 16px/28px semibold；正文 14px/24px；
- * - 头像 32×32 rounded-xl，底色由成员 id 确定性派生（Jiuwen 24 色哈希）；类目派生 5 类；
- * - 定向 chip：`@目标`（p2p 蓝）/`@所有人`（broadcast 橙）；正文 `@名字` 用链接蓝；
- * - 空态「暂无群聊消息」；置底 + 40px 上滑阈值；时间 `HH:mm:ss`。
+ * P66（详情区）：容器 `px-7 py-6` + 内层 `mx-auto max-w-[820px] space-y-5`；消息行 `gap-3`；
+ * 发送者名 16/28/600；正文 14/24；头像 32×32 rounded-xl（首字符+24 色哈希底）；`@目标`(p2p 蓝)/
+ * `@所有人`(broadcast 橙) 定向 chip；正文 `@名字` 链接蓝；空态；置底+40px 阈值；时间 `HH:mm:ss`。
  *
- * **不在本插件范围（显式列出，见 checklist doc）**：左侧 240px 侧栏/成员列表/成员·子话题 Tab（→P67）、
- * 输入框 composer 的 `@`/`$` 候选下拉（→P68）、主对话流 `team-member-message` 镜像（待上游）。
+ * P67（左侧栏，借 `docs/jiuwen-chat-ui-spec.md` §5.1/§2.2）：pane 内**左右两栏**，左 **240px**：
+ * Tab「成员 / 子话题」(rounded-md p-1 / 选中 bg-card+semibold+shadow / h-8) + 群聊入口行
+ * （32×32 首字符头像 + 「群聊」+ 成员名 `、` 分隔）+ 成员列表项（头像 rounded-full 32×32 +
+ * 显示名 text-sm/600 + 第二行 `@<id>` + 状态点）。窄宽降级：侧栏可折叠（一个切换按钮），**标注**。
  *
- * 数据：只读 `agentTeam`（roster/显示名）+ `swarmBus`（消息流）两个投影；可见范围/排序/去重
- * 沿用 P61（`orderMessages`，`id`/`seq`）**不变**。
+ * **需适配/不可迁移（不造数据）**：① 「子话题」——DSH 无该概念（Jiuwen 是 `team.event:` 子话题镜像）
+ * → Tab 保留但内容为空态 + 说明；② 成员列表第二行 `@member_id`——DSH id 是 UUID 不可读 → 用 slug 名。
  *
- * NOTE (env-limited)：无自动化浏览器断言；像素观感由用户点开确认。
+ * 数据：只读 `agentTeam` + `swarmBus` 投影；可见范围/排序/去重沿用 P61（`id`/`seq`）**不变**。
+ * NOTE (env-limited)：无浏览器断言；像素观感由用户点开确认。
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { NS } from './locales.ts'
@@ -45,6 +45,8 @@ interface MemberRow extends MemberLike {
 type Projections = Record<string, { values?: Record<string, unknown> }> | undefined
 
 const GAP_PX = 40 // 上滑阈值（Jiuwen `TeamMembersPanel.tsx:319`）
+const SIDEBAR_PX = 240 // 左栏宽（Jiuwen `TeamMembersPanel.tsx:201`）
+const BORDER = '#e4e4e7'
 
 function titleOf(projections: Projections, memberId: string): string | undefined {
   const v = projections?.[memberId]?.values?.['sessionTitle']
@@ -56,12 +58,24 @@ function titleOf(projections: Projections, memberId: string): string | undefined
   return undefined
 }
 
-/** 正文 `@名字`：链接蓝、无底（Jiuwen §2.2 群聊内覆盖）。 */
+/** 成员状态点色（Jiuwen `--color-team-status-*` §2.1）。 */
+function statusColor(phase: string): string {
+  switch (phase) {
+    case 'provisioning':
+      return '#777777'
+    case 'failed':
+      return '#c84646'
+    case 'active':
+      return '#088c58'
+    default:
+      return '#777777'
+  }
+}
+
 function BodyMention({ seg }: { seg: Segment }): JSX.Element {
   return <span style={{ color: '#0067d1' }}>{`@${seg.value}`}</span>
 }
 
-/** 定向 chip：p2p 蓝 / broadcast 橙（Jiuwen `.team-event-group-chip` §2.3）。 */
 function TargetChip({ seg }: { seg: Segment }): JSX.Element {
   const p2p = seg.tone !== 'broadcast'
   return (
@@ -82,8 +96,7 @@ function TargetChip({ seg }: { seg: Segment }): JSX.Element {
   )
 }
 
-/** 头像 32×32 rounded-xl（Jiuwen `TeamMemberAvatar` 默认；代码口径 h-8 w-8）。 */
-function Avatar({ id, name, role, displayName }: { id: string; name: string; role?: string; displayName: string }): JSX.Element {
+function Avatar({ id, name, role, displayName, round = false }: { id: string; name: string; role?: string; displayName: string; round?: boolean }): JSX.Element {
   const st = avatarStyleFor({ id, name, role }, displayName)
   return (
     <span
@@ -92,7 +105,7 @@ function Avatar({ id, name, role, displayName }: { id: string; name: string; rol
         flex: '0 0 auto',
         width: 32,
         height: 32,
-        borderRadius: 12,
+        borderRadius: round ? 9999 : 12,
         background: st.background,
         color: '#3a4a63',
         fontSize: 14,
@@ -105,7 +118,65 @@ function Avatar({ id, name, role, displayName }: { id: string; name: string; rol
   )
 }
 
-/** Render the Jiuwen-aligned group-chat detail (message list + empty state). */
+/** 左栏：Tab「成员 / 子话题」+ 群聊入口行 + 列表。 */
+function LeftRail({ members, tab, setTab }: { members: MemberRow[]; tab: 'members' | 'subtopic'; setTab: (v: 'members' | 'subtopic') => void }): JSX.Element {
+  const names = members.map((m) => displayNameOf(m))
+  const btn = (active: boolean): CSSProperties => ({
+    height: 32,
+    flex: 1,
+    textAlign: 'center',
+    borderRadius: 6,
+    fontSize: 13,
+    border: 'none',
+    cursor: 'pointer',
+    background: active ? '#fff' : 'transparent',
+    fontWeight: active ? 600 : 400,
+    boxShadow: active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+    color: '#191919',
+  })
+  return (
+    <aside style={{ width: SIDEBAR_PX, flex: '0 0 auto', borderRight: `1px solid ${BORDER}`, background: '#fff', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ padding: '24px 24px 0' }}>
+        <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: '#f4f4f5' }}>
+          <button type="button" style={btn(tab === 'members')} onClick={() => setTab('members')}>成员</button>
+          <button type="button" style={btn(tab === 'subtopic')} onClick={() => setTab('subtopic')}>子话题</button>
+        </div>
+      </div>
+      <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', minHeight: 0 }}>
+        {/* 群聊入口行（TeamMembersPanel.tsx:209-236） */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, borderRadius: 6, padding: '9px 8px', background: '#f4f4f5' }}>
+          <span aria-hidden style={{ width: 32, height: 32, borderRadius: 9999, background: '#dbe4f0', color: '#3a4a63', fontSize: 14, lineHeight: '32px', textAlign: 'center' }}>群</span>
+          <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>群聊</span>
+            <span style={{ fontSize: 12, color: '#808080', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{names.join('、')}</span>
+          </span>
+        </div>
+        {tab === 'members' ? (
+          members.map((m) => {
+            const dn = displayNameOf(m)
+            return (
+              <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, borderRadius: 6, padding: '9px 8px' }}>
+                <Avatar id={m.id} name={m.name} role={m.role} displayName={dn} round />
+                <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dn}{m.role === 'lead' ? ' (lead)' : ''}</span>
+                  {/* 第二行：Jiuwen 用 @member_id；DSH id 是 UUID 不可读 → 用 slug 名（需适配） */}
+                  <span style={{ fontSize: 12, color: '#808080', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{m.name}</span>
+                </span>
+                <span aria-hidden style={{ width: 8, height: 8, borderRadius: 9999, background: statusColor(m.phase), flex: '0 0 auto' }} />
+              </div>
+            )
+          })
+        ) : (
+          <div style={{ fontSize: 12, color: '#808080', lineHeight: 1.6 }}>
+            子话题：DSH 侧暂无对应概念（需适配）<br />Jiuwen 的子话题来自 `team.event:` 子话题流，本栈无该数据。
+          </div>
+        )}
+      </div>
+    </aside>
+  )
+}
+
+/** Render the Jiuwen-aligned team chat pane (left rail + group detail). */
 export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
   const t = props.t as unknown as (key: 'title' | 'roster' | 'messages' | 'empty') => string
   const runtime = props as unknown as {
@@ -131,7 +202,6 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
     () => (team?.members ?? []).map((m) => ({ ...m, title: titleOf(projections, m.id) })),
     [team?.members, projections],
   )
-  // 显示名解析：name/显示名 → 成员（用于 sender 头像/角色归位）。
   const byName = useMemo(() => {
     const map = new Map<string, MemberRow>()
     for (const m of members) {
@@ -145,9 +215,10 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
     () => displayNameOf(members.find((m) => m.role === 'lead') ?? { name: 'lead' }),
     [members],
   )
-
-  // 升序（Jiuwen 群聊按时间升序）；排序/去重沿用 P61（id/seq）。
   const ordered = useMemo(() => orderMessages(bus?.messages ?? [], false), [bus?.messages])
+
+  const [tab, setTab] = useState<'members' | 'subtopic'>('members')
+  const [railOpen, setRailOpen] = useState(true) // 窄宽降级：可折叠（按钮切换）
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const pinned = useRef(true)
@@ -162,8 +233,19 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
   }, [ordered.length])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: '#fff' }}>
-      <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 28px' }}>
+    <div style={{ display: 'flex', flexDirection: 'row', height: '100%', minHeight: 0, background: '#fff' }}>
+      {/* 折叠按钮（窄宽降级；展开/收起 240px 侧栏） */}
+      <button
+        type="button"
+        aria-label={railOpen ? '收起侧栏' : '展开侧栏'}
+        aria-expanded={railOpen}
+        onClick={() => setRailOpen((v) => !v)}
+        style={{ flex: '0 0 auto', width: 20, border: 'none', borderRight: `1px solid ${BORDER}`, background: '#fafafa', color: '#808080', cursor: 'pointer', fontSize: 12 }}
+      >{railOpen ? '‹' : '›'}</button>
+      {railOpen ? <LeftRail members={members} tab={tab} setTab={setTab} /> : null}
+
+      {/* 右侧：群聊详情（P66） */}
+      <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', padding: '24px 28px' }}>
         {ordered.length === 0 ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#808080' }}>
             {t('empty')}

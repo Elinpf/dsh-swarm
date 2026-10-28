@@ -161,3 +161,14 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
 - **头像适配**：Jiuwen 用 svg 资产；本包**无资产**，改用**首字符 + 24 色哈希底**（形状/尺寸/色值对齐）。
 - **不在本插件范围**（显式，见 checklist）：左 240px 侧栏/成员列表/成员·子话题 Tab → **P67**；输入框 composer 的 `@`/`$` 候选下拉 → **P68**；主对话流 `team-member-message` 镜像 → **待上游**。
 
+## P67：面板内左侧栏（成员列表 + 成员/子话题 Tab）
+
+- 在 pane 内做**左右两栏**：左 **240px** 侧栏（`LeftRail`）+ 右群聊详情；**不改右栏 tab 外部契约**。
+- 左栏含：Tab「成员 / 子话题」（`rounded-md p-1`、选中 `bg-card font-semibold shadow-sm`、`h-8`）+ 群聊入口行（32×32 首字符头像 +「群聊」+ 成员名 `、`）+ 成员列表项（头像 `rounded-full` 32×32 + 显示名 + 第二行 `@slug` + 状态点）。数据源：`agentTeam` 投影（`id/name/role/phase`）+ P66 本地显示名映射。
+- **需适配/不可迁移（不造数据）**：
+  - **「子话题」**：DSH 无该概念（Jiuwen 来自 `team.event:` 子话题流）→ **Tab 保留、内容为空态 + 说明**；解锁条件=数据侧提供子话题镜像。
+  - 成员列表第二行 `@member_id`：**DSH id 是 UUID、不可读** → 以 **slug 名**（`@<slug>`）替代。
+  - **响应式**：窄宽用「**自动隐藏侧栏 + 一个展开/收起按钮**」的**合理降级**（**非 Jiuwen 原生行为**）。
+- 左栏**只读**（不含 composer；composer 属 P68）。
+- 逐条见 [`P66-CHECKLIST.md`](./P66-CHECKLIST.md) 的「P67 增补」。
+
