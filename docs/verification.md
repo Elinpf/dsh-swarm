@@ -1833,3 +1833,14 @@ team_task_update action=complete → status:completed,revision:3            # �
 ⇒ **这是比「够不到」更严重的静默失真**：即便开启 `enableReview`，P74 验收闸仍可被原生命令绕过；真正生效需**把原生任务写路径收口到 `team-core`**（或在 preset 禁用原生任务工具、改用我们的），非仅调 `enableReview` 默认值。
 
 **代价估算（开/不开 review 工具）**：多暴露 2 个工具（`review_submit`/`review_vote`）→ 工具列表 +2、schema 略增；本探针单轮 `inputTokens≈8.5k`（含全部工具），估**每轮 +1~3%（~+200-400 tok 量级）**。
+
+
+## O. 自建任务看板工具集（P77 收口 (a)）
+
+- **新增包** `@elinpf/dsh-swarm-tool-task`：`team_task_create` / `team_task_list` / `team_task_get` / `team_task_update` —— **全部经 `ctx.teamCore`**（复用 `updateTask` 动作集：claim/release/assign/complete/reopen/set_dependencies/submit_review/reject_review/edit/delete/plan-*；含 `owner`/`blocked_by`/`feedback`/`plan`）。
+- **目的**：使 **B2/P74/P30 闸门不可绕过**（对照原生 `team_task_*` 直写 `agentTeams`；见 §N.1 红态）。
+- **先红后绿**：
+  - **红（收口前）**：P74 profile 探针 §N.1 —— 原生 `team_task_update complete` 在 `in_review` 后**仍完成**（绕过）。
+  - **绿（收口后）**：`tool-task` 单测「★」——`claim → submit_review(→in_review) → update(complete)` 被 **`TEAMCORE_REVIEW_REQUIRED`** 拦住（工具经 team-core ⇒ 闸门生效）。
+- **测试**：4 单测（注册/路由/★先红后绿/兼容）**3 轮采样全绿**；`build`/`verify`（加载）/`verify:e2e` 全绿。
+- **接线（P78，dev-1）**：preset/bundle `disabled` 原生 4 行 + enable 本包 4 工具；**接线完成后再跑 profile 级收口探针**（先报预算）。
