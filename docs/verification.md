@@ -1817,3 +1817,19 @@ $ node scripts/verify-e2e.mjs ; bash scripts/e2e-profile.sh --no-model   # PASS=
 - **证据分级（宁降不升）**：
   - **【确定性 级 已验证】**：①②③（B2 硬闸 / B4 超时升级幂等 / 不卡死：无池直接完成、有池有界到达终态或升级）由单测覆盖 + 3 轮采样稳定。
   - **【profile 级 行为 未验】**：`review_submit` 工具受 **`tool-swarm.enableReview`** 门控（bundle 默认 `false`，P44/dev 地盘），默认 profile **无可达触发点**；故未做 profile 级行为端到端。**解锁**：经 overlay 开启 `enableReview`（需授权、避开 bundle 改动）后即可跑；或待 P49 后 tool-swarm 稳定。
+
+
+### N.1 profile 级行为探针（overlay 开 `tool-swarm.enableReview=true`，未改 bundle）——**B2 被原生工具绕过**
+
+命令：`bash scripts/run-headless.sh --patch /tmp/p74-review-patch.yml --json "<create/claim/review_submit/complete>"`（真实 profile + 模型，**≈9.2k token**）。
+结果（原样）：
+```
+team_task_create → {id:task-1,status:pending,revision:1}
+team_task_update action=claim → status:in_progress,revision:2,ownerName:lead
+review_submit task_id=task-1 → "task-1 under review (status=in_review)"   # 我们的闸：已入 in_review
+team_task_update action=complete → status:completed,revision:3            # ★ 未被拦！B2 未生效
+```
+**结论【profile 级 行为 未验 · 且被绕过】**：`review_submit`（我们的工具，走 `team-core`）确实把任务置 `in_review`；但 **原生 `team_task_update` 工具直接改 native `agentTeams`，不经 `team-core`** ⇒ 我们的 B2 硬闸（活在 `team-core.updateTask`）**被绕过**，任务照常 `complete`。
+⇒ **这是比「够不到」更严重的静默失真**：即便开启 `enableReview`，P74 验收闸仍可被原生命令绕过；真正生效需**把原生任务写路径收口到 `team-core`**（或在 preset 禁用原生任务工具、改用我们的），非仅调 `enableReview` 默认值。
+
+**代价估算（开/不开 review 工具）**：多暴露 2 个工具（`review_submit`/`review_vote`）→ 工具列表 +2、schema 略增；本探针单轮 `inputTokens≈8.5k`（含全部工具），估**每轮 +1~3%（~+200-400 tok 量级）**。
