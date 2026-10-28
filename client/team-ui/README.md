@@ -172,7 +172,9 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
 - 左栏**只读**（不含 composer；composer 属 P68）。
 - 逐条见 [`P66-CHECKLIST.md`](./P66-CHECKLIST.md) 的「P67 增补」。
 
-## P68-A：composer（输入框 + `@` 候选下拉）——功能扩展，已按 A 落地
+## P68-A：composer（输入框 + `@` 候选下拉）——功能扩展，**已于 P72 经用户确认移除**
+
+> ⚠️ **状态：已移除（P72）**。以下为历史记录（保留以示「曾实现 → 经用户确认移除」）。
 
 - **通道（A）**：复用**会话提示 seam**（`dsh-api-session-controller/client` 的 `ctx.sessions.binding(id).session.prompt(text,'queue')`，与**主 composer 同源**）→ 把输入作为**一条 user 消息注入 Lead 会话**。**零后端、可逆**。
 - **⚠️ 语义限制（composer 上方显眼标注，非藏 README）**：此输入 = **向团队 Lead 说话**（等价主输入框）；**≠ 向某成员直发**；**不计入本栈未读/兜底**（P51 边界）；**会触发 Lead 一轮、计入 token**。
@@ -180,4 +182,13 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
 - **`@` 语义**：候选来自成员名册；选中**插入 inline chip 文本**（展开为 **`@<name>`**，**非 UUID**——DSH id 不可读，**已标注**）；**A 只落文本**，结构化 `multicast targets` **仅 B（需后端）能做**。
 - **硬要求（已实现）**：**仅人工显式提交**（无自动发送）；**turn 进行中禁用**（读 `byId[id].running`）；**去重/限速**（1500ms，防 send→turn→send 自激）；**失败可见**（`role=alert` 错误行，不静默）；取不到 session 句柄时给**明确错误**（「会话通道不可用…未发送」）。
 - **B（全保真，需后端）暂缓**：结构化 `targets` + human seat/lead 身份 → 超出「只改 `client/team-ui`」，归属待定（见 [`P68-PROPOSAL.md`](./P68-PROPOSAL.md)）。
+
+## P72：移除 composer（面板恢复只读）
+
+- **背景（用户拍板）**：P68-A 的 composer 语义 =「**向团队 Lead 说话（等价主输入框）**」——**不能定向发成员、不进本栈、不覆盖兜底**，**与主输入框冗余**，故**用户确认后移除**（**B 方案也未选**）。
+- **改动**：删除 `Composer.tsx` / `composer.ts` / `session-prompt.ts` 及其挂载与 `inject`（`TeamChatTab.tsx` / `index.ts`）；删除 `composer.spec.ts`。**保留 P66/P67 成果**（详情区 + 240px 左栏 + 成员/子话题 Tab），**只去掉底部输入区**。
+- **验证**：`chat-format.spec.ts` **14/14 绿**；原型 bundle **HTTP 200** 且 **composer 标记为 0**（`chat-composer-suggestion`/`向团队 Lead 说话` 均无），`子话题`/`swarmTeamChat` 保留。
+- **保留的两条登记**：
+  1. **B（真·定向发成员 / 结构化 targets / human seat 或 lead 身份）→ 需新增服务端 remote**（超出只改 `client/team-ui`，归属待定；见 [`P68-PROPOSAL.md`](./P68-PROPOSAL.md)）；
+  2. **主对话流 `team-member-message` 协作消息镜像 → 待上游**（见 [`docs/p61-upstream-request.md`](../../docs/p61-upstream-request.md)）。
 

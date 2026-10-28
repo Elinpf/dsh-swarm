@@ -31,15 +31,9 @@ import {
   type MessageLike,
   type Segment,
 } from './chat-format.ts'
-import { Composer } from './Composer.tsx'
-import type { Candidate } from './composer.ts'
 
 /** Full props of the team chat tab body. */
-export type TeamChatTabProps = PropsRuntime<'sidebar.right.pane.tab'> &
-  PropsLocale<typeof NS> & {
-    /** 发送通道（P68-A）：由插件注入——把文本作为 user 消息注入 Lead 会话。 */
-    submit?: (sessionId: SessionId, text: string) => Promise<{ ok: boolean; error?: string }>
-  }
+export type TeamChatTabProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<typeof NS>
 
 interface MemberRow extends MemberLike {
   id: string
@@ -225,24 +219,6 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
   )
   const ordered = useMemo(() => orderMessages(bus?.messages ?? [], false), [bus?.messages])
 
-  // P68-A：候选（成员名册）+ 发送（turn 进行中禁用）。
-  const candidates: Candidate[] = useMemo(
-    () => members.map((m) => ({ name: m.name, displayName: displayNameOf(m), role: m.role })),
-    [members],
-  )
-  const running = runtime.useSessions?.(
-    (s) => (leadId === undefined ? false : s.byId?.[leadId]?.running === true),
-  ) as boolean | undefined
-  const submit = props.submit
-  const onSubmit = useMemo(
-    () =>
-      async (text: string): Promise<{ ok: boolean; error?: string }> =>
-        leadId === undefined || submit === undefined
-          ? { ok: false, error: '发送通道未注入（session 未就绪）' }
-          : await submit(leadId, text),
-    [leadId, submit],
-  )
-
   const [tab, setTab] = useState<'members' | 'subtopic'>('members')
   const [railOpen, setRailOpen] = useState(true) // 窄宽降级：可折叠（按钮切换）
 
@@ -270,8 +246,7 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
       >{railOpen ? '‹' : '›'}</button>
       {railOpen ? <LeftRail members={members} tab={tab} setTab={setTab} /> : null}
 
-      {/* 右侧：群聊详情（P66）+ composer（P68-A） */}
-      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* 右侧：群聊详情（P66） */}
       <div ref={scrollRef} onScroll={onScroll} style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', padding: '24px 28px' }}>
         {ordered.length === 0 ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#808080' }}>
@@ -309,8 +284,6 @@ export function TeamChatTab(props: TeamChatTabProps): JSX.Element {
             })}
           </div>
         )}
-      </div>
-      <Composer members={candidates} disabled={running === true} onSubmit={onSubmit} />
       </div>
     </div>
   )
