@@ -261,4 +261,61 @@
 
 ---
 
+---
+
+## 8. 附：提示词提及的工具 ↔ **真实工具名** 对照表（实现前必读）
+
+> Leader 要求：迁移提示词**前**先给此表——**提示词指向不存在的工具 = 新的静默失真**。
+> 真实名来源：原生 `@deepseek-ai/dsh-experimental-tool-agent-team` 源码（`.runtime/deepseek-harness/packages/experimental/tool-agent-team/src/index.ts`，行号见下）+ 我方 `packages/tool-swarm/src/index.ts` + `packages/team-core-contract/src/index.ts`。
+
+### 8.1 任务看板类（**最大坑：我方把动作收进一个工具**）
+
+| Jiuwen 提示词里的名字（示例出处） | 我方**真实**工具 | 关系 | 备注 / 风险 |
+|---|---|---|---|
+| `create_task`（`leader_policy.md:7`、`leader_workflow.md:8`） | `team_task_create`（原生 `:299`） | 改名 | 参数 `subject`/`description`/`blocked_by`/`write_scopes` |
+| `view_task`（`leader_workflow.md:5,9`） | `team_task_list`（`:323`）/ `team_task_get`（`:355`） | 改名+拆分 | 列表用 list、详情用 get |
+| `update_task`（`hitt_leader.md:6` 等） | `team_task_update`（`:370`） | 改名 | **动作在 `action` 字段**，不是独立工具 |
+| `claim_task`（`dispatch_autonomous_teammate.md:7`） | **`team_task_update(action='claim')`** | **无独立工具** ⚠️ | 写成 `claim_task` = 指向不存在的工具 |
+| `member_complete_task`（`dispatch_scheduled_teammate.md:8`） | **`team_task_update(action='complete')`** | **无独立工具** ⚠️ | 同上 |
+| `update_task(assignee=...)`（`hitt_leader.md:6`） | `team_task_update(action='assign', owner=...)` | 动作映射 | `owner` 走成员 name |
+| `update_task(status=cancelled)`（`task_state_*.md:14,17`） | `team_task_update(action='delete')` **待核** ⚠️ | 动作映射 | 我方 `action` 枚举**无 `cancel`** |
+| `approve_plan`（各 `*_policy`/`dispatch_*`） | **`team_task_update(action='approve_plan')`** | **无独立工具** ⚠️ | 计划闸需 `Config.planGate` 开启（`team-core/src/index.ts:369`） |
+| （plan 入闸/提交） | `team_task_update(action='open_plan'/'submit_plan')` | 动作 | 我方 `planned` 是**叠加态**（`team-core-contract/src/index.ts:40-52`） |
+
+**【事实】我方 `team_task_update.action` 全枚举**（`team-core-contract/src/index.ts:122-139`）：`claim / release / edit / set_dependencies / complete / reopen / assign / delete / submit_review / reject_review / open_plan / submit_plan / approve_plan / reject_plan`。→ **移任务动作时全部落成 `team_task_update(action=...)`，不能写成独立工具名。**
+
+### 8.2 通信类
+
+| Jiuwen | 我方真实 | 关系 | 备注 |
+|---|---|---|---|
+| `send_message`（`leader_policy.md:9` 等） | `send_message`（原生 `:222`） | 同名 | **仅 DM**（`target` 单值） |
+| `send_message(to="*")` 广播（`lifecycle_*.md`、`hitt_*`） | **`broadcast`**（`tool-swarm/src/index.ts:137`） | **独立工具** | 原生 `send_message` 无广播；广播唤醒全体非发送者 |
+| 点名若干成员 | **`multicast`**（`tool-swarm:166`） | **独立工具** | `targets` 逗号分隔**名字**（工具内 name→id） |
+| `list_members`（`leader_bootstrap.md:6`） | `list_agents`（原生 `:240`） | 改名 | |
+
+### 8.3 成员/团队/工作区/验证类
+
+| Jiuwen | 我方真实 | 关系 | 备注 / 风险 |
+|---|---|---|---|
+| `spawn_teammate`（`leader_policy.md:8` 等） | `spawn_teammate`（原生 `:193`） | 同名 | 参数仅 `name`/`description`/`prompt`/`context` |
+| `checkpoint` + `fork_source`（`leader_policy.md:23`） | `spawn_teammate(context='fork')` | **无独立工具** ⚠️ | 原生只有 `fresh|fork` 二选一，**无 checkpoint 工具** |
+| `shutdown_member`（`hitt_leader.md:8`） | **无对应工具** | **缺失** ⚠️ | 我方无成员关闭工具（原生仅 `interrupt_agent:286`，语义≠关闭） |
+| `clean_team`（`lifecycle_temporary.md:6`） | **无对应工具** | **缺失** ⚠️ | 无团队解散工具 |
+| `git worktree add/remove`（`leader_policy.md:26`） | `workspace_worktree`（`tool-swarm:313`） | **独立工具** | 且**禁止手工 git** |
+| `workspace_meta(action="lock"/"unlock")`（`teammate_policy.md:55`） | `workspace_lock`（`tool-swarm:280`）/ `workspace_unlock`（`:301`） | 改名+拆分 | |
+| 验证者 `verify_task(pass/fail)`（`reviewer_verifier.md:27-28` 等） | `review_vote`（`tool-swarm:214`）+ `review_submit`（`:198`） | 改名 | `verifier/challenger/inspector` → `role`+`decision`/`value`(0~1) |
+| `wait_agent`（原生常驻句「Lead must wait…」） | `wait_agent`（原生 `:250`） | 同名 | P57 已改**默认禁止长阻塞** |
+| `interrupt_agent` | `interrupt_agent`（原生 `:286`） | 同名 | 保留 inbox |
+
+### 8.4 ⚠️ 与 **P64 已有引导** 的真实契约冲突（**必须复核**）
+
+- **【事实】`spawn_teammate` 无 `display_name` 字段**：参数只有 `name`（文档要求 **lower-kebab-case 英文**）、`description`、`prompt`、`context`（原生 `:196-205`）；全仓 `packages/*/src` 与原生 tool-agent-team **均无 `display_name`/`displayName`**（grep 命中仅在 P64 提示词文本）。
+- ⇒ **P64 ⑦「给成员取简短中文显示名」目前无处落地**：`name` 契约要求英文 kebab，唯一自由文本是 `description`。
+  **风险**：若不处理，P64 引导会让 leader 把中文塞进 `name`（**违反 kebab 契约**）或塞进 `description`（语义漂移）。
+  **建议**：实现批里二选一并写死口径——(a) 明确「中文显示名写进 `description` 首位」；或 (b) 走 UI 侧映射（P63 已做「发言人中文优先」，需确认其数据源）。**确认前，P64 的中文显示名属【待核实】。**
+
+---
+
+*（§8 由本次 P69 补产，响应 Leader「实现前先给工具名对照表」的要求；事实来源均已标注 文件:行。）*
+
 *（本文件由 prompt-engineering-analyst 产出；Jiuwen 行号基于 openjiuwen 0.1.19 当前安装版，我方行号基于撰写时 main。）*
