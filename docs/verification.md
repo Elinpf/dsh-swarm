@@ -1991,3 +1991,28 @@ grep -n "team_task_update\|open_plan" packages/team-prompt/src/index.ts | head
 ## D. 全链路
 
 `build`/`test`/`verify`/`verify:e2e` + `scripts/e2e-profile.sh --no-model`（PASS=7 FAIL=0）全绿；`lint` 绿。**`format:check` 红**来自**他人 WIP**（`client/*`、`team-prompt/*`），非本改动。
+
+---
+
+## P85 — 群聊正文「发灰」（硬编码 #191919 比主对话浅 + 不跟主题）
+
+**根因**：`client/team-ui/src/client/TeamChatTab.tsx` 正文**硬编码** `color:#191919`（=rgb(25,25,25)），比主对话前景浅；且硬编码白底/深字 → **暗色模式崩**。另 `MarkdownText variant="compact"`（P75 路径）的 `.compact` 规则自带 `color:var(--dsw-alias-label-tertiary)`，把 Markdown 正文**再调淡一档**，与纯文本路径不一致。
+
+**修法（token 化）**：改用宿主设计 token（`packages/client/ui-theme/src/styles/design-platform.css` 的 `--dsw-alias-*`），**去所有硬编码前景/背景色**：
+- 正文/发送者名 `--dsw-alias-label-primary`；次级信息 `--dsw-alias-label-tertiary`；面板/左栏底 `--dsw-alias-bg-base`；Tab 选中底 `--dsw-alias-bg-layer-3`；轨道/入口行/折叠按钮底 `--dsw-alias-interactive-bg-hover`；分隔线 `--dsw-alias-border-l2`。
+- **抵消 compact 调淡**：`MD_COLOR_SCOPE` 在本 wrapper 局部把 `--dsw-alias-label-tertiary` 重指向 `--dsw-alias-label-primary`（CSS 变量按最近祖先解析），使 Markdown 与纯文本**同色**。
+- 有意保留的字面量：定向 chip 蓝/橙品牌色、状态点语义色、头像哈希浅色底（token 表无对应别名；不随主题翻转）。
+
+**像素对齐（客观，源＝宿主 CSS 静态值，非估算）**：
+| | 主对话正文 | 群聊正文（改前） | 群聊正文（改后） |
+|---|---|---|---|
+| light 值 | rgb(15,17,21)（实测最暗均值） | `#191919`=rgb(25,25,25) / 截图笔画均值 rgb(29,28,37) | **`--dsw-alias-label-primary`=rgb(15,17,21)** |
+| 与主对话差 | — | ≈ 8–14（**发灰**） | **0**（≤2 ✅） |
+
+- 依据：`design-platform.css:222` light `label-primary=neutral-bluish-1000`；`:57` `bluish-1000=rgb(15,17,21)`；`:56` `bg-base=bluish-00=rgb(255,255,255)`。
+- **暗色**：`:340` dark `label-primary=bluish-50`；`:64` `bluish-50=rgb(249,250,251)`；`:285` `bg-base=bluish-950`；`:74` `bluish-950=rgb(21,21,23)` ⇒ 正文/底色随宿主 `body[data-ds-dark-theme]` 自动切换（不再白底黑字）。
+- ⚠️ **像素级截图自证**：本机无浏览器 → **待用户在 demo 点开/切换暗色确认**（token 级等价性已由上述静态值保证 Δ=0）。team-leader 重启实例后请补一张 light + 一张 dark 截图。
+
+**测试/构建**：单测 `theme-tokens.spec.ts`(+3 发灰回归护栏)/`markdown-safety.spec.ts`(2)/`chat-format.spec.ts`(14) = **19/19 绿**；harness 内 `tsc`+`tsdown` 构建成功；`client/team-ui` 在 pnpm workspace 外，不影响 `pnpm -r build`。
+
+**边界**：只改 `client/team-ui/*`；未触碰他人 WIP（`packages/team-bus/src/projection.ts` 未纳入本次提交）。
