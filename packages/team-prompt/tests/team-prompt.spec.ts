@@ -365,14 +365,15 @@ describe('P62 协同质量判据（广播/多播发起 + 收口期追问，常�
 })
 
 describe('P64 显示名 + @ 可读约定（常驻 team:leader，与 P62 配套）', () => {
-  it('⑦ 中文显示名：给示例，并要求内部 name/slug 仍英文', () => {
+  it('⑦ 中文角色名写进 description 开头；name 必须英文 lower-kebab（严禁中文进 name）', () => {
     const ctx = makeCtx()
     plugin.apply(ctx, config)
     const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
-    expect(leader.text).toContain('中文显示名')
+    expect(leader.text).toContain('中文角色名')
     expect(leader.text).toContain('行业调研员')
-    expect(leader.text).toContain('slug')
-    expect(leader.text).toContain('仍用英文')
+    expect(leader.text).toContain('description')
+    expect(leader.text).toContain('lower-kebab')
+    expect(leader.text).toContain('严禁把中文塞进')
   })
 
   it('⑧ @名字 可读约定：文本 @ 给人看、机制点名仍走 multicast(targets)', () => {
@@ -389,7 +390,7 @@ describe('P64 显示名 + @ 可读约定（常驻 team:leader，与 P62 配套�
     const ctx = makeCtx()
     plugin.apply(ctx, config)
     const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
-    expect(leader.text).toContain('中文显示名')
+    expect(leader.text).toContain('中文角色名')
     const assemble = ctx._handlers['system-prompt/assemble']![0]!
     const next = async () => assembly()
     const before = await assemble(assembly(), {}, next)
@@ -401,8 +402,98 @@ describe('P64 显示名 + @ 可读约定（常驻 team:leader，与 P62 配套�
     const ctx = makeCtx()
     plugin.apply(ctx, { ...config, locales: 'en' })
     const leader = ctx._sections.find((s: any) => s.name === 'team:leader')
-    expect(leader.text).toContain('short Chinese display name')
+    expect(leader.text).toContain('short Chinese role name')
     expect(leader.text).toContain('human-readable')
     expect(leader.text).toContain('multicast(targets=')
+  })
+})
+
+describe('P73 Jiuwen 迁移第一批（P0×2 + P1×9）', () => {
+  const find = (ctx: any, name: string) => ctx._sections.find((s: any) => s.name === name)
+
+  it('C4/C6/C8 在常驻 team:leader：起手自检 + 汇总成员 + 响应节奏', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const l = find(ctx, 'team:leader')
+    expect(l.text).toContain('起手与任务自检')
+    expect(l.text).toContain('team_task_list')
+    expect(l.text).toContain('汇总成员')
+    expect(l.text).toContain('响应节奏')
+    expect(l.text).toContain('idle')
+  })
+
+  it('C9 在常驻 team:role：通信唯一通道 = send_message/multicast/broadcast', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const r = find(ctx, 'team:role')
+    expect(r.text).toContain('send_message')
+    expect(r.text).toContain('multicast')
+    expect(r.text).toContain('broadcast')
+    expect(r.text).toContain('普通文本输出不会送达')
+  })
+
+  it('C1/C2/C11 在 team:task-state：状态机 + 计划闸 + 验证闸 + 验证者三类', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const t = find(ctx, 'team:task-state')
+    expect(t.text).toContain('in_review')
+    expect(t.text).toContain('team_task_update')
+    expect(t.text).toContain('submit_review')
+    expect(t.text).toContain('open_plan')
+    expect(t.text).toContain('review_vote')
+    expect(t.text).toContain('verifier')
+    expect(t.text).toContain('无 `cancelled` 态')
+  })
+
+  it('C3/C5/C7 在 team:dispatch：派发纪律 + 升级处置 + 收尾（不含不存在的工具）', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const d = find(ctx, 'team:dispatch')
+    expect(d.text).toContain('assignee')
+    expect(d.text).toContain('调度框架代你完成交接')
+    expect(d.text).toContain('升级')
+    expect(d.text).toContain('收尾')
+    expect(d.text).not.toContain('shutdown_member')
+    expect(d.text).not.toContain('clean_team')
+  })
+
+  it('C10 team:inbound 用通用来源说明（未引入不存在的 XML 标签）', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const i = find(ctx, 'team:inbound')
+    expect(i.text).toContain('来源')
+    expect(i.text).not.toContain('<team-inbound>')
+  })
+
+  it('只用真实工具名：伪名（claim_task/member_complete_task/update_task/create_task/view_task/list_members/verify_task）不得出现', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const all = ctx._sections.map((s: any) => s.text).join('\n')
+    for (const bad of ['claim_task', 'member_complete_task', 'update_task', 'create_task', 'view_task', 'list_members', 'verify_task', 'shutdown_member', 'clean_team']) {
+      expect(all).not.toContain(bad)
+    }
+  })
+
+  it('常驻段（team:leader/team:role）团队未建也渲染；延迟段 team:dispatch/team:task-state 不在', async () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const assemble = ctx._handlers['system-prompt/assemble']![0]!
+    const next = async () => assembly()
+    const before = await assemble(assembly(), {}, next)
+    const names = before.sections.map((s: any) => s.name)
+    expect(names).toContain('team:leader')
+    expect(names).toContain('team:role')
+    expect(names).not.toContain('team:dispatch')
+    expect(names).not.toContain('team:task-state')
+  })
+
+  it('英文语种同样含新引导', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, { ...config, locales: 'en' })
+    expect(find(ctx, 'team:leader').text).toContain('Opening sequence')
+    expect(find(ctx, 'team:leader').text).toContain('synthesis member')
+    expect(find(ctx, 'team:task-state').text).toContain('team_task_update')
+    expect(find(ctx, 'team:task-state').text).toContain('Review gate')
+    expect(find(ctx, 'team:dispatch').text).toContain('the scheduler performs the handoff')
   })
 })

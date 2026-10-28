@@ -121,15 +121,50 @@ describe('P62 真实装配：协同质量引导进入渲染后的系统提示词
 })
 
 describe('P64 真实装配：显示名 + @ 可读约定进入渲染后的系统提示词（团队未建时也在）', () => {
-  it('团队未建时 prompt 含中文显示名与 @ 约定', async () => {
+  it('团队未建时 prompt 含中文角色名与 @ 约定', async () => {
     const { names, prompt } = await renderTeamPrompt({
       locales: 'cn',
       leaderProgressiveDisclosure: true,
       sections: [],
     })
     expect(names).toContain('team:leader')
-    expect(prompt).toContain('中文显示名')
+    expect(prompt).toContain('中文角色名')
     expect(prompt).toContain('@<显示名>')
     expect(prompt).toContain('multicast(targets=')
+  })
+})
+
+describe('P73 真实装配：迁移首批引导进入渲染后的系统提示词', () => {
+  it('团队未建：常驻段含起手自检/汇总成员/通信通道', async () => {
+    const { names, prompt } = await renderTeamPrompt({ locales: 'cn', leaderProgressiveDisclosure: true, sections: [] })
+    expect(names).toContain('team:leader')
+    expect(names).toContain('team:role')
+    expect(names).not.toContain('team:task-state')
+    expect(prompt).toContain('起手与任务自检')
+    expect(prompt).toContain('汇总成员')
+    expect(prompt).toContain('普通文本输出不会送达')
+    // 真实工具名可用、伪名不可用
+    expect(prompt).toContain('send_message')
+    expect(prompt).not.toContain('claim_task')
+  })
+
+  it('团队已建：延迟段释放，含状态机/验证闸/派发纪律', async () => {
+    const ctx = new Context()
+    ctx.provide('teamCore', {} as never)
+    ctx.provide('sessions', {} as never)
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(plugin, { locales: 'cn', leaderProgressiveDisclosure: true, sections: [] } as never)
+    ctx.emit('session/event', {}, {
+      type: 'team/member',
+      data: { version: 2, teamId: 't1', member: { id: 'm1', name: 'alice', description: '', provider: 'spawn', context: 'fresh', phase: 'active' } },
+    })
+    const assembly = await ctx.systemPrompt.assemble({})
+    const names = assembly.sections.map((s) => s.name)
+    const prompt = renderPrompt(assembly)
+    expect(names).toContain('team:task-state')
+    expect(names).toContain('team:dispatch')
+    expect(prompt).toContain('team_task_update')
+    expect(prompt).toContain('in_review')
+    expect(prompt).toContain('调度框架代你完成交接')
   })
 })

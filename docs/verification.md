@@ -1757,3 +1757,52 @@ $ node scripts/verify-e2e.mjs ; bash scripts/e2e-profile.sh --no-model   # PASS=
 ## D. 边界
 
 - **未碰 demo**（重启由 team-leader 做）；仅隔离环境跑无模型回归。
+
+---
+
+# P73 — Jiuwen 提示词迁移第一批（P0×2 + P1×9，`team-prompt`）
+
+> 依据 `docs/jiuwen-prompt-migration.md`（P69）§0/§3/§4/§8；本批 = P0×2（C1 状态机、C2 验证闸）+ P1×9（C3 升级、C4 起手、C5 派发、C6 汇总成员、C7 收尾、C8 响应节奏、C9 通信、C10 入站、C11 验证者契约）。
+
+## A. 改动面（**只改 `packages/team-prompt`**）
+
+- `src/index.ts`：
+  - **常驻 `team:leader`**：**⑦ 改写**——「中文角色名写在 `description` 开头，`name` 必须英文 lower-kebab，**严禁把中文塞进 `name`**」；**新增** ⑨ 起手与任务自检（C4）、⑩ 独立汇总成员（C6)、⑪ 事件驱动不催 idle（C8）。
+  - **常驻 `team:role`**：**C9** 通信唯一通道 = `send_message`/`multicast`/`broadcast`；普通文本不送达成员。
+  - **`team:task-state`**：**C1** 全量状态机（`in_review` 验证闸 + `planned` 计划闸 + `blocked` + `deleted`）+ **C2** 验证闸 + **C11** 验证者三类（`verify`→`review_vote`）。
+  - **`team:dispatch`**：**C5** 派发纪律（`team_task_create` 必须 `assignee`；调度框架代交接、别逐个通知）+ **C3** 升级处置 + **C7** 收尾（`broadcast` 总结、待命）。
+  - **`team:inbound`**：**C10 降级**为通用「来源标注」（**我方无 Jiuwen 的 `<team-inbound>` XML 标签体系**，grep 全仓无命中 → 不写不存在的标签）。
+- `tests/team-prompt.spec.ts`（+8）、`tests/team-prompt.integration.spec.ts`（+2）→ **39 passed**。
+- **未动** `client/*`（P72）/ `team-core`·`team-review`（P74）/ `bundle` / `scripts/bench/*` / `verify-e2e.mjs` / `final-acceptance.md`。
+
+## B. `cancelled` 映射【已核实】
+
+- 【事实】原生 `team_task_update.action` 枚举（`agent-team/tool-agent-team/src/index.ts:378`）= `claim/release/edit/set_dependencies/complete/reopen/reassign/delete`——**无 `cancel`**；任务 status 枚举 `pending|in_progress|completed|deleted`——**无 `cancelled`**（`:82`）。
+- 【事实】`team-core` 侧 `updateTask` action 全枚举（`packages/team-core-contract/src/index.ts:122-139`）；终态注释用 `deleted`（`team-core/src/index.ts:561`）。
+- ⇒ **Jiuwen `update_task(status=cancelled)` → 我方 `team_task_update(action='delete')`（终态 `deleted`）**；提示词已按此写，**并明确「无 `cancelled` 态」**。
+
+## C. 工具名纪律（响应 §8）
+
+- 提示词内**只用真名**：任务动作一律 `team_task_update(action=...)`；广播/多播用 `broadcast`/`multicast`。
+- **单测断言**：伪名 `claim_task`/`member_complete_task`/`update_task`/`create_task`/`view_task`/`list_members`/`verify_task`/`shutdown_member`/`clean_team` **不得出现在任何段文本**（`shutdown_member`/`clean_team` 无对应工具 → 相关条目**改写为不依赖它们**）。
+
+## D. 验证（无模型）
+
+- `packages/team-prompt` 单测 + 集成：**39 passed**（32 + 7）。
+- 全仓 `pnpm -r test`：**20 test files 全绿（exit 0）**。
+- `pnpm run verify`（真实 cordis 加载）✅；`pnpm run verify:e2e` ✅；`bash scripts/e2e-profile.sh --no-model`：**PASS=7 FAIL=0**。
+- **注（诚实登记）**：一次全仓测试曾报 `team-core` 1 红（`TEAMCORE_REVIEW_REQUIRED`）——经查为 **P74 正在改 `team-core/team-review` 的瞬时竞态**（工作树显示 P74 改了 `team-core/src`、`team-core/tests`、`team-review/*`、`docs/adr/0002`），**与本任务无关**；待 P74 落地后重跑**全绿**。**本任务未触碰 team-core/team-review。**
+
+## E. 未跑真实模型
+
+- 按任务「真实探针不强制」；本批为**措辞/纪律补充**，未跑 P62 式探针，**未复测** P62 基线（`broadcast=0/multicast=1/send_message=6`）。如需行为验证，另报预算（先设上限）。
+
+## F. 与既有引导的去重（单一口径）
+
+- **P46/P57 等待口径**：新 C5「调度框架代交接/别逐个通知」与既有「派发后结束轮次/默认禁止长阻塞」**同段合并**，未叠两套说法。
+- **P62 通道判据（`team:leader` ⑤）vs 新 C9（`team:role`）**：⑤ 讲「**何时**用 broadcast/multicast/send_message」；C9 讲「消息工具是**唯一**触达成员的途径」。分工不重复。
+- **P64 @ 约定**：⑦ 改写与 ⑧/@ 约定、`multicast(targets)` 口径一致（`@` 只可读、targets 才投递）。
+
+## G. 边界
+
+- 未碰 demo；未改其它包。P0/P1 已落，**P2（C12–C19）按 Leader 指示「观察后再补」**。
