@@ -18,6 +18,7 @@ import type { ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 // 仅为引入契约包的 `ctx.teamCore` 类型增强。
 import type { TeamCore as _TeamCore, TaskView } from '@elinpf/dsh-swarm-team-core-contract'
+import { installTaskCollar } from './task-collar.ts'
 
 /** cordis 插件名（= cordis.patch.yml 的 row id）。 */
 export const name = 'tool-swarm'
@@ -372,4 +373,6 @@ export function apply(ctx: Context, config: SwarmToolConfig): void {
     const ds = installTools(ctx, config)
     return () => ds.forEach((d) => d())
   }, 'tool-swarm.tools()')
+  // P78 任务写路径收口：把原生 4 个 `team_task_*` 对成员 agent 置为不可执行（成员只能走 swarm_task_*）。
+  ctx.effect(() => installTaskCollar(ctx), 'tool-swarm.taskCollar()')
 }

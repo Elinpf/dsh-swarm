@@ -293,8 +293,16 @@ leader 默认改为**纯事件唤醒**（对齐 JiuwenSwarm）：**派发/发消
 - **覆盖边界（如实登记）**：兜底**只覆盖经 `ctx.teamCore.send`/`team-bus` 的定向消息**；**模型用原生 `send_message` 直发不经过本栈**，故默认 profile 下暂不触发。
   该限制**已知、经用户确认暂不处理**（非漏做）；**解锁选项**：① 集群 preset 改用本栈工具；② 上游补 hook。详见 `docs/verification.md §N`。
 
-## 已知限制：任务写路径可绕过验收闸（P74/P76）
+## 任务写路径收口（P78；原「已知可绕过」）
 
-**【已知可绕过】** 原生 `team_task_create/list/get/update`（`@deepseek-ai/dsh-experimental-tool-agent-team`）**直接写 native `agentTeams`、不经 `team-core`**；而 B2 硬闸 / P74 验收闸 / P30 计划闸**活在 `team-core`**。⇒ 真实使用中这些闸**可被原生任务工具绕过**（实测：`review_submit → in_review` 后 `team_task_update action=complete` 仍完成）。
+**历史问题（P74/P76 实测）**：原生 `team_task_create/list/get/update`（`@deepseek-ai/dsh-experimental-tool-agent-team`）**直接写 native `agentTeams`、不经 `team-core`**；而 B2 硬闸 / P74 验收闸 / P30 计划闸**活在 `team-core`** ⇒ 曾被原生任务工具绕过（`review_submit → in_review` 后 `team_task_update complete` 仍完成；证据 `docs/verification.md §N.1`）。
 
-**解锁条件**：采「任务写路径收口」= **自建任务工具集（全走 `team-core`）+ 在 preset/bundle disabled 原生 4 个任务工具**（方案见 `docs/p76-task-write-path-collar-design.md`）。**仅调 `tool-swarm.enableReview` 默认值不解决**（只解决「工具不可见」，不解决「可绕过」）。证据：`docs/verification.md §N.1`。
+**P78 收口（已落地）**：
+- **自建任务工具** `swarm_task_create/list/get/update`（`@elinpf/dsh-swarm-tool-task`，全走 `team-core`）**已接入 bundle**（`cordis.patch.yml` insert `tool-task` 行 + `package.json` 依赖）。
+- **原生 4 个 `team_task_*` 已对全体 agent 置为不可执行**：`tool-swarm` 加载时在 **root/global** 层挂一个 `tools.guard`，按名拒绝原生 4 个（`tool-swarm/src/task-collar.ts`）。**覆盖含 leader 在内的所有 agent**（闸门不可被任何角色绕过）。
+  - 为何是 guard 而非 restrict：原生工具是**成员 scoped 注册**，`tools.restrict` 只遮全局、打不进（探针实证）。
+  - deny 名单固定为原生名；改名的 `swarm_task_*` 与 `list_agents`/`wait_agent`/`send_message`/`spawn_*` **不受影响**。
+- **生效范围**：`tool-swarm` 经 bundle 加载 ⇒ **`swarm` 与 `standard` 两个 preset 下都生效**（bundle 是 dsh-swarm 本体）。
+- **行为变更**：模型侧任务工具的**原生名不可再执行**（调用被拒并提示改用 `swarm_task_*`）；用 `swarm_task_*` 时任务写路径**全经 `team-core`**，B2/P74/P30 闸门**不可绕过**。
+- **已知缺口**：`open_plan`（计划闸）当前 `planGate:false` 未暴露，本轮不动。
+- 证据：`.runtime/probe/p78-guard-spike.mjs`、`p78-collar-probe3.mjs`（模型可见工具表 + guard 拒绝）、`docs/verification.md` P78 节。

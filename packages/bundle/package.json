@@ -48,7 +48,8 @@
     "@elinpf/dsh-swarm-team-skills": "workspace:*",
     "@elinpf/dsh-swarm-team-transport": "workspace:*",
     "@elinpf/dsh-swarm-team-workspace": "workspace:*",
-    "@elinpf/dsh-swarm-tool-swarm": "workspace:*"
+    "@elinpf/dsh-swarm-tool-swarm": "workspace:*",
+    "@elinpf/dsh-swarm-tool-task": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-base": "^0.2.1-rc.3",

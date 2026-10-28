@@ -89,6 +89,9 @@ importers:
       '@elinpf/dsh-swarm-tool-swarm':
         specifier: workspace:*
         version: link:../tool-swarm
+      '@elinpf/dsh-swarm-tool-task':
+        specifier: workspace:*
+        version: link:../tool-task
     devDependencies:
       typescript:
         specifier: 5.9.3

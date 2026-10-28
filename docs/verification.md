@@ -1957,3 +1957,37 @@ grep -n "team_task_update\|open_plan" packages/team-prompt/src/index.ts | head
 ## D. 边界 / 未跑真实模型
 
 - 未碰 demo；未改其它包。未跑真实模型（措辞/改名同步，行为不变）。
+
+---
+
+# P78 任务写路径收口（preset/bundle 接线 + guard collar）
+
+> 执行人：dsh-plugin-dev ｜ 2026-10-28 ｜ 依据：P76 方案、P78/P79 复核
+
+## A. 改动面（仅我的属地）
+
+- **Step 1**：`packages/bundle/cordis.patch.yml` 的 `insert:` 增 `tool-task` 行；`packages/bundle/package.json` 增依赖 `@elinpf/dsh-swarm-tool-task` —— 让自建任务工具进 profile。
+- **Step 2**：新增 `packages/tool-swarm/src/task-collar.ts`（`installTaskCollar(ctx)` 在 **root/global** 层挂 `tools.guard`，deny 原生 4 个），并在 `tool-swarm/src/index.ts` 的 `apply` 接入；新增单测 `tool-swarm/tests/task-collar.spec.ts`。
+- 文档：README「任务写路径收口（P78）」。
+
+## B. 证据
+
+1. **`--dump-config`（Step 1）**：`dsh --profile headless --dump-config` → `- id: tool-task`（line 448）、`@elinpf/dsh-swarm-tool-task` 出现；原生 `- id: tool-agent-team`（line 397）。
+2. **「模型可见工具表」探针（Step 2，零模型；真 cordis + dsh-tools + dsh-scope）** `.runtime/probe/p78-collar-probe3.mjs`：
+   - member visible = `['list_agents','swarm_task_update','team_task_update']`（我们改名后的 `swarm_task_*` **未被遮蔽**）；
+   - guard（root/global）挂载后：member 与 **leader** 的 `team_task_update` **均被拒**；`list_agents`、`swarm_task_*` 允许。
+   - 佐证 spike：`p78-guard-spike.mjs`（`restrict` 打不进 scoped 注册 + guard global 覆盖 leader = 期望行为）。
+3. **单测/加载**：tool-swarm 17（含 task-collar 4）全过；`build`/`test`/`verify`/`verify:e2e` 全绿。
+4. **P44 同构**：本改动**未触碰** `packages/bundle/presets/swarm.patch.yml`（`git status` 该文件未 modified）⇒ preset 插件清单不变，`swarm vs standard` 逐 id 同构**保持**；bundle 层新增 `tool-task` 行对**两个 preset 同等生效**。
+5. **生效范围**：`tool-swarm` + `tool-task` 经 bundle 加载 ⇒ collar 与自建任务工具在 **`swarm` 与 `standard` 两 preset 下都生效**（standard 一起收敛，leader 已接受）。
+
+## C. 边界 / 未做
+
+- `enableReview` 仍 `false`：**先设计「无 reviewer 放行 / leader 兜底」再开**（本轮未改）。
+- `open_plan`（`planGate:false`）未暴露：**已知缺口**，本轮不动。
+- 跨进程：单进程多 scope 已证；对端独立进程须同挂 guard —— **真实 profile + 多进程复核未做**（需预算，先报）。
+- **未触碰他人属地**（`client/*`、`tool-task/*`、`team-bus/*`、`team-prompt/*`）；曾在过程中对其做过 3 处机械改动（lint/format）**已 `git checkout` 回退**。
+
+## D. 全链路
+
+`build`/`test`/`verify`/`verify:e2e` + `scripts/e2e-profile.sh --no-model`（PASS=7 FAIL=0）全绿；`lint` 绿。**`format:check` 红**来自**他人 WIP**（`client/*`、`team-prompt/*`），非本改动。

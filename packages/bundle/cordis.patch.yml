@@ -69,6 +69,10 @@
         enableBroadcast: true
         enableReview: false
 
+    # —— 任务看板写路径：自建任务工具（全走 team-core，收口 P76-(a)/P78）——
+    - id: tool-task
+      name: '@elinpf/dsh-swarm-tool-task'
+
     # —— 阶段 2：能力供给层 ——
     - id: team-workspace
       name: '@elinpf/dsh-swarm-team-workspace'
