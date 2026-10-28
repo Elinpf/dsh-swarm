@@ -145,7 +145,7 @@ function installTools(ctx: Context): Array<() => void> {
       defineTool({
         name: 'team_task_update',
         description:
-          'Update a shared task (routes through team-core ⇒ B2/plan gate enforced). Actions: claim/release/assign/complete/reopen/set_dependencies/submit_review/reject_review/edit/delete/submit_plan/approve_plan/reject_plan.',
+          'Update a shared task (routes through team-core ⇒ B2/plan gate enforced). Actions: claim/release/assign/complete/reopen/set_dependencies/submit_review/reject_review/edit/delete/submit_plan/approve_plan/reject_plan. NOTE: there is NO cancel/cancelled (same as native); cancel semantics = action=delete (terminal status deleted).',
         parameters: {
           task_id: { type: 'string', required: true, description: 'Task id.' },
           expected_revision: {
