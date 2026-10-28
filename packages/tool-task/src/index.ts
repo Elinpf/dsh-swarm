@@ -1,5 +1,6 @@
 /**
- * 自建任务看板工具集（P77 收口 (a)）：`team_task_create` / `team_task_list` / `team_task_get` / `team_task_update`。
+ * 自建任务看板工具集（P77 收口 (a)）：`swarm_task_create` / `swarm_task_list` / `swarm_task_get` / `swarm_task_update`。
+ * **命名防空名遮盖（P77 补丁）**：原生 `team_task_*` 是**成员 scoped**注册，成员 scope 覆盖全局 ⇒ 同名全局注册会被遮盖；故本包用 **`swarm_task_*`** 前缀，确保生效。
  *
  * **为什么自建**：原生 `tool-agent-team` 的 `team_task_*` **直接写 native `agentTeams`、不经 `team-core`**
  * （P74 探针 `docs/verification.md §N.1` 实证：`review_submit → in_review` 后原生 `complete` 仍成功）
@@ -88,7 +89,7 @@ function installTools(ctx: Context): Array<() => void> {
   ds.push(
     ctx.tools.register(
       defineTool({
-        name: 'team_task_create',
+        name: 'swarm_task_create',
         description: 'Create a shared task (routes through team-core; gate-enforced).',
         parameters: {
           subject: { type: 'string', required: true, description: 'Task subject.' },
@@ -115,7 +116,7 @@ function installTools(ctx: Context): Array<() => void> {
   ds.push(
     ctx.tools.register(
       defineTool({
-        name: 'team_task_list',
+        name: 'swarm_task_list',
         description: 'List all shared tasks (routes through team-core).',
         parameters: {},
         output: textOutput,
@@ -129,7 +130,7 @@ function installTools(ctx: Context): Array<() => void> {
   ds.push(
     ctx.tools.register(
       defineTool({
-        name: 'team_task_get',
+        name: 'swarm_task_get',
         description: 'Get one shared task by id (routes through team-core).',
         parameters: { task_id: { type: 'string', required: true, description: 'Task id.' } },
         output: textOutput,
@@ -143,7 +144,7 @@ function installTools(ctx: Context): Array<() => void> {
   ds.push(
     ctx.tools.register(
       defineTool({
-        name: 'team_task_update',
+        name: 'swarm_task_update',
         description:
           'Update a shared task (routes through team-core ⇒ B2/plan gate enforced). Actions: claim/release/assign/complete/reopen/set_dependencies/submit_review/reject_review/edit/delete/submit_plan/approve_plan/reject_plan. NOTE: there is NO cancel/cancelled (same as native); cancel semantics = action=delete (terminal status deleted).',
         parameters: {

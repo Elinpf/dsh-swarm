@@ -1844,3 +1844,5 @@ team_task_update action=complete → status:completed,revision:3            # �
   - **绿（收口后）**：`tool-task` 单测「★」——`claim → submit_review(→in_review) → update(complete)` 被 **`TEAMCORE_REVIEW_REQUIRED`** 拦住（工具经 team-core ⇒ 闸门生效）。
 - **测试**：4 单测（注册/路由/★先红后绿/兼容）**3 轮采样全绿**；`build`/`verify`（加载）/`verify:e2e` 全绿。
 - **接线（P78，dev-1）**：preset/bundle `disabled` 原生 4 行 + enable 本包 4 工具；**接线完成后再跑 profile 级收口探针**（先报预算）。
+- **【P77 更正 · 2026-10-28】同名遮盖缺陷（保留原结论，仅更正）**：原实现用**全局** `ctx.tools.register` 注册**与原生同名**的 `team_task_*`；而原生 4 个 `team_task_*` 是**成员 scoped**注册（`tool-agent-team:225 const scoped=agent.ctx`），**成员 scope 覆盖全局** ⇒ 我们的工具**被原生遮盖、profile 下未生效**（「绿」只在单测成立）。
+  **已修**：改名 **`swarm_task_create/list/get/update`**（避免与原生及 `list_agents`/`wait_agent`/`send_message`/`spawn_*` 同名；取消语义仍=`delete`）。单测同步改名并绿。原「先红后绿」结论**保留**（§N.1 红态仍成立；绿态在**改名后 + P78 接线**的 profile 下才成立，待 P79 独立复核）。

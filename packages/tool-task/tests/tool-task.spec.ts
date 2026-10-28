@@ -62,25 +62,27 @@ const run = (tools: any[], name: string, args: any, agent: unknown) =>
   tools.find((t) => t.name === name).execute(args, { agent })
 
 describe('@elinpf/dsh-swarm-tool-task（P77 收口 (a)）', () => {
-  it('注册 4 个任务工具（team_task_create/list/get/update）', () => {
+  it('注册 4 个任务工具（swarm_task_create/list/get/update）', () => {
     const { ctx, tools } = makeCtx()
     plugin.apply(ctx)
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'team_task_create',
-      'team_task_get',
-      'team_task_list',
-      'team_task_update',
+      'swarm_task_create',
+      'swarm_task_get',
+      'swarm_task_list',
+      'swarm_task_update',
     ])
   })
 
   it('全走 team-core：create/list/get 路由正确', async () => {
     const { ctx, tools, agent } = makeCtx()
     plugin.apply(ctx)
-    const created = JSON.parse((await run(tools, 'team_task_create', { subject: 'x' }, agent)).text)
+    const created = JSON.parse(
+      (await run(tools, 'swarm_task_create', { subject: 'x' }, agent)).text,
+    )
     expect(created.subject).toBe('x')
-    const list = JSON.parse((await run(tools, 'team_task_list', {}, agent)).text)
+    const list = JSON.parse((await run(tools, 'swarm_task_list', {}, agent)).text)
     expect(list.length).toBe(1)
-    const got = JSON.parse((await run(tools, 'team_task_get', { task_id: 't1' }, agent)).text)
+    const got = JSON.parse((await run(tools, 'swarm_task_get', { task_id: 't1' }, agent)).text)
     expect(got.id).toBe('t1')
   })
 
@@ -89,13 +91,13 @@ describe('@elinpf/dsh-swarm-tool-task（P77 收口 (a)）', () => {
     plugin.apply(ctx)
     await run(
       tools,
-      'team_task_update',
+      'swarm_task_update',
       { task_id: 't1', expected_revision: 0, action: 'claim' },
       agent,
     )
     await run(
       tools,
-      'team_task_update',
+      'swarm_task_update',
       { task_id: 't1', expected_revision: 1, action: 'submit_review' },
       agent,
     )
@@ -104,7 +106,7 @@ describe('@elinpf/dsh-swarm-tool-task（P77 收口 (a)）', () => {
     await expect(
       run(
         tools,
-        'team_task_update',
+        'swarm_task_update',
         { task_id: 't1', expected_revision: 2, action: 'complete' },
         agent,
       ),
@@ -117,7 +119,7 @@ describe('@elinpf/dsh-swarm-tool-task（P77 收口 (a)）', () => {
     state.status = 'pending'
     await run(
       tools,
-      'team_task_update',
+      'swarm_task_update',
       { task_id: 't1', expected_revision: 0, action: 'assign', owner: 'w' },
       agent,
     )
