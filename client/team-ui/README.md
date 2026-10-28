@@ -135,3 +135,21 @@ journalctl -u $PROF --no-pager -n 80 | grep -iE 'error|fail|warn' || echo '(none
 ```
 
 **判定**：步骤 4 `page=200` 且 grep≥1；步骤 5 `bundle=200` 且打印出 `swarmTeamChat`/`swarmBus`/`群聊`/`__ModuleLoader__`；步骤 6 无 error/fail/warn。**本环境无浏览器**，故「点开看到」需人工按上文「怎么点开看到」操作；DOM 断言待补。
+
+## P63：对齐 Jiuwen 观感（发言人 / `@chip` / 定向可视化）
+
+- 新增纯逻辑 `src/client/chat-format.ts` + 单测 `tests/chat-format.spec.ts`（**11/11**）：
+  - **发言人显示名** `displayNameOf`：**中文优先** —— ① 含 CJK 的 `displayName` → ② 像人名的**短中文标题** → ③ 其它 `displayName` → ④ 回退英文 ID（`name`）；
+  - **头像首字母** `avatarInitial`（中文取首字、英文取首字母大写）；
+  - **`@chip`** `parseMentions`：正文 `@名字` 切段，命中已知成员名高亮、未知也成 chip 不崩；
+  - **定向/指派可视化**（**只做展示**）`renderMessage`：`outbound` → 前导「→ @目标…」；`task` 指派形态 → 「@某人 收到任务：<标题>」（**防御式**，当前数据流可能无此输入）；
+  - **排序/去重不变** `orderMessages`：`seq` 升序 + 同 `id` 去重（`newestFirst` 反转）。
+- `TeamChatTab.tsx`：头像 + 显示名 + `@chip` 渲染；成员补 `sessionTitle` 候选。**可见范围/排序去重沿用 P61，不变。**
+
+### 已知缺口：中文显示名缺「干净数据源」
+
+1. **现状**：面板**显示英文 ID**（如 `researcher-models`/`synthesizer`/`lead`），**不是** Jiuwen 那样的干净中文名。
+2. **成因（实测依据）**：`agentTeam` 投影的成员**只有 `name`（kebab 英文）**，无中文 `display_name`；而成员会话的 `sessionTitle` **虽是中文，却是 spawn 提示前缀**（实例：`"你是团队中的调研成员 researche…"`、`"你是 doc-writer，一个团队中的…"`，见 `.runtime/dsh-home-verbose/sessions/**` 的 `session/title` 事件）——**不适合当显示名**，故解析器**拒绝**这类长/含空白标题。
+3. **解锁条件**：**由数据侧在成员上暴露一个真正的中文 `display_name` 字段**（或把中文角色名写进 wire 可读字段）。届时 **本包解析器已就绪、`零代码改动`即可优先取用**（`displayNameOf` 的 ① 分支）。
+4. **不建议**为此改 `team-bus`：spawn 走原生 `tool-agent-team`，我们**截不到 spawn 参数**，改 bus 也解决不了。
+
