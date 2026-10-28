@@ -2016,3 +2016,31 @@ grep -n "team_task_update\|open_plan" packages/team-prompt/src/index.ts | head
 **测试/构建**：单测 `theme-tokens.spec.ts`(+3 发灰回归护栏)/`markdown-safety.spec.ts`(2)/`chat-format.spec.ts`(14) = **19/19 绿**；harness 内 `tsc`+`tsdown` 构建成功；`client/team-ui` 在 pnpm workspace 外，不影响 `pnpm -r build`。
 
 **边界**：只改 `client/team-ui/*`；未触碰他人 WIP（`packages/team-bus/src/projection.ts` 未纳入本次提交）。
+
+
+## N. 任务写路径收口（P78）：执行层不可绕过 + 已知残留
+
+**机制**：`tool-swarm/src/task-collar.ts` 在**插件（root/global）** 层挂 `tools.guard`，拒绝原生 4 个 `team_task_*` 的执行
+（`team_task_create/list/get/update`），迫使任务写操作走自建 `swarm_task_*`（全经 `team-core` ⇒ B2/P74/P30 闸门不可绕过）。
+选择 **root/global guard**（非 restrict/per-agent）的原因：原生 `team_task_*` 在**每 agent 的 scope** 注册，`ctx.tools.restrict` 打不进 scoped 层；
+而 `tools.guard` 走**执行期**拒绝且查 global+scope 链 ⇒ 一个 global guard **覆盖全体 agent（含 leader，有意为之）**。
+
+**证据（本仓实测）**
+- `pnpm -r build`：**PASS**（全仓）。
+- `scripts/e2e-profile.sh --no-model`：**PASS=7 FAIL=0**；`--dump-config` 含 `tool-task`(`@elinpf/dsh-swarm-tool-task`) 行 + `tool-swarm` 行；bundle 依赖已含 `tool-task`。
+- **模型可见工具表（成员 scoped 可见面）探针** `.runtime/probe/p78-collar-probe3.mjs`：
+  ```
+  member visible: [ 'list_agents', 'swarm_task_update', 'team_task_update' ]
+  leader visible: [ 'swarm_task_update' ]
+  guard deny：member/leader 调 team_task_update → "native tool ... disabled; use `swarm_task_*` instead"
+  guard allow：swarm_task_update / list_agents
+  ```
+  ⇒ **生效性（执行被拒）实证**：可见 ≠ 可写，点名原生工具也会被拒并提示改走 `swarm_task_*`。
+
+**已知残留（取舍，非未做）**
+> 原生 `team_task_*` 对**成员仍可见**，但**执行被 guard 拒绝**（不可写、不可绕过闸门）。要连**可见面**一并移除，须 **disable 整个 `tool-agent-team` 行**，
+> 会**连带丢失 `list_agents` 等原生工具**（成员可见面现含 `list_agents`，我们未补位）——**代价过大故不采用**（Leader 裁定）。
+
+**覆盖范围**：guard 走执行期且**查 global 层** ⇒ 结构上覆盖**全体 agent（含 leader）**，**含后续新建成员（`agent/created`）与 fork 子 agent**（按 agent 身份无关地拒绝同一工具名）。跨进程：每进程内 `tool-swarm` 各自加载 ⇒ 各挂一个 global guard，覆盖该进程内全体 agent。（**真实多进程复核**为待办，需预算。）
+
+**未做/待办**：`swarm` vs `standard` preset 的逐 id 同构 diff；跨进程真实复核；`enableReview:true` 的「无 reviewer 放行/leader 兜底」设计（Leader 令先不开）。
