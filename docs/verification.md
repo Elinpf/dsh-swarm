@@ -1929,3 +1929,31 @@ grep -n "team_task_update\|open_plan" packages/team-prompt/src/index.ts | head
 ```
 
 > **处置建议（不由本复核改码）**：① 把 `tool-task` 接入 bundle（insert 行 + deps）；② 同步 `team-prompt` 工具名与 `open_plan` 暴露；③ 接线 + P78 后补**真实 profile 成员可见性/收口探针**（先报预算）。
+
+---
+
+# P83 — 提示词任务工具名同步 `swarm_task_*`（P82 改名）
+
+## A. 改动面（**只改 `packages/team-prompt`**）
+
+- `src/index.ts`：**11 处** `team_task_*` → `swarm_task_*`（`team:leader` 条 2/条 9、`team:dispatch` 两个分支共 4 处、`team:task-state` 2 处、模块 docstring 1 处）。**旧名残留 0**（`grep -c team_task_ src/index.ts` = 0）。
+- **保留** `cancelled → action='delete'` 口径（**无 `cancelled` 态**，P73 已核实）。
+- 测试：既有 `team_task_*` 引用同步改为 `swarm_task_*`；**新增 2 条断言**——①提示词含 `swarm_task_create/list/update`；②`team_task_create`/`team_task_list`/`team_task_get`/`team_task_update` **不得出现**。
+- **未动** `tool-task`（dev-2）/`tool-swarm`（dev-1）/`bundle`/`client/*`。
+
+## B. 真名来源
+
+- 【事实】`packages/tool-task/src/index.ts:92,119,133,147`：`swarm_task_create` / `swarm_task_list` / `swarm_task_get` / `swarm_task_update`（P82，push `731bc07`）。
+- **改名原因**（背景）：原名 `team_task_*` 用全局注册，profile 下被**成员 scoped 原生同名遮蔽** ⇒ 等于没生效；若提示词仍写旧名，**成员会去调原生工具 ⇒ 验收闸门重新被绕过**。
+
+## C. 验证
+
+- `packages/team-prompt`：单测+集成 **41 passed**（34+7）；`typecheck`/`build` **Done**。
+- `bash scripts/e2e-profile.sh --no-model`：**PASS=7 FAIL=0**。
+- ⚠️ **全仓 `pnpm -r test` / `verify` / `verify:e2e` 当前红** —— 根因在 **`packages/tool-swarm`（dev-1 的 P78 in-flight 未提交改动）**：
+  `src/task-collar.ts(87,46): error TS2345`（`build` 失败 ⇒ 依赖它的 `verify`/`verify:e2e` 连带失败），且 `tests/task-collar.spec.ts`、`tests/tool-swarm.spec.ts` 多项失败；工作树显示 `tool-swarm/src/task-collar.ts` 为**未跟踪新文件**、`tool-swarm/src/index.ts`、`team-bus/src/projection.ts` 被改。
+  **⇒ 与本任务无关**（本任务只改 `team-prompt`，其 build/test 隔离全绿）；**未触碰 `tool-swarm`/`tool-task`**。待 dev-1 的 P78 落地后全仓回归应回绿。
+
+## D. 边界 / 未跑真实模型
+
+- 未碰 demo；未改其它包。未跑真实模型（措辞/改名同步，行为不变）。

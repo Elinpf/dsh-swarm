@@ -187,9 +187,9 @@ describe('P54 Leader 专属行为约束（只调度不干活，team:leader）', 
     expect(leader.text).toContain('查资料')
     expect(leader.text).toContain('读代码')
     expect(leader.text).toContain('写报告')
-    // 起手动作：先 spawn_teammate + team_task_create
+    // 起手动作：先 spawn_teammate + swarm_task_create
     expect(leader.text).toContain('spawn_teammate')
-    expect(leader.text).toContain('team_task_create')
+    expect(leader.text).toContain('swarm_task_create')
     expect(leader.text).toContain('成员必须先于任务存在')
     // 背景不清先建专职调研成员，不要自己去查
     expect(leader.text).toContain('不要自己去查')
@@ -416,7 +416,7 @@ describe('P73 Jiuwen 迁移第一批（P0×2 + P1×9）', () => {
     plugin.apply(ctx, config)
     const l = find(ctx, 'team:leader')
     expect(l.text).toContain('起手与任务自检')
-    expect(l.text).toContain('team_task_list')
+    expect(l.text).toContain('swarm_task_list')
     expect(l.text).toContain('汇总成员')
     expect(l.text).toContain('响应节奏')
     expect(l.text).toContain('idle')
@@ -437,7 +437,7 @@ describe('P73 Jiuwen 迁移第一批（P0×2 + P1×9）', () => {
     plugin.apply(ctx, config)
     const t = find(ctx, 'team:task-state')
     expect(t.text).toContain('in_review')
-    expect(t.text).toContain('team_task_update')
+    expect(t.text).toContain('swarm_task_update')
     expect(t.text).toContain('submit_review')
     expect(t.text).toContain('open_plan')
     expect(t.text).toContain('review_vote')
@@ -492,8 +492,31 @@ describe('P73 Jiuwen 迁移第一批（P0×2 + P1×9）', () => {
     plugin.apply(ctx, { ...config, locales: 'en' })
     expect(find(ctx, 'team:leader').text).toContain('Opening sequence')
     expect(find(ctx, 'team:leader').text).toContain('synthesis member')
-    expect(find(ctx, 'team:task-state').text).toContain('team_task_update')
+    expect(find(ctx, 'team:task-state').text).toContain('swarm_task_update')
     expect(find(ctx, 'team:task-state').text).toContain('Review gate')
     expect(find(ctx, 'team:dispatch').text).toContain('the scheduler performs the handoff')
+  })
+})
+
+describe('P83 任务工具改名同步（P82：team_task_* → swarm_task_*）', () => {
+  it('提示词用 swarm_task_* 真名；旧名 team_task_* 不得出现（否则成员调原生 ⇒ 闸门复绕）', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const all = ctx._sections.map((s: any) => s.text).join('\n')
+    expect(all).toContain('swarm_task_create')
+    expect(all).toContain('swarm_task_list')
+    expect(all).toContain('swarm_task_update')
+    for (const bad of ['team_task_create', 'team_task_list', 'team_task_get', 'team_task_update']) {
+      expect(all).not.toContain(bad)
+    }
+  })
+
+  it('cancelled → action delete 口径保留（无 cancelled 态）', () => {
+    const ctx = makeCtx()
+    plugin.apply(ctx, config)
+    const t = ctx._sections.find((s: any) => s.name === 'team:task-state')
+    expect(t.text).toContain('swarm_task_update(action=')
+    expect(t.text).toContain('取消 `delete`')
+    expect(t.text).toContain('无 `cancelled` 态')
   })
 })

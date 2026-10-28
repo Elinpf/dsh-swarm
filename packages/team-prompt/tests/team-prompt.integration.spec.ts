@@ -163,7 +163,7 @@ describe('P73 真实装配：迁移首批引导进入渲染后的系统提示词
     const prompt = renderPrompt(assembly)
     expect(names).toContain('team:task-state')
     expect(names).toContain('team:dispatch')
-    expect(prompt).toContain('team_task_update')
+    expect(prompt).toContain('swarm_task_update')
     expect(prompt).toContain('in_review')
     expect(prompt).toContain('调度框架代你完成交接')
   })
